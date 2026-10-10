@@ -416,8 +416,40 @@ pub fn check_and_persist(
     manifest: &KeyManifest,
     path: &std::path::Path,
 ) -> Result<AntiRollbackFloor, FloorPersistError> {
-    let advanced = check_and_advance(floor, manifest).map_err(FloorPersistError::Rollback)?;
+    // Audit L-39. The value an advance is compared with is the floor ON DISK, read here, under a
+    // lock held from the read to the end of the write. It used to be whatever the caller had
+    // parsed earlier: two brokers that both read epoch 5 could accept 7 and then 6, and the file
+    // ended at 6 — an older, genuinely signed manifest acceptable again.
+    let refused = |what: &str, at: &std::path::Path, e: std::io::Error| {
+        FloorPersistError::NotPersisted(format!("{what} {}: {e}", at.display()))
+    };
+    let lock_path = path.with_extension("json.lock");
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| refused("open lock", &lock_path, e))?;
+    lock.lock().map_err(|e| refused("lock", &lock_path, e))?;
+
+    // A floor file that exists and does not parse is a refusal, never "no floor yet" — that
+    // would accept any epoch. Absent, the caller's value is all there is.
+    let on_disk = match std::fs::read(path) {
+        Ok(bytes) => Some(parse_floor_json(&bytes).ok_or_else(|| {
+            FloorPersistError::NotPersisted(format!("the floor at {} does not parse; it was left as it is", path.display()))
+        })?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(refused("read", path, e)),
+    };
+    // The higher of the two: the file can only raise what the caller holds, never lower it.
+    let current = match &on_disk {
+        Some(disk) if disk.highest_epoch >= floor.highest_epoch => disk,
+        _ => floor,
+    };
+    let advanced = check_and_advance(current, manifest).map_err(FloorPersistError::Rollback)?;
     write_floor_atomically(path, &floor_json_bytes(&advanced))?;
+    // The lock is released when `lock` is dropped, after the rename and the directory sync.
+    drop(lock);
     Ok(advanced)
 }
 
@@ -729,6 +761,88 @@ mod tests {
         );
     }
 
+    /// Audit L-39. A holder of an OLD snapshot must not be able to lower the floor: the value the
+    /// advance is compared with is the file on disk, not what the caller read some time ago. Two
+    /// brokers that both read epoch 5 before either writes produce exactly this sequence.
+    #[test]
+    fn l39_a_stale_snapshot_cannot_lower_a_floor_another_holder_raised() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("floor.json");
+        let prod = signing_key(2);
+        let m5 = manifest(5, &prod);
+        std::fs::write(&path, floor_json_bytes(&AntiRollbackFloor { highest_epoch: 5, highest_hash: m5.content_hash() })).unwrap();
+        let stale = parse_floor_json(&std::fs::read(&path).unwrap()).unwrap();
+
+        let m7 = manifest(7, &prod);
+        assert_eq!(check_and_persist(&stale, &m7, &path).expect("7 is above 5").highest_epoch, 7);
+
+        // The same stale snapshot, and a manifest between the two: genuinely signed, above 5, below 7.
+        let m6 = manifest(6, &prod);
+        assert_eq!(
+            check_and_persist(&stale, &m6, &path),
+            Err(FloorPersistError::Rollback(RollbackError::EpochBelowFloor)),
+            "epoch 6 was accepted after epoch 7 had been"
+        );
+        let on_disk = parse_floor_json(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(on_disk.highest_epoch, 7, "the floor on disk went down");
+        // Replaying 7 itself from the stale snapshot is the same manifest, not a rollback.
+        assert_eq!(check_and_persist(&stale, &m7, &path).expect("the same manifest again").highest_epoch, 7);
+    }
+
+    /// The floor on disk is authoritative only when it can be read. A floor file that exists and
+    /// does not parse is a refusal — never "no floor yet", which would accept any epoch.
+    #[test]
+    fn l39_a_floor_file_that_does_not_parse_refuses_and_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("floor.json");
+        let prod = signing_key(2);
+        std::fs::write(&path, b"{ not a floor").unwrap();
+        let caller = AntiRollbackFloor { highest_epoch: 5, highest_hash: manifest(5, &prod).content_hash() };
+        assert!(matches!(
+            check_and_persist(&caller, &manifest(6, &prod), &path),
+            Err(FloorPersistError::NotPersisted(_))
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), b"{ not a floor");
+    }
+
+    /// A caller that knows a HIGHER floor than the file holds is not dragged down to the file.
+    #[test]
+    fn l39_a_floor_file_below_what_the_caller_holds_does_not_lower_the_comparison() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("floor.json");
+        let prod = signing_key(2);
+        std::fs::write(&path, floor_json_bytes(&AntiRollbackFloor { highest_epoch: 3, highest_hash: manifest(3, &prod).content_hash() })).unwrap();
+        let caller = AntiRollbackFloor { highest_epoch: 8, highest_hash: manifest(8, &prod).content_hash() };
+        assert_eq!(
+            check_and_persist(&caller, &manifest(6, &prod), &path),
+            Err(FloorPersistError::Rollback(RollbackError::EpochBelowFloor))
+        );
+    }
+
+    /// Many holders of the same old snapshot at once: whatever order they run in, the file ends
+    /// at the highest epoch any of them was given, and never at a lower one.
+    #[test]
+    fn l39_concurrent_holders_of_one_snapshot_leave_the_highest_epoch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("floor.json");
+        let prod = signing_key(2);
+        let m5 = manifest(5, &prod);
+        std::fs::write(&path, floor_json_bytes(&AntiRollbackFloor { highest_epoch: 5, highest_hash: m5.content_hash() })).unwrap();
+        let stale = parse_floor_json(&std::fs::read(&path).unwrap()).unwrap();
+        for _round in 0..20 {
+            std::thread::scope(|scope| {
+                for epoch in [9u64, 6, 12, 7, 10, 8, 11, 6] {
+                    let (stale, path, prod) = (&stale, &path, &prod);
+                    scope.spawn(move || {
+                        let _ = check_and_persist(stale, &manifest(epoch, prod), path);
+                    });
+                }
+            });
+            let on_disk = parse_floor_json(&std::fs::read(&path).unwrap()).expect("the floor is never left unparseable");
+            assert_eq!(on_disk.highest_epoch, 12);
+        }
+    }
+
     #[test]
     fn a_floor_that_cannot_be_written_refuses_the_turn() {
         let dir = tempfile::tempdir().unwrap();
@@ -739,8 +853,14 @@ mod tests {
         let prod = signing_key(2);
         let m5 = manifest(5, &prod);
         let floor = AntiRollbackFloor { highest_epoch: 1, highest_hash: "x".into() };
-        match check_and_persist(&floor, &m5, &path) {
+        // The write itself, where the WRITE branch lives.
+        match write_floor_atomically(&path, &floor_json_bytes(&floor)) {
             Err(FloorPersistError::NotPersisted(why)) => assert!(why.starts_with("write "), "{why}"),
+            other => panic!("an unwritable floor must refuse, got {other:?}"),
+        }
+        // And the whole operation refuses too — earlier now, at the lock it takes first (L-39).
+        match check_and_persist(&floor, &m5, &path) {
+            Err(FloorPersistError::NotPersisted(why)) => assert!(why.starts_with("open lock "), "{why}"),
             other => panic!("an unwritable floor must refuse, got {other:?}"),
         }
     }
@@ -757,9 +877,17 @@ mod tests {
         let prod = signing_key(2);
         let m5 = manifest(5, &prod);
         let floor = AntiRollbackFloor { highest_epoch: 1, highest_hash: "x".into() };
-        match check_and_persist(&floor, &m5, &path) {
+        // The write itself, where the RENAME branch lives.
+        match write_floor_atomically(&path, &floor_json_bytes(&floor)) {
             Err(FloorPersistError::NotPersisted(why)) => assert!(why.starts_with("rename "), "{why}"),
             other => panic!("a floor that cannot be renamed into place must refuse, got {other:?}"),
+        }
+        assert!(path.is_dir() && path.join("occupant").is_file(), "the path was not replaced");
+        // And the whole operation refuses too — earlier now, when it reads the floor it will
+        // compare with (L-39) and finds a directory there.
+        match check_and_persist(&floor, &m5, &path) {
+            Err(FloorPersistError::NotPersisted(why)) => assert!(why.starts_with("read "), "{why}"),
+            other => panic!("a floor path that is a directory must refuse, got {other:?}"),
         }
         assert!(path.is_dir() && path.join("occupant").is_file(), "the path was not replaced");
     }

@@ -31,18 +31,9 @@ ninth is there under *Round 9*.
 > the reviewer's quota ended at 110 of 172 files, with `L-01`–`L-43` (one P1, `L-17`) and no verdict.
 > It resumes 2026-10-16. Kept openable, outside this directory so it cannot become the current
 > assessment: [report](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md),
-> [files read](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md). No `L` finding
-> has been reproduced by the Builder except these two:
-> - **`L-17` (P1) reproduced, NOT fixed.** With the repository's own fixture: `complete-run` with no
->   output service returned `ok`, `output_stream: unconfigured`; the stream table had 0 rows; `attest-run`
->   then returned `ok` with a signed attestation. Engine security code — it waits for an audit or a waiver.
-> - **`L-41` (P3) fixed ◑**, and wider than filed: a stored digest that was an absolute path made the
->   scheduler verify and QUEUE a bundle outside the store. A digest is 64 lowercase hex at `register`,
->   at arming, in `enqueue_due` and at the claim; a malformed one is a refused run, never a panic.
-> - **`L-43` (P2) fixed ◑**: the Linux TCB floor returned `Ok` for an artifact pinned at `broker`. A path
->   that is not absolute and normalised is `NonAbsolutePath` before anything is probed.
-> - **`L-31` (P2) fixed ◑**: a grant swapped after its hash was accepted was loaded, with an added
->   capability, under the old digest. Every bundle file is read once and parsed from those bytes.
+> [files read](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md). The Builder's
+> answers — `L-17` reproduced and NOT fixed (engine security code); `L-31`, `L-39`, `L-41`, `L-43`
+> fixed ◑ — are in [builder answers](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-BUILDER-ANSWERS.md).
 >
 > The gate is shut and the round confirms it. What it found is **behind** the gate and beside it:
 > `K-01` and `K-02` make the governed path fail the day refusal 3 is cleared, `K-03` was **reachable**

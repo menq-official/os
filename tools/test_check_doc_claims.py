@@ -1070,6 +1070,21 @@ class CountedClaimTests(unittest.TestCase):
             {"d.md": "the suite runs 2243 tests and 1225 assertions"})
         self.assertTrue(any("does not contain 22" in p for p in problems), problems)
 
+    def test_a_superseded_number_inside_a_commit_sha_is_not_a_count(self):
+        """`main` at `999c988`: the banner names a merge base, and 999 was the frontend count once.
+        A number glued to letters is part of a token, not a count -- on either side of it."""
+        def problems_for(text):
+            return self._write(
+                {"suite": {"value": 1153, "command": "x", "derive": None,
+                           "measured": {"date": "2026-10-09", "head": "abc1234",
+                                        "environments": {"ubuntu": {"ran": 1153, "skipped": 0}}},
+                           "cited_in": ["d.md"], "superseded": [999]}},
+                {"d.md": text})
+        for harmless in ("1153 tests; `main` @ `999c988`", "1153 tests; head a7c999", "1153; build x999y"):
+            self.assertFalse(any("superseded value 999" in p for p in problems_for(harmless)), harmless)
+        for stale in ("1153 tests, was 999", "1153; 999 tests", "1153 (999)", "999\n1153"):
+            self.assertTrue(any("superseded value 999" in p for p in problems_for(stale)), stale)
+
     def test_the_value_may_not_also_be_listed_as_superseded(self):
         problems = self._write(
             {"f": {"value": 5, "command": "x", "derive": None,

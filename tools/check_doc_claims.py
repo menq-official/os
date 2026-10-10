@@ -547,7 +547,10 @@ def counted_claim_failures(root: pathlib.Path) -> list[str]:
                     f"{where}: {rel} does not contain {value}. Either the document is stale or it "
                     f"never carried this claim — one of the two has to change.")
             for old in superseded:
-                if re.search(rf"(?<!\d){old}(?!\d)", body):
+                # Not glued to a letter either: `main` at `999c988` put a commit sha in two
+                # banners and this read its first three characters as the frontend count of 999.
+                # A number inside a hexadecimal or alphanumeric token is not a count.
+                if re.search(rf"(?<![0-9A-Za-z]){old}(?![0-9A-Za-z])", body):
                     problems.append(
                         f"{where}: {rel} still contains the superseded value {old}. The current "
                         f"number is {value}; old numbers belong in docs/README_CLAIM_HISTORY.md, "
