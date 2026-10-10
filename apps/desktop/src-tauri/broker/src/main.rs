@@ -695,7 +695,7 @@ mod linux {
 
         // 2. Read EXACTLY ONE bounded frame. The decoder fails closed on a declared-oversize length; a read
         //    ceiling caps a slow/greedy peer without allocating on its say-so.
-        let raw = read_one_frame(stream)?;
+        let raw = read_one_frame(stream, std::time::Duration::from_millis(CONN_IO_TIMEOUT_MS))?;
         let raw_str =
             std::str::from_utf8(&raw).map_err(|_| "request frame is not valid UTF-8".to_string())?;
 
@@ -718,7 +718,15 @@ mod linux {
     /// Read from the stream until the [`FrameDecoder`] yields exactly one complete frame payload. Bounded:
     /// never buffers more than the frame cap + one length prefix, and fails closed on EOF-before-frame or a
     /// declared-oversize length.
-    fn read_one_frame(stream: &mut UnixStream) -> Result<Vec<u8>, String> {
+    ///
+    /// Audit L-24: bounded in TIME as a whole, too. `serve` arms a read timeout, but a socket read
+    /// timeout applies to each `read`, and every byte that arrives starts it again — a peer
+    /// sending one byte every 119 s held this loop, and with it the broker's only thread, for as
+    /// long as it liked. `budget` is one deadline for the whole frame: each read may wait only
+    /// for what is left of it, and when it is spent the connection is refused however lively the
+    /// peer has been.
+    fn read_one_frame(stream: &mut UnixStream, budget: std::time::Duration) -> Result<Vec<u8>, String> {
+        let deadline = std::time::Instant::now() + budget;
         let mut decoder = FrameDecoder::new();
         let mut chunk = [0u8; 1024];
         loop {
@@ -728,15 +736,91 @@ mod linux {
             {
                 return Ok(frame);
             }
-            let n = stream
-                .read(&mut chunk)
-                .map_err(|e| format!("frame read failed: {e}"))?;
+            const OUT_OF_TIME: &str = "request frame was not complete within the connection's time budget";
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(OUT_OF_TIME.to_string());
+            }
+            stream
+                .set_read_timeout(Some(remaining))
+                .map_err(|e| format!("could not arm the frame deadline: {e}"))?;
+            let n = match stream.read(&mut chunk) {
+                Ok(n) => n,
+                // The read waited for all that was left of the budget and nothing came: that IS
+                // the budget ending, and it says so. Seen in CI, where the last read's timer
+                // fired a moment before the deadline check would have and the refusal read
+                // "frame read failed: Resource temporarily unavailable" instead.
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+                    return Err(OUT_OF_TIME.to_string());
+                }
+                Err(e) => return Err(format!("frame read failed: {e}")),
+            };
             if n == 0 {
                 return Err("peer closed before a complete frame".to_string());
             }
             // The FrameDecoder enforces the payload cap on the length prefix itself (fail closed on a
             // declared-oversize length), so feeding raw chunks cannot be used to force an unbounded alloc.
             decoder.feed(&chunk[..n]);
+        }
+    }
+
+    #[cfg(test)]
+    mod frame_budget_tests {
+        use super::*;
+        use std::time::{Duration, Instant};
+
+        /// Audit L-24, with a real socket pair. The peer never stops sending: one byte of a frame
+        /// every 30 ms, each one inside the per-read timeout. The read must end when the
+        /// connection's total budget is spent, however lively the peer is — the accept loop is
+        /// serial, so a read that the peer can keep alive is a broker nobody else can reach.
+        #[test]
+        fn l24_a_peer_that_drips_bytes_cannot_hold_the_read_past_the_budget() {
+            let (mut server, mut client) = UnixStream::pair().unwrap();
+            // A length prefix that promises 4096 bytes, then a slow trickle that never completes it.
+            let dripper = std::thread::spawn(move || {
+                let _ = client.write_all(&4096u32.to_be_bytes());
+                for _ in 0..100 {
+                    std::thread::sleep(Duration::from_millis(30));
+                    if client.write_all(b"x").is_err() {
+                        break;
+                    }
+                }
+            });
+            // The whole frame has 300 ms. Every byte arrives well inside any single read's wait.
+            let started = Instant::now();
+            let outcome = read_one_frame(&mut server, Duration::from_millis(300));
+            let took = started.elapsed();
+            drop(server); // the dripper's next write fails and it stops
+            dripper.join().unwrap();
+            let why = outcome.expect_err("an incomplete frame was returned as a frame");
+            assert!(why.contains("time budget"), "{why}");
+            // A timer may fire a little early; "well before the budget" is what would be wrong.
+            assert!(took >= Duration::from_millis(250), "refused before the budget was spent: {took:?}");
+            assert!(took < Duration::from_millis(1500), "the read was held for {took:?} by a peer that kept dripping");
+        }
+
+        /// The budget refuses only an INCOMPLETE frame: a complete one that arrives in pieces
+        /// inside the budget is read, and a silent peer is refused by the same deadline.
+        #[test]
+        fn l24_a_frame_that_arrives_in_pieces_inside_the_budget_is_read() {
+            let (mut server, mut client) = UnixStream::pair().unwrap();
+            let frame = encode_frame(b"{\"hello\":true}").unwrap();
+            let sender = std::thread::spawn(move || {
+                for piece in frame.chunks(3) {
+                    std::thread::sleep(Duration::from_millis(5));
+                    client.write_all(piece).unwrap();
+                }
+                client
+            });
+            let got = read_one_frame(&mut server, Duration::from_secs(5)).expect("a complete frame inside the budget");
+            assert_eq!(got, b"{\"hello\":true}");
+            drop(sender.join().unwrap());
+
+            let (mut quiet_server, _quiet_client) = UnixStream::pair().unwrap();
+            let started = Instant::now();
+            let why = read_one_frame(&mut quiet_server, Duration::from_millis(200)).expect_err("a silent peer");
+            assert!(why.contains("time budget"), "a silent peer's refusal names the budget too: {why}");
+            assert!(started.elapsed() < Duration::from_millis(1200));
         }
     }
 
