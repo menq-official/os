@@ -4,6 +4,7 @@
 
 pub mod db;
 pub mod dialog_text;
+pub mod strict_json;
 pub mod domain;
 pub mod receipt;
 pub mod receipt_store;

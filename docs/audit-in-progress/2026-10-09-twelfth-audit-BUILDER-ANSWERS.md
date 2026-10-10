@@ -34,7 +34,17 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   digest — a grant with an added capability, a flow with a different step: reproduced through a
   test seam at that instant. Every file is read once and parsed from those bytes. Not done:
   `O_NOFOLLOW`.
-- **`L-24` (P2).** The broker's frame read had a per-`read` timeout, which every arriving byte
+- **`L-23` (P3), `L-28` (P2), `L-34` (P3) — one defect in three parsers.** `serde_json` keeps the
+  last of two equal keys. The broker took `{"ok":false,"ok":true,"op":"wrong","op":"issue"}` as a
+  successful hop reply, and read a floor-pinned anchor that first named another key and the lower
+  custody as the compiled external root: both reproduced on the unfixed code. `L-34`, the
+  sidecar's stdout, was NOT run on the unfixed code — its test was written with the fix and
+  asserts that the plain decoder accepts the same bytes. `core/src/strict_json.rs` refuses a
+  repeated key at any depth and anything after the value; it is used by `parse_reply`,
+  `parse_root_anchor` (`duplicate_field`), the sidecar's stdout, and the relay door that reads a
+  request's `protocol`. Not done: unknown-field rejection and canonical-form checks; the other
+  `serde_json::Value` parsers in the tree were not swept.
+- **`L-24` (P2), OS #398.** The broker's frame read had a per-`read` timeout, which every arriving byte
   restarts, and no deadline for the frame: with a real socket pair, a peer dripping one byte every
   30 ms held a read with a 100 ms timeout for the whole 3 s it kept dripping — reproduced.
   `read_one_frame` takes one budget for the whole frame; each read may wait only for what is left.

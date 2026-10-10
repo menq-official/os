@@ -70,7 +70,9 @@ pub fn hop_roundtrip(conn: &mut dyn HopConn, request_json: &[u8]) -> Result<Vec<
 /// belonging to a different op on a single-request/single-response channel is a broken peer, not a
 /// success. Nothing enforced that before.
 pub fn parse_reply(expected_op: &str, reply_json: &[u8]) -> Result<serde_json::Value, HopError> {
-    let v: serde_json::Value = serde_json::from_slice(reply_json).map_err(|_| HopError::BadReply)?;
+    // Audit L-23: a reply that names a key twice — at any depth — is not a reply. The plain
+    // decoder keeps the last occurrence, so `"ok":false,"ok":true` was a success.
+    let v = brops_core::strict_json::from_slice(reply_json).map_err(|_| HopError::BadReply)?;
     let obj = v.as_object().ok_or(HopError::BadReply)?;
     // A reply is a success ONLY if it says so. Missing / non-boolean / false `ok` is never a success.
     if obj.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
@@ -107,6 +109,26 @@ impl Principal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit L-23. A reply that states its decision or its operation twice is not a reply. The
+    /// plain decoder keeps the last occurrence; each of these was `Ok` under it, or `Refused`
+    /// with a reason the same bytes also contradict.
+    #[test]
+    fn l23_a_reply_that_repeats_a_field_is_a_bad_reply_whichever_copy_would_win() {
+        for reply in [
+            &br#"{"ok":false,"ok":true,"op":"wrong","op":"issue"}"#[..],
+            br#"{"ok":false,"ok":true,"op":"issue"}"#,
+            br#"{"ok":true,"ok":false,"op":"issue","reason":"x"}"#,
+            br#"{"ok":true,"op":"wrong","op":"issue"}"#,
+            br#"{"ok":true,"op":"issue","op":"wrong"}"#,
+            br#"{"ok":false,"reason":"benign","reason":"other"}"#,
+            br#"{"ok":true,"op":"issue","lease":{"id":"a","id":"b"}}"#,
+        ] {
+            assert_eq!(parse_reply("issue", reply), Err(HopError::BadReply), "{}", String::from_utf8_lossy(reply));
+        }
+        // The control: the same reply said once is accepted.
+        assert!(parse_reply("issue", br#"{"ok":true,"op":"issue","lease":{"id":"a"}}"#).is_ok());
+    }
     use brops_core::ipc_framing::MAX_FRAME_PAYLOAD_BYTES;
 
     struct FakeHop {

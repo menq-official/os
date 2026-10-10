@@ -276,10 +276,11 @@ impl SidecarTrust {
             Self::Provisioned(_) => return Ok(()),
             Self::RelayFramesOnly => {}
         }
-        let doc: Value = serde_json::from_str(request).map_err(|e| {
+        // Strictly: a request that names `protocol` twice has no one protocol to admit it by.
+        let doc: Value = crate::strict_json::from_str(request).map_err(|e| {
             format!(
                 "this sidecar was configured {RELAY_ONLY_NAME}, so the request has to be read \
-                 before it can be sent — and this one is not JSON ({e}). Refusing rather than \
+                 before it can be sent — and this one is not JSON, or names a key twice ({e:?}). Refusing rather than \
                  relaying bytes whose protocol cannot be established: the whole reason this arm may \
                  skip the provisioned trust environment is that the two protocols it carries reach \
                  no reader of it."
@@ -828,8 +829,7 @@ impl GovernedSidecar {
         if !status.success() {
             return Err(format!("governed engine sidecar crashed: {}", errbuf.trim()));
         }
-        let stdout = String::from_utf8_lossy(&obuf);
-        serde_json::from_str(stdout.trim()).map_err(|e| format!("could not parse bridge-result ({e})"))
+        parse_sidecar_stdout(&String::from_utf8_lossy(&obuf))
     }
 }
 
@@ -872,9 +872,45 @@ fn hide_console(cmd: &mut std::process::Command) {
     }
 }
 
+/// The sidecar's stdout as ONE JSON document (audit L-34). `BridgeTurnResult::parse_frame` takes a
+/// `Value`, and by then a repeated key is gone: `"ok":false,"ok":true` under two protocols read as
+/// a signed result. The duplicate is refused here, on the bytes, before a `Value` exists.
+fn parse_sidecar_stdout(stdout: &str) -> Result<Value, String> {
+    crate::strict_json::from_str(stdout.trim()).map_err(|e| format!("could not parse bridge-result ({e:?})"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit L-34. The sidecar's stdout is refused when it states a field twice, at any depth,
+    /// whichever copy the plain decoder would have kept.
+    #[test]
+    fn l34_sidecar_output_that_repeats_a_field_is_refused_before_it_is_a_value() {
+        for stdout in [
+            r#"{"protocol":"wrong","protocol":"bridge.governed-turn-result.v1","ok":false,"ok":true}"#,
+            r#"{"protocol":"bridge.governed-turn-result.v1","ok":true,"ok":false}"#,
+            r#"{"protocol":"bridge.governed-turn-result.v1","ok":true,"receipt":{"sig":"a","sig":"b"}}"#,
+            r#"{"ok":true,"error":"x","error":"y"}"#,
+        ] {
+            let why = parse_sidecar_stdout(stdout).expect_err(stdout);
+            assert!(why.contains("DuplicateKey"), "{why}");
+            assert!(serde_json::from_str::<Value>(stdout).is_ok(), "the plain decoder took it: {stdout}");
+        }
+        assert!(parse_sidecar_stdout("  {\"protocol\":\"p\",\"ok\":true}\n").is_ok());
+        assert!(parse_sidecar_stdout("not json").is_err());
+    }
+
+    /// The relay door reads the request's `protocol` to decide whether it may be sent. A request
+    /// naming two protocols has none it can be admitted by.
+    #[test]
+    fn l34_a_request_that_names_its_protocol_twice_is_not_admitted_by_the_relay_door() {
+        let allowed = RELAY_PROTOCOLS[0];
+        let twice = format!(r#"{{"protocol":"something.else","protocol":"{allowed}"}}"#);
+        assert!(SidecarTrust::RelayFramesOnly.admits(&twice).is_err(), "{twice}");
+        let once = format!(r#"{{"protocol":"{allowed}"}}"#);
+        assert!(SidecarTrust::RelayFramesOnly.admits(&once).is_ok());
+    }
 
     /// THE SHARED CASE TABLE for `sidecar` blocks: one list of accept/refuse verdicts that BOTH
     /// validators are driven from — [`SidecarPrincipal::from_config`] here, and `validate_sidecar`

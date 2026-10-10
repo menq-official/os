@@ -109,7 +109,12 @@ pub fn parse_root_anchor(bytes: &[u8]) -> Result<RootAnchor, &'static str> {
     if bytes.len() > MAX_ROOT_ANCHOR_BYTES {
         return Err("too_large");
     }
-    let doc: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| "not_json")?;
+    // Audit L-28: an anchor that states a field twice is refused. The plain decoder kept the last
+    // occurrence, so a file that first named another key and a lower custody read as the pin.
+    let doc = brops_core::strict_json::from_slice(bytes).map_err(|e| match e {
+        brops_core::strict_json::StrictJsonError::DuplicateKey(_) => "duplicate_field",
+        brops_core::strict_json::StrictJsonError::NotJson => "not_json",
+    })?;
     let doc = doc.as_object().ok_or("not_an_object")?;
     let text = |key: &str| doc.get(key).and_then(serde_json::Value::as_str);
 
@@ -137,6 +142,34 @@ pub fn parse_root_anchor(bytes: &[u8]) -> Result<RootAnchor, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit L-28, the finding's own bytes. The floor-pinned anchor first names another identity,
+    /// another key and the lower custody, then the compiled external root. The plain decoder
+    /// returned the second set and production-supporting provenance.
+    #[test]
+    fn l28_an_anchor_that_states_a_field_twice_is_refused() {
+        let other = "ab".repeat(32);
+        let both = format!(
+            r#"{{"root_key_id":"attacker","root_key_id":"{ROOT_KEY_ID}","public_key_hex":"{other}","public_key_hex":"{ROOT_PUBLIC_KEY_HEX}","provenance":"kit_generated","provenance":"external"}}"#
+        );
+        assert_eq!(parse_root_anchor(both.as_bytes()), Err("duplicate_field"));
+        // One field repeated, attacker first and attacker last, for each of the three.
+        let fields = [("root_key_id", "attacker", ROOT_KEY_ID), ("public_key_hex", other.as_str(), ROOT_PUBLIC_KEY_HEX), ("provenance", "kit_generated", "external")];
+        for (repeated, bad, good) in fields {
+            for (first, second) in [(bad, good), (good, bad), (good, good)] {
+                let mut parts = Vec::new();
+                for (name, _bad, good) in fields {
+                    if name == repeated {
+                        parts.push(format!(r#""{name}":"{first}","{name}":"{second}""#));
+                    } else {
+                        parts.push(format!(r#""{name}":"{good}""#));
+                    }
+                }
+                let doc = format!("{{{}}}", parts.join(","));
+                assert_eq!(parse_root_anchor(doc.as_bytes()), Err("duplicate_field"), "{doc}");
+            }
+        }
+    }
 
     #[test]
     fn external_anchor_equal_to_the_pin_passes() {
