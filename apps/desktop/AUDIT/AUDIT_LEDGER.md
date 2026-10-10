@@ -32,7 +32,13 @@ ninth is there under *Round 9*.
 > It resumes 2026-10-16. Kept openable, outside this directory so it cannot become the current
 > assessment: [report](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md),
 > [files read](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md). No `L` finding
-> has been reproduced by the Builder unless a row below says so.
+> has been reproduced by the Builder except these two:
+> - **`L-17` (P1) reproduced, NOT fixed.** With the repository's own fixture: `complete-run` with no
+>   output service returned `ok`, `output_stream: unconfigured`; the stream table had 0 rows; `attest-run`
+>   then returned `ok` with a signed attestation. Engine security code — it waits for an audit or a waiver.
+> - **`L-41` (P3) fixed ◑**, and wider than filed: a stored digest that was an absolute path made the
+>   scheduler verify and QUEUE a bundle outside the store. A digest is 64 lowercase hex at `register`,
+>   at arming, in `enqueue_due` and at the claim; a malformed one is a refused run, never a panic.
 >
 > The gate is shut and the round confirms it. What it found is **behind** the gate and beside it:
 > `K-01` and `K-02` make the governed path fail the day refusal 3 is cleared, `K-03` was **reachable**

@@ -2999,6 +2999,7 @@ pub mod agent_runs {
         bundle_version: u64,
         display_name: &str,
     ) -> CoreResult<()> {
+        require_bundle_digest(digest)?;
         super::atomic(conn, |tx| {
             tx.execute(
                 "INSERT OR REPLACE INTO agent_bundles(bundle_digest, bundle_id, bundle_version, \
@@ -3027,6 +3028,14 @@ pub mod agent_runs {
         active: bool,
         actor: audit::Actor<'_>,
     ) -> CoreResult<()> {
+        // Arming writes the row the scheduler reads, so it holds the same two shapes the
+        // scheduler relies on. DISARMING is never refused for the shape of what it stops.
+        if active {
+            require_bundle_digest(digest)?;
+            if interval_ms <= 0 {
+                return Err(CoreError::Invalid { field: "interval_ms", value: interval_ms.to_string() });
+            }
+        }
         super::atomic(conn, |tx| {
             if active {
                 super::approvals::require_and_consume(
@@ -3065,6 +3074,29 @@ pub mod agent_runs {
         Ok(v.and_then(|s| s.parse::<i64>().ok()))
     }
 
+    /// The refusal a run carries when the stored digest is not a bundle digest at all (audit L-41).
+    pub const MALFORMED_DIGEST_REASON: &str = "bundle_digest_malformed";
+
+    /// A bundle digest is exactly 64 lowercase hexadecimal characters — what
+    /// `agent_bundle::build` returns and nothing else.
+    ///
+    /// Audit L-41. The digest is used three ways and each assumed this shape without checking
+    /// it: it is sliced by byte index for the run id (a short or non-ASCII one PANICKED, inside
+    /// the tick that holds the database mutex), it is joined onto the store root to find the
+    /// bundle (an absolute path REPLACES the root and `..` leaves it, so a stored digest chose
+    /// the directory that was verified), and it is the name an approval is bound to.
+    pub fn is_bundle_digest(digest: &str) -> bool {
+        digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }
+
+    fn require_bundle_digest(digest: &str) -> CoreResult<()> {
+        if is_bundle_digest(digest) {
+            Ok(())
+        } else {
+            Err(CoreError::Invalid { field: "bundle_digest", value: "not 64 lowercase hex characters".into() })
+        }
+    }
+
     /// Detect due bundles and enqueue. Returns `(due_found, enqueued, refused)`.
     ///
     /// THIS function still performs no action, reaches no network, holds no
@@ -3098,12 +3130,21 @@ pub mod agent_runs {
             due_found += 1;
             // Re-verify before enqueuing: the bytes may have changed since the
             // build, and a mismatch is a refusal with a reason, never a skip.
-            let outcome = agent_bundle::verify(&store_root.join(&digest), now_ms / 1000);
-            let (state, reason) = match &outcome {
-                Ok(_) => ("queued", None),
-                Err(r) => ("refused", Some(r.as_str())),
+            //
+            // Audit L-41: a stored digest that is not a digest is refused HERE, before it is
+            // joined onto the store root or sliced. Its run id is derived from a hash of it, so
+            // the refusal is recorded once per tick like any other and names nothing unsafe.
+            let (state, reason, id) = if is_bundle_digest(&digest) {
+                let outcome = agent_bundle::verify(&store_root.join(&digest), now_ms / 1000);
+                let (state, reason) = match &outcome {
+                    Ok(_) => ("queued", None),
+                    Err(r) => ("refused", Some(r.as_str())),
+                };
+                (state, reason, format!("fr-{}-{}", &digest[..12], now_ms))
+            } else {
+                let name = crate::receipt::sha256_hex(digest.as_bytes());
+                ("refused", Some(MALFORMED_DIGEST_REASON), format!("fr-malformed-{}-{}", &name[..12], now_ms))
             };
-            let id = format!("fr-{}-{}", &digest[..12], now_ms);
             super::atomic(conn, |tx| {
                 tx.execute(
                     "INSERT OR IGNORE INTO flow_runs(id, bundle_id, bundle_digest, trigger_kind, \
@@ -3195,6 +3236,13 @@ pub mod agent_runs {
             return Ok(None); // another claimer won; refused before dispatch
         }
 
+        // Audit L-41: the queued row's digest is joined onto the store root below. `enqueue_due`
+        // no longer queues a malformed one, but this is the point where a bundle is about to be
+        // EXECUTED, so it refuses on its own account rather than trusting how the row got here.
+        if !is_bundle_digest(&digest) {
+            finish(conn, &run_id, &digest, "refused", Some(MALFORMED_DIGEST_REASON), 0, &[])?;
+            return Ok(Some(run_id));
+        }
         let bundle = match agent_bundle::verify(&store_root.join(&digest), now_ms / 1000) {
             Ok(b) => b,
             Err(r) => {
@@ -3609,6 +3657,166 @@ pub mod agent_runs {
         fn state_of(conn: &Connection, id: &str) -> (String, Option<String>) {
             conn.query_row("SELECT state, refusal_reason FROM flow_runs WHERE id=?1", [id],
                            |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+        }
+
+        /// A row the write boundary would now refuse, put there directly — a database written by
+        /// an older build, or by anything that is not `register` / `set_active`.
+        fn arm_directly(conn: &Connection, bundle_id: &str, digest: &str) {
+            conn.execute(
+                "INSERT INTO agent_bundles(bundle_digest, bundle_id, bundle_version, display_name, \
+                 built_at, state, created_at) VALUES (?1,?2,1,'X','0','built','0')",
+                rusqlite::params![digest, bundle_id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO agent_bundle_active(bundle_id, bundle_digest, interval_ms, updated_at) \
+                 VALUES (?1,?2,1,'0')",
+                rusqlite::params![bundle_id, digest],
+            )
+            .unwrap();
+        }
+
+        /// Audit L-41. A stored digest that is not 64 lowercase hex characters is a REFUSED run
+        /// with a reason. It used to panic on `&digest[..12]` — inside the scheduler tick, which
+        /// holds the database mutex, so one bad row poisoned the lock for the whole application.
+        #[test]
+        fn l41_a_malformed_stored_digest_is_a_refused_run_and_never_a_panic() {
+            for (n, digest) in ["x", "", "ժժժժժ", "ABCDEF", &"g".repeat(64), &"a".repeat(63), &"a".repeat(65)]
+                .into_iter()
+                .enumerate()
+            {
+                let conn = crate::db::open(":memory:").unwrap();
+                let dir = tempfile::tempdir().unwrap();
+                arm_directly(&conn, &format!("agt-{n}"), digest);
+                let counts = enqueue_due(&conn, 1_000_000_000, dir.path())
+                    .unwrap_or_else(|e| panic!("{digest:?} was an error, not a refusal: {e:?}"));
+                assert_eq!(counts, (1, 0, 1), "{digest:?}");
+                let (state, reason): (String, Option<String>) = conn
+                    .query_row("SELECT state, refusal_reason FROM flow_runs", [], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .unwrap();
+                assert_eq!(state, "refused", "{digest:?}");
+                assert_eq!(reason.as_deref(), Some(MALFORMED_DIGEST_REASON), "{digest:?}");
+            }
+        }
+
+        /// The other half of L-41: the digest is joined onto the store root to find the bundle.
+        /// `Path::join` with an absolute path REPLACES the root, and `..` walks out of it, so a
+        /// stored digest chose which directory was verified. A malformed one is never joined.
+        #[test]
+        fn l41_a_stored_digest_cannot_name_a_directory_outside_the_store() {
+            let outside = tempfile::tempdir().unwrap();
+            let store = tempfile::tempdir().unwrap();
+            // A real, valid bundle — but outside the store.
+            let built = agent_bundle::build(outside.path(), &spec(1_000_000)).unwrap();
+            let absolute = outside.path().join(&built).to_string_lossy().into_owned();
+            for (n, digest) in [absolute.as_str(), "../escape", "a/b", "."].into_iter().enumerate() {
+                let conn = crate::db::open(":memory:").unwrap();
+                arm_directly(&conn, &format!("agt-{n}"), digest);
+                assert_eq!(enqueue_due(&conn, 1_000_000_000, store.path()).unwrap(), (1, 0, 1), "{digest:?}");
+                let state: String = conn.query_row("SELECT state FROM flow_runs", [], |r| r.get(0)).unwrap();
+                assert_eq!(state, "refused", "{digest:?} was verified from outside the store");
+            }
+        }
+
+        /// A QUEUED row whose digest names a valid bundle outside the store is not executed: the
+        /// claim refuses it before the path is built. `enqueue_due` would not have queued it; this
+        /// row stands for one that got there another way.
+        #[test]
+        fn l41_a_queued_run_with_a_malformed_digest_is_refused_at_the_claim() {
+            let outside = tempfile::tempdir().unwrap();
+            let store = tempfile::tempdir().unwrap();
+            let built = agent_bundle::build(outside.path(), &spec(1_000_000)).unwrap();
+            let absolute = outside.path().join(&built).to_string_lossy().into_owned();
+            for (n, digest) in [absolute.as_str(), "x", "../escape"].into_iter().enumerate() {
+                let conn = crate::db::open(":memory:").unwrap();
+                arm_directly(&conn, &format!("agt-{n}"), digest);
+                conn.execute(
+                    "INSERT INTO flow_runs(id, bundle_id, bundle_digest, trigger_kind, invoked_by, due_at, \
+                     state, created_at) VALUES ('fr-1', ?1, ?2, 'interval', 'run_due', '1', 'queued', '0')",
+                    rusqlite::params![format!("agt-{n}"), digest],
+                )
+                .unwrap();
+                let ran = claim_and_run(&conn, store.path(), "sess", 1_000_000_000).unwrap();
+                assert_eq!(ran.as_deref(), Some("fr-1"), "{digest:?}");
+                assert_eq!(
+                    state_of(&conn, "fr-1"),
+                    ("refused".to_string(), Some(MALFORMED_DIGEST_REASON.to_string())),
+                    "{digest:?}"
+                );
+            }
+        }
+
+        /// A natively confirmed grant to arm `digest`, as `register_and_arm` obtains one. With it
+        /// in place the ONLY thing left that can refuse `set_active` is the shape check — without
+        /// it every arming is refused for want of a grant, and a test of the shape check passes
+        /// for the wrong reason (found by breaking the check and watching the test stay green).
+        fn grant_to_arm(conn: &Connection, digest: &str) {
+            let ap = super::super::approvals::create(
+                conn,
+                super::super::approvals::AGENT_BUNDLE_ARM_ACTION_TYPE,
+                "T", "A2", "medium",
+                Some(super::super::approvals::AGENT_BUNDLE_ENTITY_TYPE),
+                Some(digest),
+                "webview:test", "sess-test", &crate::id(),
+                audit::Actor::local_operator(),
+            )
+            .unwrap();
+            super::super::approvals::approve_confirmed(
+                conn, &ap.id, super::super::approvals::NATIVE_CONFIRMER_PRINCIPAL, None,
+                ap.nonce.as_deref().unwrap(), ap.request_digest.as_deref().unwrap(),
+                audit::Actor::native_confirmer("native:test"),
+            )
+            .unwrap();
+        }
+
+        fn still_granted(conn: &Connection, digest: &str) -> bool {
+            super::super::approvals::approved_for(
+                conn, digest,
+                super::super::approvals::AGENT_BUNDLE_ENTITY_TYPE,
+                super::super::approvals::AGENT_BUNDLE_ARM_ACTION_TYPE,
+            )
+            .unwrap()
+        }
+
+        /// And the write boundary refuses such a digest in the first place.
+        #[test]
+        fn l41_a_malformed_digest_or_interval_is_refused_where_it_is_written() {
+            let conn = crate::db::open(":memory:").unwrap();
+            for (n, digest) in ["x", "", "../escape", &"A".repeat(64), &"a".repeat(63)].into_iter().enumerate() {
+                let bundle_id = format!("agt-{n}");
+                assert!(register(&conn, digest, &bundle_id, 1, "X").is_err(), "register took {digest:?}");
+                let rows: i64 = conn.query_row("SELECT COUNT(*) FROM agent_bundles", [], |r| r.get(0)).unwrap();
+                assert_eq!(rows, n as i64, "a refused register wrote a row for {digest:?}");
+                // The bundle row exists anyway (an older build's), and a grant to arm it exists:
+                // nothing but the shape check is left to refuse the arming.
+                conn.execute(
+                    "INSERT INTO agent_bundles(bundle_digest, bundle_id, bundle_version, display_name, \
+                     built_at, state, created_at) VALUES (?1,?2,1,'X','0','built','0')",
+                    rusqlite::params![digest, bundle_id],
+                )
+                .unwrap();
+                grant_to_arm(&conn, digest);
+                assert!(
+                    set_active(&conn, &bundle_id, digest, 60_000, true, audit::Actor::local_operator()).is_err(),
+                    "set_active took {digest:?}"
+                );
+                assert!(still_granted(&conn, digest), "a refused arming spent the grant for {digest:?}");
+            }
+            // An interval that is not positive makes every tick "due".
+            let good = "a".repeat(64);
+            register(&conn, &good, "agt-x", 1, "X").unwrap();
+            for interval in [0, -1] {
+                grant_to_arm(&conn, &good);
+                assert!(set_active(&conn, "agt-x", &good, interval, true, audit::Actor::local_operator()).is_err());
+                assert!(still_granted(&conn, &good), "a refused interval spent the grant");
+            }
+            let armed: i64 = conn.query_row("SELECT COUNT(*) FROM agent_bundle_active", [], |r| r.get(0)).unwrap();
+            assert_eq!(armed, 0);
+            // The control: the same grant and a good shape DO arm, so the refusals above are the
+            // shape check's and not something else's.
+            set_active(&conn, "agt-x", &good, 60_000, true, audit::Actor::local_operator()).unwrap();
+            // Disarming is the stop button: it is never refused for the shape of what it stops.
+            assert!(set_active(&conn, "agt-x", "x", 60_000, false, audit::Actor::local_operator()).is_ok());
         }
 
         /// The tick enqueues, and the row says the scheduler's entry point did it.
