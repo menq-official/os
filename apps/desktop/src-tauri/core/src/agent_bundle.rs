@@ -455,6 +455,26 @@ fn leaves_the_bundle(reference: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
+// A test seam at the one instant audit L-31 is about: every file's hash has just been accepted
+// and nothing has been parsed yet. A test swaps a file here; production compiles this to nothing.
+#[cfg(test)]
+thread_local! {
+    static AFTER_TABLE_VERIFIED: std::cell::RefCell<Option<Box<dyn Fn(&Path)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn after_table_verified(dir: &Path) {
+    AFTER_TABLE_VERIFIED.with(|hook| {
+        if let Some(f) = hook.borrow().as_ref() {
+            f(dir)
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn after_table_verified(_dir: &Path) {}
+
 /// Load and verify. Every failure is a typed [`Refusal`]; there is no path here
 /// that degrades to a weaker check.
 pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
@@ -481,13 +501,21 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
     if declared.len() != manifest.files.len() || on_disk.len() != declared.len() {
         return Err(Refusal::FileTableIncomplete);
     }
+    // Audit L-31: every file is read ONCE, here, and these are the bytes everything below
+    // uses. The grant and the flow used to be read a second time by path after this loop, and
+    // the second read was never compared with the table — so a file replaced between the two
+    // was loaded under the digest of the file it replaced.
+    let mut verified: BTreeMap<&str, Vec<u8>> = BTreeMap::new();
     for rel in &on_disk {
         let entry = declared.get(rel.as_str()).ok_or(Refusal::FileTableIncomplete)?;
         let bytes = read(&dir.join(rel))?;
         if sha256_hex(&bytes) != entry.sha256 || bytes.len() as u64 != entry.bytes {
             return Err(Refusal::FileHashMismatch);
         }
+        verified.insert(rel.as_str(), bytes);
     }
+
+    after_table_verified(dir);
 
     // The grant and the flow are opened BY THE NAME THE MANIFEST GIVES, and a name is
     // covered by the digest only if it is a row of the file table just checked. Joined
@@ -503,12 +531,9 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
         return Err(Refusal::RefOutsideBundle);
     }
 
-    // An absent grant is a refusal, not "no restrictions".
-    let grant_path = dir.join(&manifest.grant_ref);
-    if !declared.contains_key(manifest.grant_ref.as_str()) || !grant_path.is_file() {
-        return Err(Refusal::GrantAbsent);
-    }
-    let grant_bytes = read(&grant_path)?;
+    // An absent grant is a refusal, not "no restrictions". It is absent when it is not a row
+    // of the table that was just read — there is no second look at the disk to ask.
+    let grant_bytes = verified.get(manifest.grant_ref.as_str()).ok_or(Refusal::GrantAbsent)?;
     // The ONLY route to `GrantAbsent` for a file that exists. Everything below
     // reports `GrantUnparseable` instead, so a reader can tell "nobody wrote a
     // grant" from "someone wrote a broken one". Deleting this line makes the
@@ -518,7 +543,7 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
         return Err(Refusal::GrantAbsent);
     }
     let grant: Grant =
-        serde_json::from_slice(&grant_bytes).map_err(|_| Refusal::GrantUnparseable)?;
+        serde_json::from_slice(grant_bytes).map_err(|_| Refusal::GrantUnparseable)?;
     if Grant::is_prose_writer(&grant.written_by) {
         return Err(Refusal::GrantFromProse);
     }
@@ -526,11 +551,8 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
         return Err(Refusal::GrantExpired);
     }
 
-    if !declared.contains_key(manifest.flow_ref.as_str()) {
-        return Err(Refusal::Unreadable);
-    }
-    let flow: Flow = serde_json::from_slice(&read(&dir.join(&manifest.flow_ref))?)
-        .map_err(|_| Refusal::FlowUnparseable)?;
+    let flow_bytes = verified.get(manifest.flow_ref.as_str()).ok_or(Refusal::Unreadable)?;
+    let flow: Flow = serde_json::from_slice(flow_bytes).map_err(|_| Refusal::FlowUnparseable)?;
     if flow.steps.len() < 2 || flow.steps.len() as u32 > flow.max_steps {
         return Err(Refusal::FlowUnparseable);
     }
@@ -632,6 +654,54 @@ mod tests {
                        next: None },
             ],
         }
+    }
+
+    /// Run `verify` with `swap` called at the instant the file table has been accepted.
+    fn verify_with_swap_after_the_table(dir: &Path, swap: impl Fn(&Path) + 'static) -> Result<VerifiedBundle, Refusal> {
+        AFTER_TABLE_VERIFIED.with(|hook| *hook.borrow_mut() = Some(Box::new(swap)));
+        let outcome = verify(dir, 1_000_000);
+        AFTER_TABLE_VERIFIED.with(|hook| *hook.borrow_mut() = None);
+        outcome
+    }
+
+    /// Audit L-31. The approval names a digest; the digest covers the bytes that were HASHED.
+    /// A grant swapped in after its hash was accepted must not be the grant the bundle acts on.
+    #[test]
+    fn l31_a_grant_swapped_after_its_hash_was_accepted_is_not_the_grant_that_is_used() {
+        let (dir, digest) = built(1_000_000);
+        let bundle = dir.path().join(&digest);
+        let original: Grant = serde_json::from_slice(&std::fs::read(bundle.join("grant.json")).unwrap()).unwrap();
+        let verified = verify_with_swap_after_the_table(&bundle, |dir| {
+            let path = dir.join("grant.json");
+            let mut wider: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            wider["capabilities"].as_array_mut().unwrap().push("EGRESS_ANYWHERE".into());
+            wider["credential_slots"].as_array_mut().unwrap().push("payments".into());
+            wider["expires_at_epoch"] = serde_json::json!(9_999_999_999i64);
+            // An atomic replace, as the finding describes: write beside, then rename over.
+            let beside = dir.join("grant.json.swap");
+            std::fs::write(&beside, serde_json::to_vec(&wider).unwrap()).unwrap();
+            std::fs::rename(&beside, &path).unwrap();
+        })
+        .expect("the bundle that was hashed is valid");
+        assert_eq!(verified.grant.capabilities, original.capabilities, "the wider grant was loaded");
+        assert_eq!(verified.grant.credential_slots, original.credential_slots);
+        assert_eq!(verified.grant.expires_at_epoch, original.expires_at_epoch);
+    }
+
+    #[test]
+    fn l31_a_flow_swapped_after_its_hash_was_accepted_is_not_the_flow_that_is_used() {
+        let (dir, digest) = built(1_000_000);
+        let bundle = dir.path().join(&digest);
+        let verified = verify_with_swap_after_the_table(&bundle, |dir| {
+            let path = dir.join("flow.json");
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(text.contains("\"one\""), "the fixture's first step argument moved: {text}");
+            let beside = dir.join("flow.json.swap");
+            std::fs::write(&beside, text.replace("\"one\"", "\"something else entirely\"")).unwrap();
+            std::fs::rename(&beside, &path).unwrap();
+        })
+        .expect("the bundle that was hashed is valid");
+        assert_eq!(verified.flow.steps[0].argument.as_deref(), Some("one"), "the swapped flow was loaded");
     }
 
     fn built(now: i64) -> (tempfile::TempDir, String) {

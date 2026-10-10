@@ -41,6 +41,8 @@ ninth is there under *Round 9*.
 >   at arming, in `enqueue_due` and at the claim; a malformed one is a refused run, never a panic.
 > - **`L-43` (P2) fixed ◑**: the Linux TCB floor returned `Ok` for an artifact pinned at `broker`. A path
 >   that is not absolute and normalised is `NonAbsolutePath` before anything is probed.
+> - **`L-31` (P2) fixed ◑**: a grant swapped after its hash was accepted was loaded, with an added
+>   capability, under the old digest. Every bundle file is read once and parsed from those bytes.
 >
 > The gate is shut and the round confirms it. What it found is **behind** the gate and beside it:
 > `K-01` and `K-02` make the governed path fail the day refusal 3 is cleared, `K-03` was **reachable**
