@@ -39,6 +39,8 @@ ninth is there under *Round 9*.
 > - **`L-41` (P3) fixed ◑**, and wider than filed: a stored digest that was an absolute path made the
 >   scheduler verify and QUEUE a bundle outside the store. A digest is 64 lowercase hex at `register`,
 >   at arming, in `enqueue_due` and at the claim; a malformed one is a refused run, never a panic.
+> - **`L-43` (P2) fixed ◑**: the Linux TCB floor returned `Ok` for an artifact pinned at `broker`. A path
+>   that is not absolute and normalised is `NonAbsolutePath` before anything is probed.
 >
 > The gate is shut and the round confirms it. What it found is **behind** the gate and beside it:
 > `K-01` and `K-02` make the governed path fail the day refusal 3 is cleared, `K-03` was **reachable**

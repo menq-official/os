@@ -175,6 +175,9 @@ pub enum TcbViolation {
     },
     /// An ancestor directory is writable by the login user or a runtime UID (a rename/replace vector).
     AncestorWritable { logical_name: String, ancestor: String },
+    /// The pinned path is not an absolute, normalised path (audit L-43), so the ancestor chain
+    /// that guards it against rename/replace cannot be derived from it. Refused before probing.
+    NonAbsolutePath { logical_name: String, path: String },
     /// A caller asked for THE artifact under a role ([`TcbPinManifest::sole_artifact`]) and the
     /// manifest pins more than one. Not raised by [`verify_tcb_integrity`], which measures them all.
     AmbiguousRole { logical_name: String, paths: Vec<String> },
@@ -197,6 +200,7 @@ impl TcbViolation {
             | TcbViolation::AncestorMissing { logical_name, .. }
             | TcbViolation::AncestorWrongOwner { logical_name, .. }
             | TcbViolation::AncestorWritable { logical_name, .. }
+            | TcbViolation::NonAbsolutePath { logical_name, .. }
             | TcbViolation::AmbiguousRole { logical_name, .. } => logical_name,
         }
     }
@@ -303,6 +307,16 @@ fn verify_artifact(
     runtime_uids: &[u32],
     login_uid: u32,
 ) -> Result<(), TcbViolation> {
+    // Audit L-43: the path's SHAPE first, before anything is probed. Everything below — the
+    // ancestor walk above all — reads this string, and only an absolute, normalised path names
+    // the directories that actually resolve it.
+    if !is_absolute_normalised(&art.path) {
+        return Err(TcbViolation::NonAbsolutePath {
+            logical_name: art.logical_name.clone(),
+            path: art.path.clone(),
+        });
+    }
+
     let facts = probe.stat(&art.path).ok_or_else(|| TcbViolation::Missing {
         logical_name: art.logical_name.clone(),
         path: art.path.clone(),
@@ -380,6 +394,22 @@ fn verify_artifact(
 /// The ancestor directories of `path`, from its immediate parent up to and including `/`. Paths are
 /// treated as `/`-separated absolute strings (trailing slashes ignored). A path with no `/` yields no
 /// ancestors.
+/// Whether `path` is a POSIX path this verifier can reason about: it starts at `/`, names a
+/// file (not `/` itself, no trailing `/`), and has no empty, `.` or `..` segment and no NUL.
+///
+/// Audit L-43. [`ancestor_dirs`] walks the STRING. For `broker` it finds no `/` and returns
+/// nothing, so the working directory that resolves the name was never checked; for
+/// `/opt/brops/../bin/broker` it checks directories the kernel does not traverse. Windows has
+/// its own verifier and its own rule (`win-live`, `WinTcbViolation::NonAbsolutePath`).
+fn is_absolute_normalised(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix('/') else {
+        return false;
+    };
+    // `/` itself and a trailing `/` both leave an EMPTY segment, so the one rule covers them.
+    !path.contains('\0')
+        && rest.split('/').all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
 fn ancestor_dirs(path: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = path.trim_end_matches('/');
@@ -710,6 +740,47 @@ mod tests {
         let fs = clean_fs();
         let err = verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err();
         assert!(matches!(err, TcbViolation::UnknownOwner { owner: TcbOwner::Root, .. }));
+    }
+
+    /// The clean manifest and filesystem with ONE artifact's path replaced by `path`, and the
+    /// fake filesystem made to answer perfectly for that path — expected owner, not writable,
+    /// pinned hash — and for every ancestor the string-walk derives from it. So nothing but the
+    /// path's own shape is left to refuse it.
+    fn with_broker_at(path: &str) -> (TcbPinManifest, FakeFs) {
+        let mut m = manifest();
+        let mut fs = clean_fs();
+        for art in m.artifacts.iter_mut() {
+            if art.logical_name == "trusted-verifier-broker.bin" {
+                art.path = path.to_string();
+                fs.good_file(path, ROOT, &art.expected_sha256);
+            }
+        }
+        (m, fs)
+    }
+
+    /// Audit L-43. A path that is not absolute has no ancestor chain this verifier can walk: for
+    /// `broker` the walk is empty, so the directory that actually resolves it — the process's
+    /// working directory — was never checked, and the floor was GREEN on it.
+    #[test]
+    fn l43_an_artifact_path_that_is_not_absolute_and_normalised_is_refused() {
+        for path in [
+            "broker", "relative/dir/broker", "./broker", "../broker", "",
+            "/opt/brops/../bin/broker", "/opt/./brops/broker", "/opt//brops/broker",
+            "/opt/brops/broker/", "/", "/opt/brops/bro\0ker",
+        ] {
+            let (m, fs) = with_broker_at(path);
+            match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN) {
+                Err(TcbViolation::NonAbsolutePath { logical_name, path: named }) => {
+                    assert_eq!(logical_name, "trusted-verifier-broker.bin");
+                    assert_eq!(named, path);
+                }
+                other => panic!("{path:?} was not refused for its shape: {other:?}"),
+            }
+        }
+        // The control: the same construction with a clean absolute path passes, so the refusals
+        // above are the shape check's.
+        let (m, fs) = with_broker_at("/opt/elsewhere/bin/broker");
+        assert_eq!(verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN), Ok(()));
     }
 
     #[test]
