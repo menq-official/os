@@ -25,7 +25,14 @@ The tenth round, superseded: [`2026-09-19-tenth-audit-75fca65.md`](./2026-09-19-
 `J-01`–`J-04` are in [`AUDIT_LEDGER_ARCHIVE.md`](./AUDIT_LEDGER_ARCHIVE.md) under *Round 10*; the
 ninth is there under *Round 9*.
 
-> ## THE ELEVENTH ROUND: TEN FILED, TWO ANSWERED BY THE BUILDER
+> ## THE ELEVENTH ROUND: TEN FILED, SEVEN ANSWERED BY THE BUILDER
+>
+> **A twelfth review is UNFINISHED and is not the assessment.** Commissioned 2026-10-09 at `ca6fc74`;
+> the reviewer's quota ended at 110 of 172 files, with `L-01`–`L-43` (one P1, `L-17`) and no verdict.
+> It resumes 2026-10-16. Kept openable, outside this directory so it cannot become the current
+> assessment: [report](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md),
+> [files read](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md). No `L` finding
+> has been reproduced by the Builder unless a row below says so.
 >
 > The gate is shut and the round confirms it. What it found is **behind** the gate and beside it:
 > `K-01` and `K-02` make the governed path fail the day refusal 3 is cleared, `K-03` was **reachable**

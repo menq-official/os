@@ -160,6 +160,43 @@ class GateTests(unittest.TestCase):
                                                 encoding="utf-8")
         self.only(root, "`docs/NOTES.md` cites the SEVENTH round and no report")
 
+    # ---- an unfinished review (T-170) ----
+
+    def _unfinished(self, root: pathlib.Path, name: str, size: int = 4096) -> None:
+        directory = root / m.IN_PROGRESS_DIR
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_text("x" * size, encoding="utf-8")
+
+    def test_a_cited_round_whose_unfinished_report_is_kept_openable_is_green(self):
+        root = build([FOURTH_NAMED, SIXTH], SIXTH, "sixth", SIXTH, "sixth")
+        (root / "docs" / "NOTES.md").write_text("Found by (L-17, seventh audit).\n", encoding="utf-8")
+        self._unfinished(root, "2026-10-09-seventh-audit-abc1234-UNFINISHED.md")
+        code, failures, _ = failures_of(root)
+        self.assertEqual((code, failures), (0, []))
+
+    def test_an_unfinished_report_does_not_let_the_banner_announce_its_round(self):
+        # 3b is untouched: the ANNOUNCED round still needs a filed report with a verdict.
+        root = build([FOURTH_NAMED, SIXTH], SIXTH, "seventh", SIXTH, "seventh")
+        self._unfinished(root, "2026-10-09-seventh-audit-abc1234-UNFINISHED.md")
+        code, failures, _ = failures_of(root)
+        self.assertEqual(code, 1)
+        self.assertTrue(any("announces the SEVENTH round and no report" in f for f in failures), failures)
+
+    def test_an_unfinished_report_of_another_round_opens_nothing(self):
+        root = build([FOURTH_NAMED, SIXTH], SIXTH, "sixth", SIXTH, "sixth")
+        (root / "docs" / "NOTES.md").write_text("Found by (L-17, seventh audit).\n", encoding="utf-8")
+        self._unfinished(root, "2026-10-09-eighth-audit-abc1234-UNFINISHED.md")
+        self.only(root, "`docs/NOTES.md` cites the SEVENTH round and no report")
+
+    def test_a_placeholder_or_a_file_without_the_suffix_opens_nothing(self):
+        for name, size in (("2026-10-09-seventh-audit-abc1234-UNFINISHED.md", 10),
+                           ("2026-10-09-seventh-audit-abc1234.md", 4096)):
+            with self.subTest(name=name, size=size):
+                root = build([FOURTH_NAMED, SIXTH], SIXTH, "sixth", SIXTH, "sixth")
+                (root / "docs" / "NOTES.md").write_text("Found by (L-17, seventh audit).\n", encoding="utf-8")
+                self._unfinished(root, name, size)
+                self.only(root, "`docs/NOTES.md` cites the SEVENTH round and no report")
+
     def test_a_document_that_announces_no_round_is_red_not_skipped(self):
         """The comparison was `if led and own and led != own`: a banner the gate could not
         read made the check vanish, and the GREEN line still said both pages "lead with" the

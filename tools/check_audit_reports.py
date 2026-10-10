@@ -57,6 +57,26 @@ STATE = "config/current_state.json"
 #: documents. Deliberately generous: the shortest real report in this directory is far above it.
 MIN_REPORT_BYTES = 2048
 
+#: Where a review that has NOT finished is kept (T-170). A report filed in `AUDIT_DIR` becomes the
+#: authoritative assessment by being the newest file there; one with no verdict must not. So an
+#: unfinished report lives here, named `…-<ordinal>-…-UNFINISHED.md`, and counts for exactly one
+#: thing: a document may CITE its round (check 3d), because the cited text can be opened. It is
+#: never the announced round (3b), never the newest report (2), and never what the ledger's
+#: "Authoritative current assessment" may point at.
+IN_PROGRESS_DIR = "docs/audit-in-progress"
+UNFINISHED_SUFFIX = "-UNFINISHED.md"
+
+
+def unfinished_reports(root: pathlib.Path) -> list[str]:
+    """Names of unfinished reports big enough to be one. A placeholder satisfies nothing."""
+    directory = root / IN_PROGRESS_DIR
+    if not directory.is_dir():
+        return []
+    return sorted(
+        p.name for p in directory.iterdir()
+        if p.is_file() and p.name.endswith(UNFINISHED_SUFFIX) and p.stat().st_size >= MIN_REPORT_BYTES
+    )
+
 #: The ordinals a round is written with, in order. Matching on words rather than digits because
 #: that is how both documents are written ("the FOURTH independent audit", "FIFTH AUDIT").
 #:
@@ -371,10 +391,13 @@ def main(argv: list[str] | None = None) -> int:
     cited = highest_cited_ordinal(root)
     if cited:
         word, where = cited
-        if not any(f"-{word}-" in n for n in reports):
+        opens = any(f"-{word}-" in n for n in reports) or any(
+            f"-{word}-" in n for n in unfinished_reports(root))
+        if not opens:
             failures.append(
                 f"`{where}` cites the {word.upper()} round and no report in {AUDIT_DIR} names it "
-                f"(expected a filename containing `-{word}-`). A citation that outlives its report "
+                f"(expected a filename containing `-{word}-`, or an unfinished one in "
+                f"{IN_PROGRESS_DIR} ending `{UNFINISHED_SUFFIX}`). A citation that outlives its report "
                 f"is A-06, and it has now happened twice: once with the banner ahead of the file, "
                 f"once with the banner behind it. If anything in this repository refers to a "
                 f"round, that round has a report.")
