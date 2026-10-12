@@ -432,6 +432,31 @@ fn parse_args() -> Args {
     }
 }
 
+/// What one sidecar reply served, for the evidence row: taken before this driver mutates anything.
+///
+/// Audit L-32. `served_chunk_sha256` was the digest of the base64url TEXT under a name and a comment
+/// that say it is the digest of the bytes served, so anyone recomputing a content digest got a
+/// mismatch on the positive path too. It is the digest of the DECODED bytes now. A `bytes_b64`
+/// that is absent, or is not canonical base64url, has no content to hash: the digest and the
+/// length are `null`, and the pull's own malformed-reply outcome is what names the failure.
+struct ServedChunk {
+    sha256: Option<String>,
+    len: Option<usize>,
+    b64_len: Option<usize>,
+}
+
+impl ServedChunk {
+    fn of(reply: &Value) -> ServedChunk {
+        let b64 = reply.get("bytes_b64").and_then(Value::as_str);
+        let bytes = b64.and_then(|text| URL_SAFE_NO_PAD.decode(text.as_bytes()).ok());
+        ServedChunk {
+            sha256: bytes.as_deref().map(sha256_hex),
+            len: bytes.as_ref().map(Vec::len),
+            b64_len: b64.map(str::len),
+        }
+    }
+}
+
 fn main() {
     let args = parse_args();
 
@@ -501,7 +526,7 @@ fn main() {
         let seq = transcript_seq;
         transcript_seq += 1;
         let (mut reply, exit) = round_trip(&args.sidecar, request)?;
-        let served_b64 = reply.get("bytes_b64").and_then(Value::as_str).map(str::to_string);
+        let served = ServedChunk::of(&reply);
         let mutated = mutate_reply(args.mode, &mut reply);
         chunks.push(json!({
             "seq": seq,
@@ -516,8 +541,9 @@ fn main() {
             // The digest of the bytes the SIDECAR served, before this driver's own mutation. Recorded
             // so a reader can tell a transport that served the wrong range from a driver that broke a
             // correct one — which is the whole difference between the two negatives below.
-            "served_chunk_sha256": served_b64.as_ref().map(|b| sha256_hex(b.as_bytes())),
-            "served_chunk_b64_len": served_b64.as_ref().map(|b| b.len()),
+            "served_chunk_sha256": served.sha256,
+            "served_chunk_len": served.len,
+            "served_chunk_b64_len": served.b64_len,
             "mutated_by_driver": mutated,
         }));
         Ok(reply)
@@ -756,6 +782,45 @@ mod tests {
         assert!(!mutate_reply(Mode::UnknownStream, &mut reply));
         assert!(!mutate_reply(Mode::BindingMismatch, &mut reply));
         assert_eq!(reply, before);
+    }
+
+    /// L-32, the reviewer's input: `AQI` is the two bytes `01 02`. The evidence row carries the digest
+    /// and the length of those two bytes, and beside them — under its own name — the length of the
+    /// text that carried them.
+    #[test]
+    fn the_served_chunk_digest_is_of_the_bytes_and_not_of_their_encoding() {
+        let served = ServedChunk::of(&json!({"bytes_b64": "AQI"}));
+        assert_eq!(served.sha256.as_deref(), Some(sha256_hex(&[0x01, 0x02]).as_str()));
+        assert_ne!(served.sha256.as_deref(), Some(sha256_hex(b"AQI").as_str()));
+        assert_eq!((served.len, served.b64_len), (Some(2), Some(3)));
+        // A zero-byte chunk is a chunk: the digest of nothing, and a length of zero.
+        let empty = ServedChunk::of(&json!({"bytes_b64": ""}));
+        assert_eq!(empty.sha256.as_deref(), Some(sha256_hex(&[]).as_str()));
+        assert_eq!((empty.len, empty.b64_len), (Some(0), Some(0)));
+    }
+
+    /// Where there are no bytes there is no digest: a refused reply, and text that is not canonical
+    /// base64url — whose length is still recorded, because that much was served.
+    #[test]
+    fn a_reply_with_no_decodable_bytes_has_no_content_digest() {
+        let refused = ServedChunk::of(&json!({"bytes_b64": Value::Null, "ok": false}));
+        assert!(refused.sha256.is_none() && refused.len.is_none() && refused.b64_len.is_none());
+        for text in ["AQI=", "AQJ", "A", "not base64!"] {
+            let served = ServedChunk::of(&json!({"bytes_b64": text}));
+            assert!(served.sha256.is_none() && served.len.is_none(), "{text} was hashed");
+            assert_eq!(served.b64_len, Some(text.len()), "{text}");
+        }
+    }
+
+    /// And the row is built from the reply as the sidecar sent it, before the driver's mutation.
+    #[test]
+    fn the_served_chunk_is_measured_before_the_driver_mutates_the_reply() {
+        let source = include_str!("ladder_output_pull.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let measured = production.find("let served = ServedChunk::of(&reply);").expect("not measured");
+        let mutated = production.find("let mutated = mutate_reply(args.mode, &mut reply);").expect("no mutation");
+        assert!(measured < mutated, "the evidence would describe the driver's own tamper");
+        assert!(production.contains("\"served_chunk_sha256\": served.sha256,"));
     }
 
     #[test]

@@ -93,6 +93,13 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   held whole. Seven mutants, seven named deaths. Not done: a per-role maximum for artifacts, so a
   very large pinned file still costs the time to hash it; the non-Linux loader, which refuses on
   the platform anyway, still reads unbounded.
+- **`L-32` (P3).** `served_chunk_sha256` in the ladder pull's evidence was the digest of the base64url
+  text under a name and a comment that say it is the digest of the bytes served; for `AQI` the two
+  differ. It is the digest of the decoded bytes, with their length beside it; a reply with no
+  bytes, or text that is not canonical base64url, has neither. Four mutants, four named deaths, the
+  first of them the old code. Nothing in the tree reads these fields. The same finding is
+  `R3-0105` of the cockpit read, marked closed there. Not done: evidence files written before
+  this carry the old digest under the same name.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
