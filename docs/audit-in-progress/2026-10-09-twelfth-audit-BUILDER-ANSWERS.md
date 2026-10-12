@@ -110,6 +110,14 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   Not done: the refusal paths still settle best-effort (a lost write there leaves `live` until the
   stale reconciliation makes it `blocked`, which is what the reply already said); a failure of
   `COMMIT` itself is reported as blocked without re-reading what became durable.
+- **`L-35` (P3).** A broker database made by the release before `09b4803` kept the one-state
+  constraint, and a demonstration-custody turn failed there with `CommitReadbackMismatch` while a
+  fresh database accepted it: reproduced with that release's own DDL, taken from history. Schema
+  creation now reads back the table that is there: the current shape is left, the former one is
+  rebuilt in one transaction with its rows, and any other shape refuses startup with the shape
+  named. Six mutants, five named deaths; the row-count comparison survives alone, because nothing
+  a test can do makes `INSERT … SELECT` lose a row. Not done: a schema version number — the
+  shape is recognised by its constraint text; the other broker tables were not looked at.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is

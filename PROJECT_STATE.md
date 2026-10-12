@@ -11,7 +11,7 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `3d7a146`.** PR #406 on `l-33` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `90f3c5e`.** PR #407 on `l-35` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** L-17, L-25, L-26 wait on the Owner; other L; K-01, K-09 to decide.
 >
@@ -48,7 +48,7 @@ Each row carries the date it was measured, because they are not measured togethe
 | frontend · 2026-10-09 | typecheck clean, 1153 / 87 files |
 | **Debian** | |
 | engine (Python), non-root, Debian 13 · 2026-10-08 | 2741 OK, 17 skipped |
-| Rust, 10 crates · 2026-10-12 | 1504 passed, 1 ignored (needs root; CI runs it) |
+| Rust, 10 crates · 2026-10-12 | 1508 passed, 1 ignored (needs root; CI runs it) |
 | `npm audit --audit-level=high` · 2026-09-01 | 0 vulns |
 | FW-1 boundary proof · 2026-09-01 | 23/23 x3 |
 
@@ -75,7 +75,7 @@ All 35 contexts in `config/required-checks.json` are required on `main`, with `s
 on this plan a private repository carries no protection, and going private deletes the rules.
 
 **The `.deb` was installed here 2026-10-09** and runs: mirrors granted, self-test on Linux,
-governed turn refused (OWNER 2h). `T-169`'s design was REJECTED. OS follows MenQ Standard 2.0.0 (`T-171`). A 12th review is unfinished: `L-01`–`L-43` (15 ◑).
+governed turn refused (OWNER 2h). `T-169`'s design was REJECTED. OS follows MenQ Standard 2.0.0 (`T-171`). A 12th review is unfinished: `L-01`–`L-43` (16 ◑).
 
 **Two audit reports went missing, one unrecoverable** — the fifth never filed (15 promotions not
 carried), the seventh reconstructed from two commit messages. `A-06` in the ledger.

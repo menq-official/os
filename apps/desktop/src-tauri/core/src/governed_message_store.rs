@@ -42,12 +42,38 @@ pub use crate::receipt::sha256_hex;
 /// chain ran. The renderer keys its badge off this string, so a demonstration turn renders as what
 /// it is. The CHECK stays closed — an unresolved or invented state cannot be written.
 ///
-/// NOTE for an existing database: `CREATE TABLE IF NOT EXISTS` leaves an older table's stricter
-/// constraint in place, so a database created before this change rejects a `demonstration_custody`
-/// row until it is recreated. Stated rather than silently worked around.
+/// AN EXISTING DATABASE (audit L-35). `CREATE TABLE IF NOT EXISTS` leaves an older table exactly
+/// as it is, so a database made by the release before this constraint was widened kept the
+/// one-state CHECK: a fresh install committed a demonstration-custody turn and an upgraded one
+/// refused it, at the moment a verified turn was being committed. The table that is THERE is now
+/// read back and told apart:
+///
+/// * the current shape — nothing to do;
+/// * the former shape — rebuilt in one transaction ([`migrate_former_table`]), rows kept;
+/// * anything else — refused here, at startup, with the shape named. This module will not guess
+///   what a table it does not recognise is constrained to.
 pub fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS governed_messages (
+    conn.execute_batch(&format!("CREATE TABLE IF NOT EXISTS governed_messages {COLUMNS_AND_CHECK};"))?;
+    let existing: String = conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'governed_messages'",
+        [],
+        |r| r.get(0),
+    )?;
+    if existing.contains(CURRENT_TRUST_CHECK) {
+        Ok(())
+    } else if existing.contains(FORMER_TRUST_CHECK) {
+        migrate_former_table(conn)
+    } else {
+        Err(schema_refusal(format!(
+            "governed_messages exists with a shape this broker does not recognise, and is not \
+             migrated or used: {existing}"
+        )))
+    }
+}
+
+/// The table's columns and its one constraint — the text both the fresh table and the migration
+/// are built from, so they cannot come to differ.
+const COLUMNS_AND_CHECK: &str = "(
             message_id     TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL,
             broker_turn_id TEXT NOT NULL,
@@ -57,8 +83,46 @@ pub fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at_ms  INTEGER NOT NULL,
             trust_state    TEXT NOT NULL
                 CHECK (trust_state IN ('trusted_verified', 'demonstration_custody'))
-        );",
-    )
+        )";
+
+/// How the two shapes this module knows are recognised in `sqlite_master`, which keeps a table's
+/// text as it was written: each constraint is one line of the statement that made it.
+const CURRENT_TRUST_CHECK: &str = "CHECK (trust_state IN ('trusted_verified', 'demonstration_custody'))";
+const FORMER_TRUST_CHECK: &str = "CHECK (trust_state = 'trusted_verified')";
+
+/// Rebuild a former-shape table under the current constraint, in ONE transaction: the new table,
+/// every row copied, the count compared, the old table dropped, the new one given its name. A
+/// failure at any step leaves the database as it was — the former table, intact — and is the
+/// startup error. Every former row is `trusted_verified`, which the wider constraint admits.
+fn migrate_former_table(conn: &Connection) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(&format!(
+        "DROP TABLE IF EXISTS governed_messages_migrating;
+         CREATE TABLE governed_messages_migrating {COLUMNS_AND_CHECK};
+         INSERT INTO governed_messages_migrating
+             (message_id, conversation_id, broker_turn_id, author, body, body_sha256, created_at_ms, trust_state)
+         SELECT message_id, conversation_id, broker_turn_id, author, body, body_sha256, created_at_ms, trust_state
+           FROM governed_messages;"
+    ))?;
+    let count = |table: &str| -> rusqlite::Result<i64> {
+        tx.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+    };
+    let (before, after) = (count("governed_messages")?, count("governed_messages_migrating")?);
+    if before != after {
+        return Err(schema_refusal(format!(
+            "governed_messages migration copied {after} of {before} rows; nothing was changed"
+        )));
+    }
+    tx.execute_batch(
+        "DROP TABLE governed_messages;
+         ALTER TABLE governed_messages_migrating RENAME TO governed_messages;",
+    )?;
+    tx.commit()
+}
+
+/// A refusal of this module's own, in the error type the schema functions return.
+fn schema_refusal(message: String) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA), Some(message))
 }
 
 /// What the broker holds after verification succeeds: the accepted output whose byte-length AND SHA-256
@@ -342,6 +406,116 @@ mod tests {
     /// A demonstration-custody run is a real chain run whose anchor proves nothing about who holds
     /// the root. It commits — the evidence that the chain ran is worth keeping — but it commits
     /// under its own label, and nothing downstream can mistake it for production.
+    /// The table as the release before `09b4803` created it: one trust state, by constraint.
+    const FORMER_DDL: &str = "CREATE TABLE IF NOT EXISTS governed_messages (
+            message_id     TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            broker_turn_id TEXT NOT NULL,
+            author         TEXT NOT NULL,
+            body           TEXT NOT NULL,
+            body_sha256    TEXT NOT NULL,
+            created_at_ms  INTEGER NOT NULL,
+            trust_state    TEXT NOT NULL CHECK (trust_state = 'trusted_verified')
+        );";
+
+    /// L-35, the reviewer's sequence: a database the former release made, opened by this one,
+    /// commits a demonstration-custody turn — and keeps the row it already held.
+    #[test]
+    fn a_database_from_the_former_release_is_migrated_and_keeps_its_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(FORMER_DDL).unwrap();
+        conn.execute(
+            "INSERT INTO governed_messages VALUES ('m-old','conv-0','bt-0','Bro','before',?1,7,'trusted_verified')",
+            [sha256_hex(b"before")],
+        )
+        .unwrap();
+
+        create_schema(&conn).unwrap();
+
+        let msg = persist_committed(&conn, &accepted("hello world"), &demonstration())
+            .expect("a demonstration turn commits after the upgrade");
+        assert_eq!(msg.trust_state, "demonstration_custody");
+        let kept: (String, String, i64, String) = conn
+            .query_row(
+                "SELECT conversation_id, body, created_at_ms, trust_state FROM governed_messages WHERE message_id = 'm-old'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .expect("the row from before the upgrade is still there");
+        assert_eq!(kept, ("conv-0".into(), "before".into(), 7, "trusted_verified".into()));
+        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM governed_messages", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 2);
+    }
+
+    /// After the migration the table is the current one: a second start does nothing, and the
+    /// constraint is still closed.
+    #[test]
+    fn a_migrated_database_is_the_current_shape_and_starting_again_changes_nothing() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(FORMER_DDL).unwrap();
+        create_schema(&conn).unwrap();
+        let shape = |c: &Connection| -> String {
+            c.query_row("SELECT sql FROM sqlite_master WHERE name = 'governed_messages'", [], |r| r.get(0)).unwrap()
+        };
+        let migrated = shape(&conn);
+        assert!(migrated.contains("demonstration_custody"), "{migrated}");
+        create_schema(&conn).unwrap();
+        assert_eq!(shape(&conn), migrated);
+        let leftovers: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE name = 'governed_messages_migrating'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(leftovers, 0);
+        // Still a closed set: a state nobody resolved cannot be written to the migrated table.
+        let invented = conn.execute(
+            "INSERT INTO governed_messages VALUES ('m-x','c','bt','Bro','b','h',1,'looks_fine')",
+            [],
+        );
+        assert!(invented.is_err());
+    }
+
+    /// A table this module did not make is not migrated and not used: startup refuses, names
+    /// the shape, and leaves the table and its rows alone.
+    #[test]
+    fn a_table_of_an_unrecognised_shape_refuses_startup_and_is_left_alone() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE governed_messages (message_id TEXT PRIMARY KEY, trust_state TEXT NOT NULL);
+             INSERT INTO governed_messages VALUES ('m-1', 'whatever');",
+        )
+        .unwrap();
+        let e = create_schema(&conn).unwrap_err().to_string();
+        assert!(e.contains("does not recognise"), "{e}");
+        assert!(e.contains("trust_state TEXT NOT NULL"), "the refusal does not show the shape: {e}");
+        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM governed_messages", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    /// A migration that cannot finish leaves the former table as it was. Here the copy is made
+    /// to fail by a row the wider constraint still refuses — a state that is neither value,
+    /// which only a table edited by hand could hold.
+    #[test]
+    fn a_migration_that_fails_leaves_the_former_table_and_its_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(FORMER_DDL).unwrap();
+        conn.execute_batch(
+            "PRAGMA ignore_check_constraints = ON;
+             INSERT INTO governed_messages VALUES ('m-odd','c','bt','Bro','b','h',1,'looks_fine');
+             PRAGMA ignore_check_constraints = OFF;",
+        )
+        .unwrap();
+        assert!(create_schema(&conn).is_err());
+        let shape: String = conn
+            .query_row("SELECT sql FROM sqlite_master WHERE name = 'governed_messages'", [], |r| r.get(0))
+            .unwrap();
+        assert!(shape.contains("trust_state = 'trusted_verified'"), "the former table is gone: {shape}");
+        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM governed_messages", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
+        let leftovers: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE name = 'governed_messages_migrating'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(leftovers, 0, "a half-made table survived the failed migration");
+    }
+
     #[test]
     fn demonstration_custody_commits_under_its_own_label_not_trusted_verified() {
         let conn = Connection::open_in_memory().unwrap();
