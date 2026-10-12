@@ -94,6 +94,33 @@ pub fn manifest_ancestor_violation(
     None
 }
 
+/// The most a pin manifest may be. A manifest for all twenty-one roles is 4,518 bytes in this
+/// crate's own fixture, written compact as the kits write theirs (the kits' own files are made in
+/// CI as root and were not measured); this is some two hundred times that, and far below anything
+/// that strains a process.
+///
+/// Audit L-30. The reader took the whole file into memory before parsing it, so the document
+/// that decides what the floor measures could instead end the broker by its size — JSON
+/// whitespace ahead of a valid manifest is still a valid manifest.
+pub const MAX_PIN_MANIFEST_BYTES: u64 = 1024 * 1024;
+
+/// Read at most `max` bytes of a pin manifest from `source`, refusing one that is longer.
+///
+/// One byte past the ceiling is asked for and never kept: reaching it is what shows the file is
+/// longer than its size said when it was opened — it grew, or its size was never the truth.
+pub fn read_manifest_bounded(path: &str, source: impl std::io::Read, max: u64) -> Result<String, String> {
+    use std::io::Read;
+    let mut raw = String::new();
+    source
+        .take(max + 1)
+        .read_to_string(&mut raw)
+        .map_err(|e| format!("TCB pin manifest {path} unreadable: {e}"))?;
+    if raw.len() as u64 > max {
+        return Err(format!("TCB pin manifest {path} is larger than the {max}-byte ceiling"));
+    }
+    Ok(raw)
+}
+
 /// Parse the pin manifest, with NO custody check. `None` on unreadable or malformed.
 ///
 /// Kept separate and named for what it is: the Linux path uses
@@ -219,10 +246,9 @@ pub fn read_pin_manifest_checked(
     login_and_runtime_uids: &[u32],
     login_uid: u32,
 ) -> Result<TcbPinManifest, String> {
-    use std::io::Read;
     use std::os::unix::fs::MetadataExt;
 
-    let mut file = open_manifest_through_judged_ancestors(path, login_and_runtime_uids, login_uid)?;
+    let file = open_manifest_through_judged_ancestors(path, login_and_runtime_uids, login_uid)?;
     let md = file
         .metadata()
         .map_err(|e| format!("TCB pin manifest {path}: fstat of the open descriptor failed: {e}"))?;
@@ -236,9 +262,15 @@ pub fn read_pin_manifest_checked(
     ) {
         return Err(why);
     }
-    let mut raw = String::new();
-    file.read_to_string(&mut raw)
-        .map_err(|e| format!("TCB pin manifest {path} unreadable: {e}"))?;
+    // The size the descriptor reports first, so an oversized file costs one `fstat` and no read;
+    // then a read that cannot go past the ceiling whatever that size said.
+    if md.len() > MAX_PIN_MANIFEST_BYTES {
+        return Err(format!(
+            "TCB pin manifest {path} is {} bytes, larger than the {MAX_PIN_MANIFEST_BYTES}-byte ceiling",
+            md.len()
+        ));
+    }
+    let raw = read_manifest_bounded(path, &file, MAX_PIN_MANIFEST_BYTES)?;
     serde_json::from_str::<TcbPinManifest>(&raw)
         .map_err(|e| format!("TCB pin manifest {path} malformed: {e}"))
 }
@@ -280,7 +312,6 @@ mod linux {
         /// "the same file" is measured rather than assumed; a mismatch yields the empty digest, which
         /// the floor treats as a hash mismatch and refuses.
         fn digest_through(fd: libc::c_int, st: &libc::stat) -> String {
-            use std::io::Read;
             if st.st_mode & libc::S_IFMT != libc::S_IFREG {
                 return String::new();
             }
@@ -292,13 +323,23 @@ mod linux {
                 Ok(md) if md.dev() == st.st_dev && md.ino() == st.st_ino => {}
                 _ => return String::new(),
             }
-            let mut bytes = Vec::new();
-            if file.read_to_end(&mut bytes).is_err() {
-                return String::new();
-            }
+            Self::hash_stream(&mut file).unwrap_or_default()
+        }
+
+        /// SHA-256 of everything `source` yields, through one fixed buffer (audit L-30). The
+        /// artifact was read whole into memory only to be hashed, so a pinned file's SIZE decided
+        /// how much the broker allocated at startup. `None` if a read fails.
+        pub(crate) fn hash_stream(source: &mut impl std::io::Read) -> Option<String> {
             let mut h = Sha256::new();
-            h.update(&bytes);
-            format!("{:x}", h.finalize())
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                match source.read(&mut buf) {
+                    Ok(0) => return Some(format!("{:x}", h.finalize())),
+                    Ok(n) => h.update(&buf[..n]),
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => return None,
+                }
+            }
         }
     }
 
@@ -922,8 +963,8 @@ mod tests {
             "{body}"
         );
         // ...and the bytes read through the same handle rather than the path.
-        assert!(body.contains("file.read_to_string("), "{body}");
-        assert!(!body.contains("read_to_string(path)"), "{body}");
+        assert!(body.contains("read_manifest_bounded(path, &file, MAX_PIN_MANIFEST_BYTES)"), "{body}");
+        assert!(!body.contains("read_to_string("), "an unbounded read is back: {body}");
     }
 
     /// And the probe's digest comes through the descriptor it stat'ed, not a second path lookup.
@@ -1122,6 +1163,69 @@ mod tests {
         // Judged for this uid: the temporary directory is this uid's, whatever is above it.
         let e = read_as(&pin, me).unwrap_err();
         assert!(e.contains("on the way to the TCB pin manifest"), "{e}");
+    }
+
+    /// L-30: a manifest over the ceiling is refused by its size, and one at the ceiling is read.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_manifest_over_the_ceiling_is_refused_and_one_at_it_is_read() {
+        let (dir, other) = two_acceptable_manifests();
+        let pin = dir.path().join("releases/A/pin.json");
+        let document = br#"{"artifacts":[],"owner_uids":{}}"#;
+        let padded = |total: u64| {
+            let mut body = vec![b' '; total as usize - document.len()];
+            body.extend_from_slice(document);
+            body
+        };
+        std::fs::write(&pin, padded(MAX_PIN_MANIFEST_BYTES)).unwrap();
+        assert!(read_as(&pin, other).is_ok(), "exactly at the ceiling is a manifest");
+        std::fs::write(&pin, padded(MAX_PIN_MANIFEST_BYTES + 1)).unwrap();
+        let e = read_as(&pin, other).unwrap_err();
+        assert!(e.contains("larger than the 1048576-byte ceiling"), "{e}");
+        assert!(e.contains("is 1048577 bytes"), "refused from the size, before a read: {e}");
+    }
+
+    /// The read is bounded whatever the size said: a source that yields more than its ceiling is
+    /// refused, and no more than one byte past the ceiling is ever taken from it.
+    #[test]
+    fn the_bounded_read_refuses_a_source_longer_than_its_ceiling() {
+        struct Counting<'a>(&'a [u8], usize);
+        impl std::io::Read for Counting<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = buf.len().min(self.0.len());
+                buf[..n].copy_from_slice(&self.0[..n]);
+                self.0 = &self.0[n..];
+                self.1 += n;
+                Ok(n)
+            }
+        }
+        let long = vec![b' '; 4096];
+        let mut source = Counting(&long, 0);
+        let e = read_manifest_bounded("/pin.json", &mut source, 100).unwrap_err();
+        assert!(e.contains("larger than the 100-byte ceiling"), "{e}");
+        assert_eq!(source.1, 101, "it took more of the source than it needed to know");
+        assert_eq!(read_manifest_bounded("/pin.json", &long[..100], 100).unwrap().len(), 100);
+    }
+
+    /// The artifact digest is taken through a fixed buffer, and it is still the digest: a file
+    /// several buffers long, and one that is not a whole number of them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_pinned_artifact_is_hashed_in_pieces_and_the_digest_is_unchanged() {
+        use brops_core::tcb_integrity::FsProbe;
+        use sha2::{Digest, Sha256};
+        let dir = tempfile::tempdir().unwrap();
+        for len in [0usize, 1, 64 * 1024, 64 * 1024 + 1, 300_000] {
+            let bytes: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            let path = dir.path().join(format!("artifact-{len}"));
+            std::fs::write(&path, &bytes).unwrap();
+            let facts = LinuxFsProbe { login_and_runtime_uids: vec![] }.stat(path.to_str().unwrap()).unwrap();
+            assert_eq!(facts.sha256, format!("{:x}", Sha256::digest(&bytes)), "{len} bytes");
+        }
+        // And nothing in the probe holds a whole artifact any more.
+        let src = code_only(include_str!("tcb_probe.rs"));
+        let probe = src.split("fn digest_through").nth(1).unwrap().split("impl FsProbe for LinuxFsProbe").next().unwrap();
+        assert!(!probe.contains("read_to_end"), "{probe}");
     }
 
     /// The pure predicate, on every host: owner and mode each refuse alone.

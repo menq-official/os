@@ -86,6 +86,13 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   name their own directory as the start of the walk, under `cfg(test)` only, because every
   directory a test can make is under `/tmp`. Not done: `openat2(RESOLVE_BENEATH)`; binding the
   path to an expected deployment root; POSIX ACLs; `L-30`, the size ceiling on the same reader.
+- **`L-30` (P3).** A 64 MiB file of JSON whitespace ending in a small valid manifest was read whole
+  into memory and accepted: reproduced. The pin manifest has a ceiling of 1 MiB — refused from the
+  descriptor's size before any read, and by a read that takes at most one byte past the ceiling
+  whatever that size said. A pinned artifact is hashed through one 64 KiB buffer instead of being
+  held whole. Seven mutants, seven named deaths. Not done: a per-role maximum for artifacts, so a
+  very large pinned file still costs the time to hash it; the non-Linux loader, which refuses on
+  the platform anyway, still reads unbounded.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
