@@ -16,7 +16,7 @@
 //!
 //! # What it deliberately does not do
 //!
-//! * **It does not provision.** Eleven of the requirements below can only be created by a machine
+//! * **It does not provision.** Twelve of the requirements below can only be created by a machine
 //!   administrator (service accounts, a setuid launcher, a sudoers vector, root-owned TCB material),
 //!   one is a key manifest signed under a root the INSTALL minted and wrote into the floor-pinned
 //!   anchor file (no person holds a root — Owner decision #78; T-131), one is not on a machine at
@@ -27,7 +27,9 @@
 //!   There is no "close enough" status and no way to pass a check by declaring it inapplicable.
 //! * **It is not a proof that a turn would complete.** Every requirement here is necessary; the set
 //!   is not sufficient. `Met` on all of them means the broker would get past `build_governed_executor`
-//!   — not that the seven-principal chain behind it answers. Only a real run witnesses that, which
+//!   as far as this module looks — the §2.5 floor is run here over the pinned artifacts (L-27), but
+//!   not the pin manifest's own custody nor the check that the manifest pins the running broker —
+//!   and not that the seven-principal chain behind it answers. Only a real run witnesses that, which
 //!   is what `engine/ci/live/run_ladder_turn.sh` is for.
 //!
 //! # One contract, one implementation
@@ -41,7 +43,9 @@
 use std::collections::BTreeSet;
 
 use brops_core::key_manifest::{verify_manifest, KeyManifest};
-use brops_core::tcb_integrity::{TcbPinManifest, ROOT_ANCHOR_ROLE, TCB_REQUIRED_ARTIFACTS};
+use brops_core::tcb_integrity::{
+    verify_tcb_integrity, FileFacts, FsProbe, TcbPinManifest, ROOT_ANCHOR_ROLE, TCB_REQUIRED_ARTIFACTS,
+};
 use serde_json::Value;
 
 /// Who, on a real deployment, is able to create a requirement.
@@ -231,6 +235,15 @@ pub const REQUIREMENTS: &[Requirement] = &[
                never measured, so it must not pass by omission",
         provisioner: Provisioner::MachineAdministrator,
         refusal: "tcb_integrity::TcbViolation::MissingRequired",
+    },
+    Requirement {
+        name: "trust.tcb_integrity_floor",
+        what: "every artifact that manifest pins is on disk at its pinned path, owned by its TCB \
+               principal, unwritable by the login user and by every runtime principal, hashes to its \
+               pin, and sits under ancestors of which the same is true — the §2.5 decision itself, \
+               `verify_tcb_integrity`, run here with the broker's inputs",
+        provisioner: Provisioner::MachineAdministrator,
+        refusal: "main.rs: `TCB integrity floor REFUSED` (tcb_probe::verify_broker_tcb)",
     },
     Requirement {
         name: "trust.manifest_path",
@@ -424,6 +437,10 @@ pub trait Host {
     /// (or the platform has no such concept). It is how a NUMBER written in a config is told apart
     /// from an account that exists.
     fn uid_account(&self, uid: u32) -> Option<String>;
+    /// What the §2.5 floor's own probe reports for `path`, deciding writability against
+    /// `login_and_runtime_uids`. `None` when the path is absent — or when this platform has no such
+    /// probe, which the caller must have asked about first.
+    fn tcb_facts(&self, path: &str, login_and_runtime_uids: &[u32]) -> Option<FileFacts>;
 }
 
 /// The real host.
@@ -500,6 +517,18 @@ impl Host for RealHost {
 
     #[cfg(not(target_os = "linux"))]
     fn uid_account(&self, _uid: u32) -> Option<String> {
+        None
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tcb_facts(&self, path: &str, login_and_runtime_uids: &[u32]) -> Option<FileFacts> {
+        // The broker's own probe, not a second implementation of it.
+        crate::tcb_probe::LinuxFsProbe { login_and_runtime_uids: login_and_runtime_uids.to_vec() }
+            .stat(path)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn tcb_facts(&self, _path: &str, _login_and_runtime_uids: &[u32]) -> Option<FileFacts> {
         None
     }
 }
@@ -639,6 +668,15 @@ impl Cfg {
 /// `Option` because the broker's database path is derived from it and from nothing else: without it
 /// the ledger requirement is honestly unmeasurable rather than guessed.
 pub fn evaluate(host: &dyn Host, socket_path: Option<&str>) -> Report {
+    evaluate_as(host, socket_path, None)
+}
+
+/// [`evaluate`], told the login uid the broker is launched for.
+///
+/// The broker takes that uid from its own argv (`brops-broker <socket> <uid>`) and decides the
+/// §2.5 floor against it; no config names it. Without it the floor row cannot be decided as the
+/// broker would decide it, and says so rather than guessing a uid.
+pub fn evaluate_as(host: &dyn Host, socket_path: Option<&str>, login_uid: Option<u32>) -> Report {
     let config_path = host.env("BROPS_BROKER_CONFIG");
     let raw = config_path.as_deref().and_then(|p| host.read(p));
     let cfg = Cfg(raw
@@ -660,6 +698,7 @@ pub fn evaluate(host: &dyn Host, socket_path: Option<&str>) -> Report {
             "config.parses_as_json" => check_config_parses(config_path.as_deref(), &raw, &cfg),
             "trust.tcb_pin_manifest_path" => check_pin_manifest_path(host, &cfg),
             "trust.tcb_pin_manifest_covers_the_required_set" => check_pin_coverage(host, &cfg),
+            "trust.tcb_integrity_floor" => check_tcb_floor(host, &cfg, login_uid),
             "trust.manifest_path" => check_manifest(host, &cfg),
             "trust.manifest_sig_path" => check_manifest_sig(host, &cfg),
             "trust.floor_path" => check_floor(host, &cfg),
@@ -1039,6 +1078,62 @@ fn check_pin_coverage(host: &dyn Host, cfg: &Cfg) -> Status {
             TCB_REQUIRED_ARTIFACTS.len(),
             missing.join(", ")
         ))
+    }
+}
+
+/// The floor's probe, answered by the host.
+struct HostProbe<'a> {
+    host: &'a dyn Host,
+    login_and_runtime_uids: &'a [u32],
+}
+
+impl FsProbe for HostProbe<'_> {
+    fn stat(&self, path: &str) -> Option<FileFacts> {
+        self.host.tcb_facts(path, self.login_and_runtime_uids)
+    }
+}
+
+/// The §2.5 floor over the pinned artifacts, by the function the broker calls and with the
+/// principal set `build_governed_executor` builds: every number in the config's `uids` block, plus
+/// the login uid.
+///
+/// Two things the broker's floor also does are NOT done here, and a MET row does not claim them:
+/// the pin manifest's own custody (`read_pin_manifest_checked`), and the check that the manifest
+/// pins the broker executable that is running — this process is not that executable.
+fn check_tcb_floor(host: &dyn Host, cfg: &Cfg, login_uid: Option<u32>) -> Status {
+    if !host.platform_is_linux() {
+        return Status::unmeasurable("the §2.5 floor is owner, mode and O_NOFOLLOW facts; not on this platform");
+    }
+    let manifest = match read_pin_manifest(host, cfg) {
+        Ok(m) => m,
+        Err(e) => return Status::not_met(format!("no pin manifest to run the floor over: {e}")),
+    };
+    let login_uid = match login_uid {
+        Some(u) => u,
+        None => {
+            return Status::unmeasurable(
+                "the floor is decided against the login uid the broker is launched for, which is \
+                 its argv and in no config; pass --login-uid <uid>",
+            )
+        }
+    };
+    let mut principals: Vec<u32> = cfg
+        .get("uids")
+        .and_then(|v| v.as_object())
+        .map(|m| m.values().filter_map(|v| v.as_u64().map(|u| u as u32)).collect())
+        .unwrap_or_default();
+    if !principals.contains(&login_uid) {
+        principals.push(login_uid);
+    }
+    let probe = HostProbe { host, login_and_runtime_uids: &principals };
+    match verify_tcb_integrity(&manifest, &probe, &principals, login_uid) {
+        Ok(()) => Status::met(format!(
+            "all {} pinned artifacts and their ancestors pass, for login uid {login_uid} and {} \
+             principals; the manifest's own custody and the broker's identity are not checked here",
+            manifest.artifacts.len(),
+            principals.len()
+        )),
+        Err(violation) => Status::not_met(format!("{violation:?}")),
     }
 }
 
@@ -1443,6 +1538,8 @@ mod tests {
         /// How many times `stat` was asked. A test reads it to hold "off Linux, nobody calls
         /// `stat`" as a measurement instead of a comment.
         stat_calls: std::cell::Cell<usize>,
+        /// The principal set the floor's probe was last asked to decide writability against.
+        floor_principals: std::cell::RefCell<Vec<u32>>,
     }
 
     impl FakeHost {
@@ -1498,6 +1595,21 @@ mod tests {
         }
         fn uid_account(&self, uid: u32) -> Option<String> {
             self.accounts.iter().find(|(_, u)| **u == uid).map(|(name, _)| name.clone())
+        }
+        fn tcb_facts(&self, path: &str, login_and_runtime_uids: &[u32]) -> Option<FileFacts> {
+            if !self.linux {
+                return None;
+            }
+            *self.floor_principals.borrow_mut() = login_and_runtime_uids.to_vec();
+            let facts = self.stats.get(path)?;
+            Some(FileFacts {
+                owner_uid: facts.owner_uid,
+                is_world_or_group_writable: facts.mode & 0o022 != 0,
+                // Mode bits only: an owner among the measured principals who may write.
+                writable_by_login_or_runtime: login_and_runtime_uids.contains(&facts.owner_uid)
+                    && facts.mode & 0o200 != 0,
+                sha256: self.files.get(path).map(|b| sha256_hex(b)).unwrap_or_default(),
+            })
         }
     }
 
@@ -1860,6 +1972,12 @@ mod tests {
         let signature = base64::engine::general_purpose::STANDARD
             .encode(fixture_root().sign(&parsed.canonical_bytes()).to_bytes());
         let anchor = fixture_anchor("kit_generated");
+        // The SUPERVISOR's own configuration, which on both kits is a document the supervisor
+        // reads and the broker does not. Here it is a separate file so a test can tell the two
+        // readers apart.
+        let supervisor_cfg =
+            serde_json::json!({"supervisor": {"ledger_db": "/kit/supervisor-state/ledger.db"}})
+                .to_string();
         let pin = serde_json::to_string(&TcbPinManifest {
             artifacts: TCB_REQUIRED_ARTIFACTS
                 .iter()
@@ -1874,12 +1992,13 @@ mod tests {
                         "supervisor.config" => "/kit/supervisor.json".to_string(),
                         _ => format!("/opt/brops-live/tcb/{n}"),
                     },
-                    // The anchor is the one pinned file this module READS, and it holds it to the
-                    // pinned digest as the broker does; the others it only locates.
-                    expected_sha256: if *n == ROOT_ANCHOR_ROLE {
-                        sha256_hex(anchor.as_bytes())
-                    } else {
-                        "0".repeat(64)
+                    // Every artifact is pinned at the digest of the bytes this fixture puts on
+                    // disk for it. Until L-27 all but the anchor were pinned to a zero digest at
+                    // a path where nothing was, and the report called that deployment provisioned.
+                    expected_sha256: match *n {
+                        ROOT_ANCHOR_ROLE => sha256_hex(anchor.as_bytes()),
+                        "supervisor.config" => sha256_hex(supervisor_cfg.as_bytes()),
+                        _ => sha256_hex(pinned_bytes(n).as_bytes()),
                     },
                     expected_owner: brops_core::tcb_integrity::TcbOwner::Root,
                 })
@@ -1911,13 +2030,7 @@ mod tests {
                          "requested_at_ms": 1735689600000i64}
         })
         .to_string();
-        // The SUPERVISOR's own configuration, which on both kits is a document the supervisor
-        // reads and the broker does not. Here it is a separate file so a test can tell the two
-        // readers apart.
-        let supervisor_cfg =
-            serde_json::json!({"supervisor": {"ledger_db": "/kit/supervisor-state/ledger.db"}})
-                .to_string();
-        FakeHost::linux()
+        let mut host = FakeHost::linux()
             .env("BROPS_BROKER_CONFIG", "/kit/config.json")
             .file("/kit/config.json", &cfg)
             .file("/kit/supervisor.json", &supervisor_cfg)
@@ -1942,7 +2055,161 @@ mod tests {
             .account("brops-supervisor", 5004)
             .account("brops-recorder", 5005)
             .account("brops-signer", 5006)
-            .account("brops-executor", 5007)
+            .account("brops-executor", 5007);
+        // The pinned artifacts themselves, root-owned 0644, and every directory above them.
+        for n in TCB_REQUIRED_ARTIFACTS {
+            let path = match *n {
+                ROOT_ANCHOR_ROLE | "supervisor.config" => continue,
+                "privileged-launcher.bin" => "/kit/privileged-launcher.bin".to_string(),
+                _ => format!("/opt/brops-live/tcb/{n}"),
+            };
+            host.files.insert(path.clone(), pinned_bytes(n).into_bytes());
+            host.stats.entry(path).or_insert(PathFacts { owner_uid: 0, mode: 0o100644, is_dir: false });
+        }
+        for dir in ["/", "/kit", "/opt", "/opt/brops-live", "/opt/brops-live/tcb"] {
+            host.stats.insert(dir.into(), PathFacts { owner_uid: 0, mode: 0o40755, is_dir: true });
+        }
+        host
+    }
+
+    /// The bytes this fixture puts on disk for a pinned role that no test reads the content of.
+    fn pinned_bytes(role: &str) -> String {
+        format!("the pinned bytes of {role}")
+    }
+
+    /// The login uid the fixture's broker is launched for: an ordinary user, in no `uids` block.
+    const LOGIN: u32 = 1000;
+
+    fn floor_of(host: &FakeHost) -> Status {
+        let report = evaluate_as(host, Some("/kit/broker-state/broker.sock"), Some(LOGIN));
+        status_of(&report, "trust.tcb_integrity_floor").clone()
+    }
+
+    fn floor_refusal(host: &FakeHost) -> String {
+        match floor_of(host) {
+            Status::NotMet { because } => because,
+            other => panic!("expected the floor row NOT MET, got {other:?}"),
+        }
+    }
+
+    /// The control for every refusal below: the provisioned fixture passes the floor, and the
+    /// report with a login uid has nothing not met.
+    #[test]
+    fn the_provisioned_fixture_passes_the_floor_the_broker_runs() {
+        let host = provisioned();
+        let floor = floor_of(&host);
+        assert!(floor.is_met(), "{floor:?}");
+        assert!(floor.detail().contains(&format!("all {} pinned", TCB_REQUIRED_ARTIFACTS.len())));
+        // A MET row says what it did not look at.
+        assert!(floor.detail().contains("not checked here"), "{}", floor.detail());
+        let report = evaluate_as(&host, Some("/kit/broker-state/broker.sock"), Some(LOGIN));
+        let not_met: Vec<&str> = report.not_met().iter().map(|f| f.requirement.name).collect();
+        assert!(not_met.is_empty(), "{not_met:?}");
+        // And the probe was asked about the broker's principal set: the seven uids of the config's
+        // `uids` block and the login uid, which is what `build_governed_executor` hands its own.
+        let mut asked = host.floor_principals.borrow().clone();
+        asked.sort_unstable();
+        assert_eq!(asked, [LOGIN, 5001, 5002, 5003, 5004, 5005, 5006, 5007]);
+    }
+
+    /// One pinned artifact, one property at a time: bytes, owner, mode, an ancestor's owner, an
+    /// ancestor's mode. Each is the broker's own refusal, named.
+    #[test]
+    fn each_property_of_a_pinned_artifact_is_a_floor_refusal_of_its_own() {
+        const SIGNER: &str = "/opt/brops-live/tcb/isolated-signer.bin";
+        assert!(provisioned().files.contains_key(SIGNER), "the fixture pins no {SIGNER}");
+
+        let mut host = provisioned();
+        host.files.insert(SIGNER.into(), b"other bytes".to_vec());
+        let why = floor_refusal(&host);
+        assert!(why.contains("HashMismatch") && why.contains("isolated-signer.bin"), "{why}");
+
+        let mut host = provisioned();
+        host.stats.insert(SIGNER.into(), PathFacts { owner_uid: 5006, mode: 0o100644, is_dir: false });
+        let why = floor_refusal(&host);
+        assert!(why.contains("WrongOwner") && why.contains("actual_uid: 5006"), "{why}");
+
+        let mut host = provisioned();
+        host.stats.insert(SIGNER.into(), PathFacts { owner_uid: 0, mode: 0o100664, is_dir: false });
+        let why = floor_refusal(&host);
+        assert!(why.contains("WritableByUntrusted") && why.contains("isolated-signer.bin"), "{why}");
+
+        let mut host = provisioned();
+        host.stats.insert("/opt/brops-live".into(), PathFacts { owner_uid: LOGIN, mode: 0o40755, is_dir: true });
+        let why = floor_refusal(&host);
+        assert!(why.contains("AncestorWrongOwner") && why.contains("/opt/brops-live"), "{why}");
+
+        let mut host = provisioned();
+        host.stats.insert("/opt/brops-live/tcb".into(), PathFacts { owner_uid: 0, mode: 0o40777, is_dir: true });
+        let why = floor_refusal(&host);
+        assert!(why.contains("AncestorWritable"), "{why}");
+
+        let mut host = provisioned();
+        host.stats.remove("/opt");
+        let why = floor_refusal(&host);
+        assert!(why.contains("AncestorMissing"), "{why}");
+    }
+
+    /// The principal set is the broker's: the login uid it is launched for is one of the measured
+    /// parties even though no config names it. A pinned file that user owns is refused; the same
+    /// file is not refused for a different login uid, which shows the argument is what decides.
+    #[test]
+    fn the_floor_is_decided_against_the_login_uid_it_is_told() {
+        let mut host = provisioned();
+        let mut pin: TcbPinManifest =
+            serde_json::from_slice(host.files.get("/kit/pin.json").unwrap()).unwrap();
+        pin.owner_uids.insert(brops_core::tcb_integrity::TcbOwner::Root, 4242);
+        host.files.insert("/kit/pin.json".into(), serde_json::to_vec(&pin).unwrap());
+        for a in &pin.artifacts {
+            host.stats.insert(a.path.clone(), PathFacts { owner_uid: 4242, mode: 0o100644, is_dir: false });
+        }
+        for dir in ["/", "/kit", "/opt", "/opt/brops-live", "/opt/brops-live/tcb"] {
+            host.stats.insert(dir.into(), PathFacts { owner_uid: 4242, mode: 0o40755, is_dir: true });
+        }
+        let as_another = evaluate_as(&host, Some("/kit/broker-state/broker.sock"), Some(LOGIN));
+        assert!(status_of(&as_another, "trust.tcb_integrity_floor").is_met());
+        let as_the_owner = evaluate_as(&host, Some("/kit/broker-state/broker.sock"), Some(4242));
+        match status_of(&as_the_owner, "trust.tcb_integrity_floor") {
+            Status::NotMet { because } => assert!(because.contains("WrongOwner"), "{because}"),
+            other => panic!("a TCB owned by the login user passed: {other:?}"),
+        }
+    }
+
+    /// The real host's answer is the broker's own probe: the digest of the bytes at the path, the
+    /// uid that owns them, and nothing for a path that is not there.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_real_host_answers_the_floor_with_the_brokers_probe() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("artifact");
+        std::fs::write(&path, b"pinned").unwrap();
+        // 0600, so that the only thing making it writable by a measured principal is who owns it
+        // — under a umask of 002 the group bit would answer the question by itself.
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let me = unsafe { libc::getuid() };
+        let facts = RealHost.tcb_facts(path.to_str().unwrap(), &[me]).expect("the file is there");
+        assert_eq!(facts.sha256, sha256_hex(b"pinned"));
+        assert_eq!(facts.owner_uid, me);
+        assert!(facts.writable_by_login_or_runtime, "its owner is one of the measured principals");
+        let unmeasured = RealHost.tcb_facts(path.to_str().unwrap(), &[]).expect("the file is there");
+        assert!(!unmeasured.writable_by_login_or_runtime, "nobody was named, so nobody can write it");
+        assert!(RealHost.tcb_facts(dir.path().join("absent").to_str().unwrap(), &[me]).is_none());
+    }
+
+    /// Without the login uid the row is not guessed, and off Linux nothing is probed.
+    #[test]
+    fn without_a_login_uid_or_off_linux_the_floor_row_says_it_was_not_measured() {
+        let report = evaluate(&provisioned(), Some("/kit/broker-state/broker.sock"));
+        match status_of(&report, "trust.tcb_integrity_floor") {
+            Status::Unmeasurable { because } => assert!(because.contains("--login-uid"), "{because}"),
+            other => panic!("expected Unmeasurable, got {other:?}"),
+        }
+        let report = evaluate_as(&provisioned_off_linux(), None, Some(LOGIN));
+        assert!(matches!(
+            status_of(&report, "trust.tcb_integrity_floor"),
+            Status::Unmeasurable { .. }
+        ));
     }
 
     #[test]
@@ -1964,15 +2231,33 @@ mod tests {
         assert!(!d.contains("trusted_verified"), "{d}");
     }
 
+    /// L-27: the floor the broker runs is a row of this report. The reviewer's input, exactly: the
+    /// fixture's pin manifest lists every role and pins nearly all of them to a zero digest at a
+    /// path where nothing is.
+    #[test]
+    fn a_pinned_artifact_that_is_not_on_disk_is_a_floor_refusal_the_report_names() {
+        let mut host = provisioned();
+        const SIGNER: &str = "/opt/brops-live/tcb/isolated-signer.bin";
+        assert!(host.files.remove(SIGNER).is_some(), "the fixture pins no {SIGNER}");
+        host.stats.remove(SIGNER);
+        let report = evaluate_as(&host, Some("/kit/broker-state/broker.sock"), Some(1000));
+        match status_of(&report, "trust.tcb_integrity_floor") {
+            Status::NotMet { because } => {
+                assert!(because.contains("Missing") && because.contains("isolated-signer.bin"), "{because}");
+            }
+            other => panic!("expected NotMet, got {other:?}"),
+        }
+    }
+
     #[test]
     fn the_provisioner_column_has_the_five_counts_the_table_claims() {
         let count = |p: Provisioner| REQUIREMENTS.iter().filter(|r| r.provisioner == p).count();
         assert_eq!(count(Provisioner::Installer), 13);
-        assert_eq!(count(Provisioner::MachineAdministrator), 11);
+        assert_eq!(count(Provisioner::MachineAdministrator), 12);
         assert_eq!(count(Provisioner::InstallMintedRoot), 1);
         assert_eq!(count(Provisioner::NotProvisionableOnAMachine), 1);
         assert_eq!(count(Provisioner::MetByTheBuild), 1);
-        assert_eq!(REQUIREMENTS.len(), 27);
+        assert_eq!(REQUIREMENTS.len(), 28);
         // The one install-minted-root row is the custody row, and its name in a report is the new one.
         let row = REQUIREMENTS.iter().find(|r| r.provisioner == Provisioner::InstallMintedRoot).unwrap();
         assert_eq!(row.name, "custody.tcb_root_manifest_signature");

@@ -459,8 +459,8 @@ always `External` kills both the provenance test and
 `a_demo_anchored_turn_commits_as_demonstration_and_never_as_production`; and having `BrokerCustody` build
 `TrustState::Production` by hand kills that same load-bearing one.
 
-**What still gates Phase 1's two rows:** the other 26 prerequisites in `broker/src/preflight.rs`. Today's
-split of all 27, held by a test in that file, is five-way: **13 installer · 11 machine-admin · 1
+**What still gates Phase 1's two rows:** the other 27 prerequisites in `broker/src/preflight.rs`. Today's
+split of all 28, held by a test in that file, is five-way: **13 installer · 12 machine-admin · 1
 install-minted-root** (the custody row, `custody.tcb_root_manifest_signature`, which an install-minted
 root now meets — `T-140`, `docs/design/DEBIAN_INSTALL_PROVISIONING.md`) **· 1 not-provisionable** (the
 Linux platform fact) **· 1 met-by-build** (the resolver row this section decided). None of them is a
@@ -482,7 +482,8 @@ That account is true and **incomplete**. Measured at `a94513e`:
 
 `apps/desktop/src-tauri/broker/src/preflight.rs` lists **27** prerequisites for a governed round trip,
 each with the party that can create it: **13 installer · 11 machine-admin · 1 custody row ·
-2 not-provisionable-on-a-machine**. The interesting number is the last one. Of those two:
+2 not-provisionable-on-a-machine**. *(28 and 12 machine-admin since 2026-10-12: `L-27` made the §2.5
+integrity floor a row of its own, `trust.tcb_integrity_floor`.)* The interesting number is the last one. Of those two:
 
 | Requirement | Why no machine can provide it |
 | :--- | :--- |
@@ -543,7 +544,7 @@ is why two roadmap rows read as "blocked by deployment" when they are blocked by
 written down for you until now.
 
 **If A: what ticks, and when.** Nothing ticks on the wiring alone. Phase 1's two rows tick when a
-deployment meets the other 26 requirements — which is installer and machine-admin work, and is
+deployment meets the other 27 requirements — which is installer and machine-admin work, and is
 separately inventoried in `preflight.rs` with the refusal each missing item fires. The wiring removes
 the one prerequisite that no amount of provisioning can.
 

@@ -4,9 +4,9 @@
 > [`docs/archive/TASKS_ARCHIVE_2026-08.md`](docs/archive/TASKS_ARCHIVE_2026-08.md).
 
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `83088ec`.** PR #401 on `l-22` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `9bc6222`.** PR #402 on `l-27` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
-> **Next:** L-17 needs a waiver; other L findings; K-01, K-09 need a decision.
+> **Next:** L-17, L-25, L-26 wait on the Owner; other L; K-01, K-09 to decide.
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
@@ -20,7 +20,7 @@ Status: `Todo` · `In-Progress` · `Review` · `Done` · `Blocked`. ◑ the Buil
 |----|------|-----------|--------|-------------|
 | **T-145** | **The whole repository, read file by file** — three records, all findings OPEN unless struck: [first read](docs/WHOLE_REPO_READ_2026-10-01.md) 932 (682 fixed, 87 open, 36 wait on the Owner §8); [engine, tools, documents](docs/WHOLE_REPO_READ_2026-10-02.md) 1226; [the cockpit](docs/WHOLE_REPO_READ_2026-10-02_COCKPIT.md) 1370 (74 closed, 1 half, 1 partly refuted, 1 already covered — each marked in the record), where the readers left 168 files unfinished ◑ | Bro | In-Progress | `#332` |
 | **T-169** | **The owner-command path** — [design](docs/design/OWNER_COMMAND_PATH_DESIGN.md) **REJECTED** in [review](docs/design/OWNER_COMMAND_PATH_REVIEW.md); redesign owed | — | Todo | — |
-| **T-170** | **Audits** — ledger; open `K-01`, `K-07`, `K-09`, `L-*` (12th; 10 of 43 ◑) | — | Todo | — |
+| **T-170** | **Audits** — ledger; open `K-01`, `K-07`, `K-09`, `L-*` (12th; 11 of 43 ◑) | — | Todo | — |
 | **T-171** | **Standard 2.0.0 everywhere** — OS adopted, one `sync_facts`; rest next | — | In-Progress | — |
 | **T-131** | **Install-minted root** — A, C, D and B's accounts+entry merged; deployment open | Bro | In-Progress | — |
 | **T-021d** | **PHASE 2 CLOSED, 11/11** - the page asks the engine in a section named apart from this app's own authority, and the roadmap gained the enumeration a moved checkbox needs ◑ | Bro | Review | `#257` |

@@ -43,8 +43,8 @@ Measured from what is missing, not invented:
 | need | today | source |
 |---|---|---|
 | engine trust anchor at `/var/lib/brops-trust-anchor/trust-anchor`, root-owned 0755, pin/floor/manifest 0644 | nothing creates it ✅ | `anchor.rs:132`, `:270-277` |
-| broker TCB root that someone actually controls (`custody.tcb_root_manifest_signature`) | compiled pin, private held by nobody ✅ | `broker/src/tcb.rs:9-17`, `preflight.rs:324` |
-| 13 installer + 11 machine-admin preflight rows | only the CI kit provides them ✅ | `preflight.rs:144-341`; `engine/ci/live/run_ladder_turn.sh` |
+| broker TCB root that someone actually controls (`custody.tcb_root_manifest_signature`) | compiled pin, private held by nobody ✅ | `broker/src/tcb.rs:9-17`, `preflight.rs:350` |
+| 13 installer + 12 machine-admin preflight rows | only the CI kit provides them ✅ | `preflight.rs:154-372`; `engine/ci/live/run_ladder_turn.sh` |
 | a second principal for O-1 (engine tree not writable by the enforcing account), O-2 (audit signer account), O-3 | none on POSIX ✅ | `docs/PHASE_10_PRODUCTION_ITEMS.md`; `audit-signer/src/register.rs:401-412` |
 
 The CI ladder kit already performs most of the third row as root ✅ — accounts, setuid launcher,

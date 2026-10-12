@@ -65,6 +65,17 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   socket of `L-21`), and no import of either. Eleven writers, eleven red; each of the three arms
   removed in turn lets through the writer only it catches. Not done: it reads this one file's text,
   so a write made by a function it calls elsewhere is not seen, and it is a scan, not a parse.
+- **`L-27` (P2).** The preflight said a deployment met everything a machine can meet while 18 of
+  its 21 pinned artifacts were not on disk and 20 were pinned to a zero digest: reproduced on the
+  module's own fixture (`not_met=0`). The §2.5 floor is a row now, `trust.tcb_integrity_floor`,
+  decided by `verify_tcb_integrity` itself with the broker's principal set, through the broker's
+  probe on a real host. The broker is told its login uid in argv and no config holds it, so the
+  preflight takes `--login-uid`; without it the row is unmeasurable, not guessed. The fixture now
+  puts every artifact on disk and each property is broken in turn. Nine mutants, eight named
+  deaths; the ninth is equivalent (the login uid is already in the principal set). One test passed
+  for the wrong reason until its mutant survived: this machine's umask is 002. Not done: the pin
+  manifest's own custody and the check that it pins the running broker; `L-26`; a run against a
+  real provisioned deployment, which this machine does not have.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
