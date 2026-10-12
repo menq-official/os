@@ -45,15 +45,37 @@ use crate::receipt_store::{KeyResolution, ReceiptKeyAuthority};
 
 /// A receipt-key authority backed by a root-verified, anti-rollback-checked production key manifest.
 pub struct ManifestReceiptKeyAuthority {
-    /// `(key_id, 32-byte ed25519 public key)` for every manifest key that resolved as a valid production
-    /// key at construction time. Empty ⇒ fail-closed (every resolve is `Unavailable`).
-    keys: Vec<(String, Vec<u8>)>,
+    /// Every manifest key that resolved as a valid production key at construction time, WITH the
+    /// window it was valid in. Empty ⇒ fail-closed (every resolve is `Unavailable`).
+    keys: Vec<HeldKey>,
+    /// The time a `resolve` is decided at. `None` — a clock that cannot be read — is a refusal.
+    clock: Clock,
+}
+
+/// A source of "now", in milliseconds since the epoch.
+pub type Clock = Box<dyn Fn() -> Option<i64> + Send + Sync>;
+
+/// A key this authority may mint, and until when.
+///
+/// Audit L-40. Only `(key_id, public key)` was kept, so the window the manifest signed was a
+/// decision taken once, at construction: an authority built one millisecond before a key's
+/// `valid_to_ms` went on returning it `Trusted` for as long as the process lived.
+struct HeldKey {
+    key_id: String,
+    public_key: Vec<u8>,
+    valid_from_ms: i64,
+    valid_to_ms: i64,
+}
+
+fn system_now_ms() -> Option<i64> {
+    let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(since_epoch.as_millis()).ok()
 }
 
 impl ManifestReceiptKeyAuthority {
     /// A fail-closed authority: no trusted manifest ⇒ every `resolve` is `Unavailable`.
     pub fn fail_closed() -> Self {
-        ManifestReceiptKeyAuthority { keys: Vec::new() }
+        ManifestReceiptKeyAuthority { keys: Vec::new(), clock: Box::new(system_now_ms) }
     }
 
     /// Build from a provisioned manifest. In order, each a refusal that returns the fail-closed
@@ -73,6 +95,9 @@ impl ManifestReceiptKeyAuthority {
     /// `floor` must be the floor read from durable storage, not one derived from `manifest`: a
     /// floor built from the manifest it is about to be compared with is a predicate that cannot
     /// fail.
+    ///
+    /// Each `resolve` afterwards is decided at the system clock's time, against the window the
+    /// key was held with ([`Self::new_with_clock`] takes another clock).
     pub fn new(
         manifest: &KeyManifest,
         root_sig_b64: &str,
@@ -81,6 +106,23 @@ impl ManifestReceiptKeyAuthority {
         floor_path: &Path,
         protocol: &str,
         now_ms: i64,
+    ) -> Self {
+        Self::new_with_clock(
+            manifest, root_sig_b64, anchor, floor, floor_path, protocol, now_ms, Box::new(system_now_ms),
+        )
+    }
+
+    /// [`Self::new`], with the clock every later `resolve` reads.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_clock(
+        manifest: &KeyManifest,
+        root_sig_b64: &str,
+        anchor: &RootAnchor,
+        floor: &AntiRollbackFloor,
+        floor_path: &Path,
+        protocol: &str,
+        now_ms: i64,
+        clock: Clock,
     ) -> Self {
         let verified = match verify_manifest_anchored(manifest, root_sig_b64, anchor) {
             Ok(verified) => verified,
@@ -96,11 +138,16 @@ impl ManifestReceiptKeyAuthority {
         for k in &manifest.keys {
             if let Ok(rk) = resolve_production_key(manifest, &k.key_id, protocol, now_ms) {
                 if let Some(bytes) = decode_hex32(&rk.public_key_hex) {
-                    keys.push((rk.key_id, bytes.to_vec()));
+                    keys.push(HeldKey {
+                        key_id: rk.key_id,
+                        public_key: bytes.to_vec(),
+                        valid_from_ms: k.valid_from_ms,
+                        valid_to_ms: k.valid_to_ms,
+                    });
                 }
             }
         }
-        ManifestReceiptKeyAuthority { keys }
+        ManifestReceiptKeyAuthority { keys, clock }
     }
 
     /// True iff at least one production key resolved (i.e. a trusted manifest is active).
@@ -111,18 +158,26 @@ impl ManifestReceiptKeyAuthority {
 
 impl ReceiptKeyAuthority for ManifestReceiptKeyAuthority {
     fn resolve<'a>(&'a self, key_id: &str) -> CoreResult<KeyResolution<'a>> {
-        for (kid, bytes) in &self.keys {
-            if kid == key_id {
-                return Ok(KeyResolution::Trusted(ResolvedManifestKey::manifest_resolved(
-                    kid,
-                    bytes,
-                    TrustClass::Production,
-                )));
-            }
+        let Some(held) = self.keys.iter().find(|held| held.key_id == key_id) else {
+            return Ok(KeyResolution::Unavailable(
+                "key_id is not a resolved production key in the trusted manifest",
+            ));
+        };
+        // The window, at the time of THIS receipt — the same half-open test
+        // `resolve_production_key` applied when the key was taken in.
+        let Some(now_ms) = (self.clock)() else {
+            return Ok(KeyResolution::Unavailable("the clock could not be read, so no key is in its window"));
+        };
+        if now_ms < held.valid_from_ms || now_ms >= held.valid_to_ms {
+            return Ok(KeyResolution::Unavailable(
+                "the key was a production key when the manifest was accepted and is outside its validity window now",
+            ));
         }
-        Ok(KeyResolution::Unavailable(
-            "key_id is not a resolved production key in the trusted manifest",
-        ))
+        Ok(KeyResolution::Trusted(ResolvedManifestKey::manifest_resolved(
+            &held.key_id,
+            &held.public_key,
+            TrustClass::Production,
+        )))
     }
 }
 
@@ -238,6 +293,64 @@ mod tests {
         for id in ["dev-1", "rev-1", "scoped-1", "nope"] {
             assert!(!trusted(&auth, id), "{id} must be Unavailable");
         }
+    }
+
+    /// L-40, the reviewer's sequence: a key valid until 1001, an authority built at 1000 and kept.
+    /// At 1000 it is trusted; from 1001 on it is not, in the same process, without a restart.
+    #[test]
+    fn a_key_that_expires_while_the_authority_is_held_stops_resolving() {
+        use std::sync::atomic::{AtomicI64, Ordering};
+        use std::sync::Arc;
+        let prod = sk([1u8; 32]);
+        let mut expiring = key("prod-1", hex(prod.verifying_key().as_bytes()), MTrustClass::Production, false);
+        expiring.valid_from_ms = 1;
+        expiring.valid_to_ms = 1001;
+        let f = Fixture::with(vec![expiring], RootProvenance::External);
+        let now = Arc::new(AtomicI64::new(1000));
+        let read = now.clone();
+        let auth = ManifestReceiptKeyAuthority::new_with_clock(
+            &f.manifest, &f.root_sig, &f.anchor, &f.floor, &f.floor_path(), PROTO, 1000,
+            Box::new(move || Some(read.load(Ordering::SeqCst))),
+        );
+        assert!(trusted(&auth, "prod-1"), "in its window it resolves");
+        now.store(1001, Ordering::SeqCst);
+        assert!(!trusted(&auth, "prod-1"), "valid_to_ms is exclusive: at 1001 it has expired");
+        now.store(5_000_000, Ordering::SeqCst);
+        assert!(!trusted(&auth, "prod-1"));
+        // The window has two ends: a clock set back before `valid_from_ms` does not resolve either.
+        now.store(0, Ordering::SeqCst);
+        assert!(!trusted(&auth, "prod-1"));
+        // And it is a window, not a latch: back inside, it resolves again.
+        now.store(1000, Ordering::SeqCst);
+        assert!(trusted(&auth, "prod-1"));
+    }
+
+    /// A clock that cannot be read decides nothing in a key's favour.
+    #[test]
+    fn an_unreadable_clock_resolves_no_key() {
+        let f = Fixture::production(RootProvenance::External);
+        let auth = ManifestReceiptKeyAuthority::new_with_clock(
+            &f.manifest, &f.root_sig, &f.anchor, &f.floor, &f.floor_path(), PROTO, 1000,
+            Box::new(|| None),
+        );
+        assert!(auth.is_trusted(), "the key was taken in");
+        assert!(!trusted(&auth, "prod-1"));
+    }
+
+    /// The ordinary constructor reads the real clock, and a key valid now resolves under it.
+    #[test]
+    fn the_ordinary_constructor_decides_against_the_real_clock() {
+        let f = Fixture::production(RootProvenance::External);
+        assert!(trusted(&f.authority(), "prod-1"));
+        // A key whose window closed in 1970 is not taken in at a construction time inside it and
+        // then trusted today: construction at 1000 holds it, the real clock refuses it.
+        let prod = sk([1u8; 32]);
+        let mut long_gone = key("prod-1", hex(prod.verifying_key().as_bytes()), MTrustClass::Production, false);
+        long_gone.valid_to_ms = 2000;
+        let f = Fixture::with(vec![long_gone], RootProvenance::External);
+        let auth = f.authority();
+        assert!(auth.is_trusted(), "at 1000 the key was in its window");
+        assert!(!trusted(&auth, "prod-1"), "today it is not");
     }
 
     #[test]

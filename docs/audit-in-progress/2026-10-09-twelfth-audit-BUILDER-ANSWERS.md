@@ -154,6 +154,14 @@ Each of these changes a contract or picks a design, so none was changed.
   callers were held by no test until their mutants survived; each has one now. Not done: the
   detached signature is still verified over the rebuilt bytes, which are now proven equal to the
   received ones rather than being the same buffer.
+- **`L-40` (P3).** `ManifestReceiptKeyAuthority` kept `(key_id, public key)` for each key valid at
+  construction, so a key went on resolving `Trusted` after its `valid_to_ms` for as long as the
+  process lived. It holds each key with its window and a clock, and every `resolve` is decided at
+  that time; an unreadable clock resolves nothing. Five mutants, five named deaths, the first of
+  them the old code. The type is still constructed by nothing outside its tests — the module
+  says it is kept correct rather than deleted, and that was left as it is. Not done: revocation,
+  protocol scope and the durable floor are still decided once, at construction; the trait takes
+  no turn context, so the design's `KeyResolutionQuery` was not built.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
