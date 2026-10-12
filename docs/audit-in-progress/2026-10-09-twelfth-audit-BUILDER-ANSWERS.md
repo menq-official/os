@@ -100,6 +100,16 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   first of them the old code. Nothing in the tree reads these fields. The same finding is
   `R3-0105` of the cockpit read, marked closed there. Not done: evidence files written before
   this carry the old digest under the same name.
+- **`L-33` (P2) — and reachable without a fault.** The broker wrote the message in one transaction
+  and its turn's state in a second write whose result it discarded. With the reviewer's trigger the
+  reply said `committed` while the turn row said `live`: reproduced. Not in the finding: a turn
+  that had stopped being live while it ran — reconciled as stale by another process — still had
+  its message published and `committed` returned, with the turn row `blocked`: reproduced with two
+  connections and no fault at all. The turn moves to `committed` inside the message's transaction;
+  if it cannot, the insert rolls back and the reply is `blocked`. Five mutants, five named deaths.
+  Not done: the refusal paths still settle best-effort (a lost write there leaves `live` until the
+  stale reconciliation makes it `blocked`, which is what the reply already said); a failure of
+  `COMMIT` itself is reported as blocked without re-reading what became durable.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is

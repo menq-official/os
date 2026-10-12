@@ -32,7 +32,7 @@ ninth is there under *Round 9*.
 > It resumes 2026-10-16. Kept openable, outside this directory so it cannot become the current
 > assessment: [report](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md),
 > [files read](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md). The Builder's
-> answers — `L-17` reproduced and NOT fixed (engine security code); `L-21`, `L-22`, `L-23`, `L-24`, `L-27`, `L-29`, `L-30`, `L-32`, `L-28`, `L-31`, `L-34`, `L-39`,
+> answers — `L-17` reproduced and NOT fixed (engine security code); `L-21`, `L-22`, `L-23`, `L-24`, `L-27`, `L-29`, `L-30`, `L-32`, `L-33`, `L-28`, `L-31`, `L-34`, `L-39`,
 > `L-41`, `L-43` fixed ◑ — are in [builder answers](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-BUILDER-ANSWERS.md).
 >
 > The gate is shut and the round confirms it. What it found is **behind** the gate and beside it:

@@ -116,6 +116,22 @@ pub fn persist_committed(
     accepted: &AcceptedOutput,
     trust_state: &crate::production_trust::TrustState,
 ) -> Result<CommittedMessage, TurnReason> {
+    persist_committed_with(conn, accepted, trust_state, |_| Ok(()))
+}
+
+/// [`persist_committed`], with one more write inside the SAME transaction.
+///
+/// `before_commit` runs after the row has been inserted, re-read and verified, and before the
+/// transaction commits. If it refuses, the transaction rolls back and the message is never
+/// durable. Audit L-33: the broker wrote the message in one transaction and its turn's state in
+/// a second write whose failure it ignored, so a message could be published — and the renderer
+/// told `committed` — for a turn whose own row said `live` or `blocked`.
+pub fn persist_committed_with(
+    conn: &Connection,
+    accepted: &AcceptedOutput,
+    trust_state: &crate::production_trust::TrustState,
+    before_commit: impl FnOnce(&Connection) -> Result<(), TurnReason>,
+) -> Result<CommittedMessage, TurnReason> {
     // Pre-persist: the body bytes must hash to exactly the envelope-committed digest.
     if sha256_hex(accepted.accepted_body.as_bytes()) != accepted.envelope_body_sha256 {
         return Err(TurnReason::CommitReadbackMismatch);
@@ -170,6 +186,9 @@ pub fn persist_committed(
     if rb_created != accepted.created_at_ms {
         return Err(TurnReason::CommitReadbackMismatch);
     }
+
+    // Whatever must become true together with this message, in this transaction.
+    before_commit(&tx)?;
 
     // Only now — after the readback AND the created_at_ms equality both pass — make the row durable.
     tx.commit().map_err(|_| TurnReason::CommitReadbackMismatch)?;

@@ -12,7 +12,7 @@
 use rusqlite::Connection;
 
 use crate::broker_turns::{self, TurnState};
-use crate::governed_message_store::{persist_committed, AcceptedOutput};
+use crate::governed_message_store::{persist_committed_with, AcceptedOutput};
 use crate::governed_turn_ipc::{
     IdempotencyDecision, RendererGovernedTurnResult, TurnReason, ValidatedRequest,
 };
@@ -132,13 +132,20 @@ pub fn run_governed_turn(
         }
     };
 
-    // 5. Persist with in-tx commit-readback (rev-30 P0). On any mismatch, fail closed.
-    match persist_committed(conn, &accepted, &trust_state) {
-        Ok(message) => {
-            let _ = broker_turns::settle(conn, &broker_turn_id, TurnState::Committed);
-            RendererGovernedTurnResult::committed(crid, broker_turn_id, conv, message)
-        }
+    // 5. Persist with in-tx commit-readback (rev-30 P0), and move the turn to `committed` in that
+    //    SAME transaction (audit L-33). The message and the turn's state become durable together or
+    //    not at all: a turn that is no longer `live` — reconciled as stale meanwhile — or whose row
+    //    cannot be written refuses, the insert rolls back, and no `committed` reply is built.
+    let settled_with_the_message = |tx: &Connection| {
+        broker_turns::settle(tx, &broker_turn_id, TurnState::Committed)
+            .map_err(|_| TurnReason::CommitReadbackMismatch)
+    };
+    match persist_committed_with(conn, &accepted, &trust_state, settled_with_the_message) {
+        Ok(message) => RendererGovernedTurnResult::committed(crid, broker_turn_id, conv, message),
         Err(reason) => {
+            // Best effort, as on every refusal path: if this write fails too, or the turn is already
+            // terminal, the row is `blocked` now or becomes so at the stale reconciliation — the
+            // state this reply reports either way.
             let _ = broker_turns::settle(conn, &broker_turn_id, TurnState::Blocked);
             RendererGovernedTurnResult::blocked(crid, broker_turn_id, conv, reason)
         }
@@ -226,6 +233,68 @@ mod tests {
         // the turn was settled (not left live) → a later request on the same conversation is NOT
         // turn_in_progress; it starts fresh (New path). We assert by running a fresh request:
         assert!(broker_turns::live_turns(&c).unwrap().is_empty());
+    }
+
+    fn turn_state(c: &Connection, bt: &str) -> String {
+        c.query_row("SELECT state FROM broker_turns WHERE broker_turn_id = ?1", [bt], |r| r.get(0)).unwrap()
+    }
+    fn messages(c: &Connection) -> i64 {
+        c.query_row("SELECT COUNT(*) FROM governed_messages", [], |r| r.get(0)).unwrap()
+    }
+
+    /// The control for the two below: a committed reply, a committed turn, one message.
+    #[test]
+    fn a_committed_reply_leaves_a_committed_turn_and_its_message() {
+        let c = conn();
+        let r = run_governed_turn(&c, &raw("conv-1", CRID), &FixedIds, &OkExecutor { body: "hi".into() }, 1);
+        assert_eq!(r.status, "committed");
+        assert_eq!(turn_state(&c, "bt-fixed"), "committed");
+        assert_eq!(messages(&c), 1);
+    }
+
+    /// L-33, the reviewer's sequence: the message can be written and the turn's own state cannot.
+    /// The renderer must not be told `committed` while the turn says anything else, and the
+    /// message must not be published.
+    #[test]
+    fn a_turn_whose_state_cannot_be_written_publishes_no_message_and_no_committed_reply() {
+        let c = conn();
+        c.execute_batch(
+            "CREATE TRIGGER reject_turn_settle BEFORE UPDATE OF state ON broker_turns
+             WHEN NEW.state = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'settle failed'); END;",
+        )
+        .unwrap();
+        let r = run_governed_turn(&c, &raw("conv-1", CRID), &FixedIds, &OkExecutor { body: "hi".into() }, 1);
+        assert_eq!(r.status, "blocked", "the reply said committed while the turn row says {}", turn_state(&c, "bt-fixed"));
+        assert!(r.message.is_none());
+        assert_eq!(messages(&c), 0, "a message was published for a turn that is not committed");
+        // The trigger refuses only `committed`; the refusal path then closes the turn.
+        assert_eq!(turn_state(&c, "bt-fixed"), "blocked");
+    }
+
+    /// The same split without a fault: the turn stopped being live while the execution ran — a
+    /// second broker process reconciled it as stale. Its output arrives for a turn that is over.
+    #[test]
+    fn output_for_a_turn_that_is_no_longer_live_is_not_committed() {
+        struct SettlesMeanwhile { db: std::path::PathBuf }
+        impl GovernedExecutor for SettlesMeanwhile {
+            fn execute_and_verify(&self, req: &ValidatedRequest, bt: &str, n: &str)
+                -> Result<(AcceptedOutput, crate::production_trust::TrustState), TurnReason> {
+                let other = Connection::open(&self.db).unwrap();
+                broker_turns::settle(&other, bt, TurnState::Blocked).unwrap();
+                OkExecutor { body: "late".into() }.execute_and_verify(req, bt, n)
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("broker.db");
+        let c = Connection::open(&db).unwrap();
+        broker_turns::create_schema(&c).unwrap();
+        create_msg_schema(&c).unwrap();
+        let r = run_governed_turn(&c, &raw("conv-1", CRID), &FixedIds, &SettlesMeanwhile { db: db.clone() }, 1);
+        assert_eq!(r.status, "blocked");
+        assert!(r.message.is_none());
+        assert_eq!(messages(&c), 0);
+        assert_eq!(turn_state(&c, "bt-fixed"), "blocked");
     }
 
     #[test]
