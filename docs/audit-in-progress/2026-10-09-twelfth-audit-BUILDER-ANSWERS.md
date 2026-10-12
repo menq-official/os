@@ -162,6 +162,14 @@ Each of these changes a contract or picks a design, so none was changed.
   says it is kept correct rather than deleted, and that was left as it is. Not done: revocation,
   protocol scope and the durable floor are still decided once, at construction; the trait takes
   no turn context, so the design's `KeyResolutionQuery` was not built.
+- **`L-42` (P3).** In the Rust acceptance state machine, `advance(.., ExecutionStarting, ..)` moved a
+  `LEASE_READY` row to `EXECUTION_STARTING` one millisecond past its lease, where `gate_and_start`
+  sends it to `EXPIRED`: reproduced (`Ok(ExecutionStarting)`). The public `advance` refuses that
+  edge at any time; the function that performs it is private and `gate_and_start` is its one
+  caller. Two tests that used the ungated edge now go through the gate. Four mutants, four named
+  deaths. Nothing outside its tests calls this state machine. Not done: the variant is still in
+  the public `Advance` enum — refused at run time, not unrepresentable; the gate's read of the
+  window and its write are two statements, not one transaction.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is

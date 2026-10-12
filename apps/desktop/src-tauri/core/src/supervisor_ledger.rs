@@ -549,7 +549,34 @@ impl Advance {
 /// as [`LedgerError::IllegalTransition`] (never a silent overwrite); a missing attempt is
 /// [`LedgerError::NotFound`]. The DB `BEFORE UPDATE` trigger is a second, independent wall against any
 /// illegal edge or any move out of a terminal state. Returns the new state on success.
+///
+/// ONE edge is not offered here: `LEASE_READY → EXECUTION_STARTING` (audit L-42). The launcher
+/// spawns on that state, and the only thing that may put a row in it is [`gate_and_start`], which
+/// reads the lease window this ledger persisted and compares it with the clock first. Asked for
+/// through this function it is an [`LedgerError::IllegalTransition`] whatever the time is — an
+/// attempt whose lease expired while it waited was otherwise one call away from being launched.
+/// The SQL trigger cannot hold this: it sees an edge, not whether a gate ran.
 pub fn advance(
+    conn: &Connection,
+    execution_attempt_id: &str,
+    adv: &Advance,
+    now_ms: i64,
+) -> Result<AcceptanceState, LedgerError> {
+    if matches!(adv, Advance::ExecutionStarting) {
+        return match current_state(conn, execution_attempt_id)? {
+            None => Err(LedgerError::NotFound),
+            Some(from) => Err(LedgerError::IllegalTransition {
+                from: from.as_str(),
+                to: AcceptanceState::ExecutionStarting.as_str(),
+            }),
+        };
+    }
+    apply(conn, execution_attempt_id, adv, now_ms)
+}
+
+/// Every §5 edge, the gated one included. Private: [`advance`] is the public door, and
+/// [`gate_and_start`] is the one caller that may ask for `EXECUTION_STARTING`.
+fn apply(
     conn: &Connection,
     execution_attempt_id: &str,
     adv: &Advance,
@@ -670,10 +697,9 @@ pub fn lease_launch_gate(now_ms: i64, lease_issued_at_ms: i64, lease_expires_at_
 /// F-01/F-23, fixed in the Python twin (`governed_supervisor_ledger.gate_and_start`), which reads
 /// both from the row; the Rust copy kept the defect because nothing calls it.
 ///
-/// One thing is still weaker here than in the twin: [`advance`] is `pub`, so
-/// `advance(.., &Advance::ExecutionStarting, ..)` moves a `LEASE_READY` row with no gate at all.
-/// "The ONE place a `LEASE_READY` row is driven forward" is therefore a convention in this file,
-/// not a property of it.
+/// It is the ONE way into `EXECUTION_STARTING` (audit L-42): [`advance`] refuses that edge, and
+/// the function that performs it is private to this module. That used to be a convention here —
+/// `advance(.., &Advance::ExecutionStarting, ..)` moved a `LEASE_READY` row with no gate at all.
 pub fn gate_and_start(
     conn: &Connection,
     execution_attempt_id: &str,
@@ -689,8 +715,8 @@ pub fn gate_and_start(
         .optional()?;
     let (lease_issued_at_ms, lease_expires_at_ms) = window.ok_or(LedgerError::NotFound)?;
     match lease_launch_gate(now_ms, lease_issued_at_ms, lease_expires_at_ms) {
-        LaunchGate::Proceed => advance(conn, execution_attempt_id, &Advance::ExecutionStarting, now_ms),
-        LaunchGate::Expired(reason) => advance(
+        LaunchGate::Proceed => apply(conn, execution_attempt_id, &Advance::ExecutionStarting, now_ms),
+        LaunchGate::Expired(reason) => apply(
             conn,
             execution_attempt_id,
             &Advance::Expired {
@@ -1235,8 +1261,10 @@ mod tests {
             .unwrap(),
             AcceptanceState::LeaseReady
         );
+        // ...through the step-8a gate, which is the only way into EXECUTION_STARTING.
+        let in_window = new_acceptance("att-1").lease_expires_at_ms - MIN_LAUNCH_REMAINING_MS;
         assert_eq!(
-            advance(&conn, "att-1", &Advance::ExecutionStarting, 30).unwrap(),
+            gate_and_start(&conn, "att-1", in_window).unwrap(),
             AcceptanceState::ExecutionStarting
         );
         assert_eq!(
@@ -1506,6 +1534,36 @@ mod tests {
     /// The window is the ROW's. The fixture stamps every acceptance with its own
     /// `lease_issued_at_ms` / `lease_expires_at_ms`, and the gate is judged against those —
     /// there is no argument through which a caller could present a later expiry.
+    /// L-42, the reviewer's sequence: a `LEASE_READY` row whose lease has expired. The gate sends
+    /// it to `EXPIRED`. No PUBLIC operation may send it to `EXECUTION_STARTING` instead — the
+    /// launcher spawns on that state.
+    #[test]
+    fn no_public_transition_starts_an_attempt_past_its_lease() {
+        let conn = store();
+        let expires = new_acceptance("att-1").lease_expires_at_ms;
+        accept_prepare(&conn, &new_acceptance("att-1"), 10).unwrap();
+        advance(&conn, "att-1", &Advance::LeaseReady { lease_handle: "l".into() }, 20).unwrap();
+
+        let ungated = advance(&conn, "att-1", &Advance::ExecutionStarting, expires + 1);
+        assert!(
+            matches!(ungated, Err(LedgerError::IllegalTransition { to: "EXECUTION_STARTING", .. })),
+            "the ungated edge answered {ungated:?}"
+        );
+        assert_eq!(current_state(&conn, "att-1").unwrap(), Some(AcceptanceState::LeaseReady));
+        // The same call is refused inside the lease window too: the edge is the gate's, always.
+        assert!(advance(&conn, "att-1", &Advance::ExecutionStarting, 30).is_err());
+        assert_eq!(current_state(&conn, "att-1").unwrap(), Some(AcceptanceState::LeaseReady));
+
+        // An attempt that does not exist is still "not found", not an illegal edge.
+        assert!(matches!(
+            advance(&conn, "att-none", &Advance::ExecutionStarting, 30),
+            Err(LedgerError::NotFound)
+        ));
+
+        // And the gate, at that same expired instant, ends it.
+        assert_eq!(gate_and_start(&conn, "att-1", expires + 1).unwrap(), AcceptanceState::Expired);
+    }
+
     #[test]
     fn gate_and_start_proceeds_and_expires_deterministically() {
         let conn = store();
@@ -1802,7 +1860,8 @@ mod tests {
         let conn = store();
         accept_prepare(&conn, &new_acceptance("att-1"), 10).unwrap();
         advance(&conn, "att-1", &Advance::LeaseReady { lease_handle: "l".into() }, 20).unwrap();
-        advance(&conn, "att-1", &Advance::ExecutionStarting, 30).unwrap();
+        let in_window = new_acceptance("att-1").lease_expires_at_ms - MIN_LAUNCH_REMAINING_MS;
+        gate_and_start(&conn, "att-1", in_window).unwrap();
         advance(
             &conn,
             "att-1",
