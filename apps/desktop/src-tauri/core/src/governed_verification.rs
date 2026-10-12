@@ -223,9 +223,13 @@ pub struct OwnedReceiptEnvelope {
 }
 
 impl OwnedReceiptEnvelope {
-    /// Strict-parse the flat 23-key payload. A missing or mistyped key fails closed BEFORE any
+    /// Read the 23 keys out of a payload value. A missing or mistyped key fails closed BEFORE any
     /// signature check — `verify_and_accept` re-checks the identity fields regardless.
-    pub fn from_payload(p: &Value) -> Result<Self, TurnReason> {
+    ///
+    /// PRIVATE since L-38: it ignores every other member and cannot see a repeated one, so it is
+    /// not a way to accept an envelope. The two ways are [`Self::from_exact_jcs`] and
+    /// [`Self::from_exact_payload`], which compare what was received with what this rebuilds.
+    fn from_payload(p: &Value) -> Result<Self, TurnReason> {
         let s = |k: &str| {
             p.get(k)
                 .and_then(Value::as_str)
@@ -259,6 +263,41 @@ impl OwnedReceiptEnvelope {
             evidence_last_sequence: i("evidence_last_sequence")?,
             evidence_head_sequence: i("evidence_head_sequence")?,
         })
+    }
+
+    /// The envelope from the EXACT bytes that were received, or a refusal (audit L-38).
+    ///
+    /// `from_payload` reads 23 keys out of a `Value` and ignores everything else, and
+    /// `verify_and_accept` then verifies the signature over the canonical bytes it REBUILDS from
+    /// those 23. So bytes the signer never signed were accepted under its signature: the genuine
+    /// envelope with a second `run_id` put in front of the real one, or with a member added. The
+    /// accepted values were the signed ones — and the artifact that carried them was not.
+    ///
+    /// Here the bytes must be one JSON document with no repeated key, and the canonical bytes
+    /// rebuilt from it must EQUAL the bytes received. That one comparison refuses a duplicate, an
+    /// unknown member, a missing one, another key order and any whitespace, because each of those
+    /// is a different byte string from the only one the signature covers.
+    pub fn from_exact_jcs(received: &[u8]) -> Result<Self, TurnReason> {
+        let text = std::str::from_utf8(received).map_err(|_| TurnReason::UpstreamBlocked)?;
+        let value = crate::strict_json::from_str(text).map_err(|_| TurnReason::UpstreamBlocked)?;
+        let owned = Self::from_payload(&value)?;
+        if owned.as_receipt_envelope().payload_jcs()? != received {
+            return Err(TurnReason::UpstreamBlocked);
+        }
+        Ok(owned)
+    }
+
+    /// The same for a payload that arrived as a JSON value inside a larger reply, where there are
+    /// no envelope bytes of its own to compare: the value's own canonical serialisation must be
+    /// the 23-key canonical payload, so a member the signature does not cover is a refusal. A
+    /// repeated key is the enclosing reply's decoder's to refuse — a `Value` cannot hold one.
+    pub fn from_exact_payload(payload: &Value) -> Result<Self, TurnReason> {
+        let owned = Self::from_payload(payload)?;
+        let as_sent = serde_json::to_vec(payload).map_err(|_| TurnReason::UpstreamBlocked)?;
+        if owned.as_receipt_envelope().payload_jcs()? != as_sent {
+            return Err(TurnReason::UpstreamBlocked);
+        }
+        Ok(owned)
     }
 
     /// Borrow it as the verification input.
@@ -1673,6 +1712,63 @@ mod tests {
     /// escaped code point or a float round-trip is how two canonicalisers disagree.
     const NM_PARITY_07_GOVERNED_ENVELOPE_SHA256: &str =
         "5408619c0e4a3ccf11fa928ec91b108c6b51c83ab331fd25231b0c806c771e28";
+
+    /// L-38. The genuine canonical envelope is read back as itself; the same envelope with a
+    /// second `run_id` in front of the real one, with a member added, re-ordered or spaced out —
+    /// each still verifying under the UNCHANGED signature on the old path — is refused.
+    #[test]
+    fn l38_an_envelope_is_accepted_only_as_the_exact_bytes_that_were_signed() {
+        let f = fx_over(b"hello", &[]);
+        let canonical = envelope(&f).payload_jcs().unwrap();
+        let text = std::str::from_utf8(&canonical).unwrap();
+
+        let exact = OwnedReceiptEnvelope::from_exact_jcs(&canonical).expect("the signed bytes are an envelope");
+        assert_eq!(exact.as_receipt_envelope().payload_jcs().unwrap(), canonical);
+
+        let duplicate = text.replacen(r#""run_id":"run-1""#, r#""run_id":"run-OTHER","run_id":"run-1""#, 1);
+        let unknown = text.replacen('{', r#"{"added_by":"someone","#, 1);
+        let spaced = text.replacen(r#""run_id":"run-1""#, r#""run_id": "run-1""#, 1);
+        let reordered = {
+            // Move the first member to the end: the same 23 members, in another order.
+            let inner = &text[1..text.len() - 1];
+            let (first, rest) = inner.split_once(',').unwrap();
+            format!("{{{rest},{first}}}")
+        };
+        for (what, altered) in [("duplicate", &duplicate), ("unknown", &unknown), ("spaced", &spaced), ("reordered", &reordered)] {
+            assert_ne!(altered.as_bytes(), &canonical[..], "{what}: the fixture altered nothing");
+            assert_eq!(
+                OwnedReceiptEnvelope::from_exact_jcs(altered.as_bytes()).err(),
+                Some(TurnReason::UpstreamBlocked),
+                "{what} was accepted"
+            );
+            // The path this replaces: a plain decode, then 23 keys read out of the value. It takes
+            // all four, and rebuilds the canonical bytes the genuine signature verifies over.
+            let value: Value = serde_json::from_str(altered).expect("the plain decoder takes it");
+            let old = OwnedReceiptEnvelope::from_payload(&value).expect("and so did the envelope parser");
+            let rebuilt = old.as_receipt_envelope().payload_jcs().unwrap();
+            assert!(
+                verify_ed25519(&f.iso_pub, &rebuilt, &f.env_sig).is_ok(),
+                "{what}: the control no longer shows the defect"
+            );
+        }
+        assert!(OwnedReceiptEnvelope::from_exact_jcs(b"\xff").is_err());
+        assert!(OwnedReceiptEnvelope::from_exact_jcs(&canonical[..canonical.len() - 1]).is_err());
+    }
+
+    /// The same for a payload carried as a value: exact is read, one more member is refused.
+    #[test]
+    fn l38_a_payload_value_with_a_member_the_signature_does_not_cover_is_refused() {
+        let f = fx_over(b"hello", &[]);
+        let canonical = envelope(&f).payload_jcs().unwrap();
+        let mut value: Value = serde_json::from_slice(&canonical).unwrap();
+        assert!(OwnedReceiptEnvelope::from_exact_payload(&value).is_ok());
+        value["added_by"] = Value::String("someone".into());
+        assert!(OwnedReceiptEnvelope::from_payload(&value).is_ok(), "the old parser ignores it");
+        assert_eq!(
+            OwnedReceiptEnvelope::from_exact_payload(&value).err(),
+            Some(TurnReason::UpstreamBlocked)
+        );
+    }
 
     #[test]
     fn nm_parity_07_the_governed_envelope_jcs_is_the_engines_byte_for_byte() {

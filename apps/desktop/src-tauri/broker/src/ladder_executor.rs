@@ -387,10 +387,10 @@ impl GovernedTurnChain for LadderChain {
         let signed = governed_turn_submit_prepared(&execution, &challenge, self.transport.as_ref())
             .map_err(|e| e.to_turn_reason())?;
 
-        // (5) The §4.9 envelope, strict-parsed from the exact bytes the signer signed.
-        let envelope_value: Value = serde_json::from_slice(signed.envelope_jcs())
-            .map_err(|_| TurnReason::UpstreamBlocked)?;
-        let owned = OwnedReceiptEnvelope::from_payload(&envelope_value)?;
+        // (5) The §4.9 envelope, from the exact bytes the signer signed — and ONLY those bytes
+        //     (audit L-38): a repeated key, an added member, another order or spacing is refused
+        //     here, before the signature is looked at, because none of them is what was signed.
+        let owned = OwnedReceiptEnvelope::from_exact_jcs(signed.envelope_jcs())?;
         let envelope = owned.as_receipt_envelope();
         // §7.1 echo equality. Worth exactly what its own doc says — a consistency check on the
         // transport, never a second opinion about the turn — and free, so it runs before the pull
@@ -1091,6 +1091,10 @@ mod tests {
         EchoesAnotherRun,
         /// The §4.10(f) pull serves bytes of the right LENGTH that are not the signed output.
         ServesOtherBytes,
+        /// The envelope bytes carry a member the signer did not sign; the signature is genuine.
+        EnvelopeWithAnAddedMember,
+        /// The envelope bytes name another run in front of the signed one; the signature is genuine.
+        EnvelopeWithASecondRunId,
     }
 
     /// The one-shot sidecar and everything behind it: on a submit frame it plays the supervisor and
@@ -1180,6 +1184,20 @@ mod tests {
             }
             let envelope_jcs = serde_json::to_vec(&Value::Object(envelope)).unwrap();
             let envelope_sig = URL_SAFE_NO_PAD.encode(signer_key().sign(&envelope_jcs).to_bytes());
+            // What travels as the envelope. The signature above is over the canonical bytes in every
+            // case — the two altered forms are those bytes with something the signer never saw.
+            let canonical_text = String::from_utf8(envelope_jcs.clone()).unwrap();
+            let run_member = format!(r#""run_id":"{}""#, text("run_id"));
+            assert!(canonical_text.contains(&run_member), "the fixture has no run_id member to double");
+            let envelope_jcs = match self.behaviour {
+                Sidecar::EnvelopeWithAnAddedMember => {
+                    canonical_text.replacen('{', r#"{"added_by":"someone","#, 1).into_bytes()
+                }
+                Sidecar::EnvelopeWithASecondRunId => canonical_text
+                    .replacen(&run_member, &format!(r#""run_id":"run-OTHER",{run_member}"#), 1)
+                    .into_bytes(),
+                _ => envelope_jcs,
+            };
 
             let echoed_run = match self.behaviour {
                 Sidecar::EchoesAnotherRun => "run-of-another-turn".to_string(),
@@ -1337,6 +1355,24 @@ mod tests {
             [BRIDGE_SUBMIT_PROTOCOL],
             "no output-read may follow a submit whose echo did not match"
         );
+    }
+
+    /// Audit L-38. Envelope bytes that are not the bytes the signer signed are refused before the
+    /// pull, whatever the genuine signature would verify over once they were rebuilt.
+    #[test]
+    fn envelope_bytes_the_signer_did_not_sign_block_before_the_pull() {
+        for altered in [Sidecar::EnvelopeWithAnAddedMember, Sidecar::EnvelopeWithASecondRunId] {
+            let (chain, wire) = whole_ladder(altered, &FRESH);
+            assert_eq!(
+                chain.run_verified(&req("c1"), "bt-1", "n").err(),
+                Some(TurnReason::UpstreamBlocked)
+            );
+            assert_eq!(
+                wire.borrow().sidecar_protocols,
+                [BRIDGE_SUBMIT_PROTOCOL],
+                "no output-read may follow an envelope that is not the signed bytes"
+            );
+        }
     }
 
     /// Rung 6: bytes of the right length that are not the signed output are refused by the pull's

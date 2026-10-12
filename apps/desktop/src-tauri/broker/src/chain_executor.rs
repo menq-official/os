@@ -514,7 +514,7 @@ where
         // digest off. Two deserializers for one signed payload are two things that can drift, and drift
         // in a deserializer stays invisible until the day the two disagree about which key holds the
         // output digest.
-        let env = OwnedReceiptEnvelope::from_payload(payload)?;
+        let env = OwnedReceiptEnvelope::from_exact_payload(payload)?;
 
         // (7) FINAL ACCEPTANCE — the broker-owned predicate over its OWN pinned keys + trusted Expected. The
         //     envelope + its signature came from the wire; EVERY trust anchor (keys, request binding) is the
@@ -1959,6 +1959,11 @@ mod tests {
 
     /// The same happy path for a turn that happened at `t` — every signature recomputed.
     fn happy_connector_at(t: Times) -> FakeConnector {
+        connector_with_payload(t, |_| {})
+    }
+
+    /// The happy connector, with the signer's payload passed through `alter` AFTER it was signed.
+    fn connector_with_payload(t: Times, alter: impl FnOnce(&mut Value)) -> FakeConnector {
         let c = FakeConnector::new();
         c.push(
             Principal::ChallengeAuthority,
@@ -1976,7 +1981,8 @@ mod tests {
             Principal::Supervisor,
             json!({"ok": true, "op": "launch-gate", "proceed": true, "lease": lease_obj()}),
         );
-        let (payload, sig) = signed_payload(OUTPUT.len() as u64, &sha256_hex(OUTPUT), t);
+        let (mut payload, sig) = signed_payload(OUTPUT.len() as u64, &sha256_hex(OUTPUT), t);
+        alter(&mut payload);
         c.push(
             Principal::IsolatedSigner,
             json!({"ok": true, "op": "sign-result", "artifact_type": RECEIPT_ENVELOPE_ARTIFACT_TYPE,
@@ -2016,6 +2022,20 @@ mod tests {
         assert_eq!(m.trust_state, TRUSTED_VERIFIED);
         assert_eq!(m.created_at_ms, FIXTURE_TIMES.completed); // envelope completed_at_ms
         assert_eq!(r.broker_turn_id, "bt-1");
+    }
+
+    /// Audit L-38, on the direct chain: a signer payload carrying a member the signature does
+    /// not cover is refused, though every signed value in it is genuine.
+    #[test]
+    fn a_signer_payload_with_a_member_the_signature_does_not_cover_is_refused() {
+        let connector = connector_with_payload(FIXTURE_TIMES, |payload| {
+            payload["added_by"] = json!("someone");
+        });
+        let req = ValidatedRequest::decode(&raw()).unwrap();
+        assert_eq!(
+            chain(connector, false).run_verified(&req, "bt-1", NONCE).err(),
+            Some(TurnReason::UpstreamBlocked)
+        );
     }
 
     #[test]

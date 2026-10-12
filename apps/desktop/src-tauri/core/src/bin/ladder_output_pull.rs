@@ -478,10 +478,11 @@ fn main() {
         )
     });
 
-    let envelope_value: Value = serde_json::from_slice(signed.envelope_jcs())
-        .unwrap_or_else(|e| panic!("the §4.9 envelope_jcs is not a JSON document: {e}"));
-    let owned = OwnedReceiptEnvelope::from_payload(&envelope_value)
-        .unwrap_or_else(|e| panic!("the §4.9 envelope is not the flat 23-key payload: {e:?}"));
+    // The exact bytes, as the broker reads them (audit L-38): one document, no repeated key, and
+    // byte for byte the canonical 23-key payload — the only bytes the signature covers.
+    let owned = OwnedReceiptEnvelope::from_exact_jcs(signed.envelope_jcs()).unwrap_or_else(|e| {
+        panic!("the §4.9 envelope_jcs is not exactly the canonical flat 23-key payload: {e:?}")
+    });
     let envelope = owned.as_receipt_envelope();
 
     // §7.1's echo equality, run by the party it protects. It catches a proxy that ALTERED what the

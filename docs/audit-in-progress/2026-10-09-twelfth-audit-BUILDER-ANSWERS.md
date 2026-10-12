@@ -142,6 +142,18 @@ Each of these changes a contract or picks a design, so none was changed.
   Tested through a real child process that writes the invalid byte and exits zero. Three mutants,
   three named deaths; the old code is caught by the real-child test. Not done: the child's
   stderr is still read lossily, into a diagnostic only.
+- **`L-38` (P3).** The broker read 23 keys out of the envelope and verified the signature over the
+  canonical bytes it rebuilt from them, so bytes the signer never signed were accepted under its
+  signature — the genuine envelope with a second `run_id` in front, a member added, re-ordered or
+  spaced: all four accepted by the old path, shown by a control inside the test. An envelope is
+  now taken only if the canonical bytes rebuilt from it EQUAL the bytes received
+  (`from_exact_jcs`); the direct chain, whose payload arrives as a value, compares the value's own
+  serialisation (`from_exact_payload`). All three callers moved, the CI pull driver included, and
+  the lenient parser is private. Five mutants, four named deaths: the duplicate-refusing decoder
+  in front of the comparison survives, because the comparison already refuses a duplicate. Two
+  callers were held by no test until their mutants survived; each has one now. Not done: the
+  detached signature is still verified over the rebuilt bytes, which are now proven equal to the
+  received ones rather than being the same buffer.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
