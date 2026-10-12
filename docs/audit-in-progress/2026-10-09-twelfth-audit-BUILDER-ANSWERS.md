@@ -76,6 +76,16 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   for the wrong reason until its mutant survived: this machine's umask is 002. Not done: the pin
   manifest's own custody and the check that it pins the running broker; `L-26`; a run against a
   real provisioned deployment, which this machine does not have.
+- **`L-29` (P2).** The pin manifest was opened by its path with `O_NOFOLLOW`, which protects the last
+  component only. With two acceptable manifests and a symlink before them, the reader returned A
+  or B as the link was swapped, and accepted one under a 0777 directory: both reproduced. The path
+  is walked one component at a time with `openat` and `O_NOFOLLOW` from `/`; a link anywhere on it
+  is refused, and every directory is refused if a measured principal owns it or group or others
+  may write to it — the rule the floor already applied to the ancestors of each pinned artifact.
+  Nine mutants, eight named deaths; judging `/` itself cannot be made to fail by a test. Tests
+  name their own directory as the start of the walk, under `cfg(test)` only, because every
+  directory a test can make is under `/tmp`. Not done: `openat2(RESOLVE_BENEATH)`; binding the
+  path to an expected deployment root; POSIX ACLs; `L-30`, the size ceiling on the same reader.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is

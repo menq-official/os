@@ -61,6 +61,39 @@ pub fn manifest_custody_violation(
     None
 }
 
+/// Is this directory, on the way to the pin manifest, one a measured party could redirect through?
+///
+/// Audit L-29. `O_NOFOLLOW` on the manifest protects its FINAL component, and the custody
+/// predicate above judges the final file. Every directory before it decides which file that is: a
+/// login or runtime principal who owns one, or may write to one, renames a different manifest into
+/// place — an older one that is still root-owned and well-formed passes every other check. The
+/// rule is the one `verify_tcb_integrity` already applies to the ancestors of each artifact the
+/// manifest pins; the manifest's own path had no such rule.
+///
+/// PURE over injected facts, like [`manifest_custody_violation`]. `None` means acceptable.
+pub fn manifest_ancestor_violation(
+    ancestor: &str,
+    owner_uid: u32,
+    mode: u32,
+    login_and_runtime_uids: &[u32],
+    login_uid: u32,
+) -> Option<String> {
+    if owner_uid == login_uid || login_and_runtime_uids.contains(&owner_uid) {
+        return Some(format!(
+            "the directory {ancestor} on the way to the TCB pin manifest is owned by uid \
+             {owner_uid}, a measured principal, who can therefore put a different manifest at that path"
+        ));
+    }
+    if mode & 0o022 != 0 {
+        return Some(format!(
+            "the directory {ancestor} on the way to the TCB pin manifest is group/other-writable \
+             (mode {:o})",
+            mode & 0o7777
+        ));
+    }
+    None
+}
+
 /// Parse the pin manifest, with NO custody check. `None` on unreadable or malformed.
 ///
 /// Kept separate and named for what it is: the Linux path uses
@@ -72,8 +105,109 @@ pub fn load_pin_manifest(path: &str) -> Option<TcbPinManifest> {
     serde_json::from_str::<TcbPinManifest>(&raw).ok()
 }
 
+/// The directory the walk to the pin manifest starts from. `/`, always, in anything that ships.
+///
+/// A test cannot make a root-owned tree, and every directory it CAN make sits under one the walk
+/// must refuse (`/tmp` is world-writable). So under `cfg(test)`, and only there, a test may name
+/// the directory it built as the start; that directory is then taken as given and everything
+/// below it is walked and judged exactly as in production.
+#[cfg(target_os = "linux")]
+fn manifest_walk_root() -> String {
+    // Spelled with `all(...)`: the source-reading tests below take everything above the first
+    // bare test attribute to be production code, and this function is production code.
+    #[cfg(all(test, target_os = "linux"))]
+    {
+        if let Some(root) = TEST_WALK_ROOT.with(|r| r.borrow().clone()) {
+            return root;
+        }
+    }
+    "/".to_string()
+}
+
+#[cfg(all(test, target_os = "linux"))]
+thread_local! {
+    static TEST_WALK_ROOT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Open the pin manifest by walking to it one component at a time, never through a link, judging
+/// every directory on the way (audit L-29).
+///
+/// Each step is an `openat` relative to the directory just judged, with `O_NOFOLLOW`, so the
+/// directory that was judged is the directory the next name is looked up in — a path string
+/// resolved again by the kernel would be free to go somewhere else. A component that is a symlink
+/// is refused, whoever owns it and wherever it points.
+#[cfg(target_os = "linux")]
+fn open_manifest_through_judged_ancestors(
+    path: &str,
+    login_and_runtime_uids: &[u32],
+    login_uid: u32,
+) -> Result<std::fs::File, String> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+    let root = manifest_walk_root();
+    let below = if root == "/" {
+        path.strip_prefix('/')
+    } else {
+        path.strip_prefix(root.as_str()).and_then(|rest| rest.strip_prefix('/'))
+    };
+    let components: Vec<&str> = match below {
+        Some(rest) if !rest.is_empty() => rest.split('/').collect(),
+        _ => return Err(format!("TCB pin manifest {path} cannot be opened: not an absolute path to a file")),
+    };
+    if components.iter().any(|c| c.is_empty() || *c == "." || *c == ".." || c.contains('\0')) {
+        return Err(format!(
+            "TCB pin manifest {path} cannot be opened: the path is not normalised (an empty, `.` or \
+             `..` component), so its directories cannot be named and judged"
+        ));
+    }
+
+    let judge = |dir: &OwnedFd, name: &str| -> Result<(), String> {
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        if unsafe { libc::fstat(dir.as_raw_fd(), &mut st) } != 0 {
+            return Err(format!("TCB pin manifest {path} cannot be opened: fstat of {name} failed"));
+        }
+        match manifest_ancestor_violation(name, st.st_uid, st.st_mode, login_and_runtime_uids, login_uid) {
+            Some(why) => Err(why),
+            None => Ok(()),
+        }
+    };
+    let open_at = |dir: Option<&OwnedFd>, name: &str, flags: libc::c_int| -> Result<OwnedFd, std::io::Error> {
+        let c = CString::new(name).map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+        let at = dir.map(|d| d.as_raw_fd()).unwrap_or(libc::AT_FDCWD);
+        let fd = unsafe { libc::openat(at, c.as_ptr(), flags | libc::O_CLOEXEC) };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    };
+
+    let dir_flags = libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW;
+    let mut dir = open_at(None, &root, libc::O_PATH | libc::O_DIRECTORY)
+        .map_err(|e| format!("TCB pin manifest {path} cannot be opened: {root}: {e}"))?;
+    let mut walked = root.trim_end_matches('/').to_string();
+    if root == "/" {
+        judge(&dir, "/")?;
+    }
+    let (file_name, directories) = components.split_last().expect("at least one component");
+    for name in directories {
+        walked = format!("{walked}/{name}");
+        dir = open_at(Some(&dir), name, dir_flags).map_err(|e| {
+            format!(
+                "TCB pin manifest {path} cannot be opened: {walked} is not a directory reached \
+                 without following a link: {e}"
+            )
+        })?;
+        judge(&dir, &walked)?;
+    }
+    let file = open_at(Some(&dir), file_name, libc::O_RDONLY | libc::O_NOFOLLOW)
+        .map_err(|e| format!("TCB pin manifest {path} cannot be opened (O_NOFOLLOW): {e}"))?;
+    Ok(std::fs::File::from(file))
+}
+
 /// Read AND parse the pin manifest through one `O_NOFOLLOW` descriptor, with its custody checked on
-/// that same descriptor before any byte is believed.
+/// that same descriptor before any byte is believed — and reached through directories each of
+/// which was judged first ([`open_manifest_through_judged_ancestors`]).
 ///
 /// One path resolution, then everything through the fd: `File::metadata()` is an `fstat` of the open
 /// handle, so the owner and mode belong to the inode whose bytes are then read. `O_NOFOLLOW` makes a
@@ -86,13 +220,9 @@ pub fn read_pin_manifest_checked(
     login_uid: u32,
 ) -> Result<TcbPinManifest, String> {
     use std::io::Read;
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::fs::MetadataExt;
 
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(path)
-        .map_err(|e| format!("TCB pin manifest {path} cannot be opened (O_NOFOLLOW): {e}"))?;
+    let mut file = open_manifest_through_judged_ancestors(path, login_and_runtime_uids, login_uid)?;
     let md = file
         .metadata()
         .map_err(|e| format!("TCB pin manifest {path}: fstat of the open descriptor failed: {e}"))?;
@@ -764,8 +894,24 @@ mod tests {
             .expect("the checked reader has no body")
             .to_string();
 
-        // Opened without following a final symlink...
-        assert!(body.contains("libc::O_NOFOLLOW"), "{body}");
+        // Opened by the walk that judges every directory on the way, and nothing else...
+        assert!(
+            body.contains("open_manifest_through_judged_ancestors(path, login_and_runtime_uids, login_uid)"),
+            "{body}"
+        );
+        assert!(!body.contains(".open(path)"), "the path is resolved a second time: {body}");
+        // ...which opens every component, the last included, without following a link.
+        let walk = src
+            .split("fn open_manifest_through_judged_ancestors")
+            .nth(1)
+            .expect("the walk is gone")
+            .split("\n}")
+            .next()
+            .unwrap()
+            .to_string();
+        assert!(walk.contains("libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW"), "{walk}");
+        assert!(walk.contains("libc::O_RDONLY | libc::O_NOFOLLOW"), "{walk}");
+        assert!(walk.contains("libc::openat("), "{walk}");
         // ...facts from an fstat of THAT handle, never a second `metadata(path)`...
         assert!(body.contains(".metadata()"), "{body}");
         assert!(!body.contains("std::fs::metadata("), "{body}");
@@ -834,9 +980,160 @@ mod tests {
         let p = dir.join("tcb-pin.json");
         std::fs::write(&p, body).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        // The walk to the manifest starts at this test's own directory: everything above it is
+        // `/tmp`, which no manifest may sit under.
+        walk_from(&dir);
         // SAFETY: getuid never fails and touches no memory.
         let me = unsafe { libc::getuid() };
         (p, me.wrapping_add(1))
+    }
+
+    /// Name the directory this test built as where the walk to the pin manifest starts, for the
+    /// rest of this test's thread.
+    #[cfg(target_os = "linux")]
+    fn walk_from(dir: &std::path::Path) {
+        TEST_WALK_ROOT.with(|r| *r.borrow_mut() = Some(dir.to_str().unwrap().to_string()));
+    }
+
+    /// Two manifests that are each acceptable — this test's own files, mode 0644 — under
+    /// `<root>/releases/A` and `<root>/releases/B`, with the walk starting at `<root>`. They differ
+    /// in the uid they name as root, so a reader's answer says which one it read.
+    #[cfg(target_os = "linux")]
+    fn two_acceptable_manifests() -> (tempfile::TempDir, u32) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        for (name, root_uid) in [("A", 1), ("B", 2)] {
+            let release = dir.path().join("releases").join(name);
+            std::fs::create_dir_all(&release).unwrap();
+            let pin = release.join("pin.json");
+            std::fs::write(&pin, format!(r#"{{"artifacts":[],"owner_uids":{{"root":{root_uid}}}}}"#)).unwrap();
+            std::fs::set_permissions(&pin, std::fs::Permissions::from_mode(0o644)).unwrap();
+            // 0755 whatever the umask: a group-writable directory is one of the refusals below.
+            std::fs::set_permissions(&release, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::fs::set_permissions(dir.path().join("releases"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        walk_from(dir.path());
+        let me = unsafe { libc::getuid() };
+        (dir, me.wrapping_add(1))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn read_as(path: &std::path::Path, uid: u32) -> Result<TcbPinManifest, String> {
+        read_pin_manifest_checked(path.to_str().unwrap(), &[uid], uid)
+    }
+
+    /// The control for the refusals below: named directly, through real directories, each manifest
+    /// is read, and it is the one that was named.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_manifest_under_judged_directories_is_read() {
+        use brops_core::tcb_integrity::TcbOwner;
+        let (dir, other) = two_acceptable_manifests();
+        let a = read_as(&dir.path().join("releases/A/pin.json"), other).expect("A is acceptable");
+        assert_eq!(a.owner_uids.get(&TcbOwner::Root), Some(&1));
+        let b = read_as(&dir.path().join("releases/B/pin.json"), other).expect("B is acceptable");
+        assert_eq!(b.owner_uids.get(&TcbOwner::Root), Some(&2));
+    }
+
+    /// L-29, the reviewer's sequence: an intermediate symlink chooses between two manifests that
+    /// are each acceptable. Whichever it points at, the path is refused before either is parsed.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_link_on_the_way_to_the_manifest_is_refused_whichever_manifest_it_selects() {
+        let (dir, other) = two_acceptable_manifests();
+        let selected = dir.path().join("selected");
+        for release in ["A", "B"] {
+            let _ = std::fs::remove_file(&selected);
+            std::os::unix::fs::symlink(dir.path().join("releases").join(release), &selected).unwrap();
+            let e = read_as(&selected.join("pin.json"), other).unwrap_err();
+            assert!(e.contains("without following a link"), "{release}: {e}");
+            assert!(e.contains("/selected"), "the refusal does not name the link: {e}");
+        }
+    }
+
+    /// A directory on the way that group or others may write to is where a different manifest can
+    /// be renamed into place.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_writable_directory_on_the_way_to_the_manifest_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, other) = two_acceptable_manifests();
+        let releases = dir.path().join("releases");
+        for (mode, at) in [(0o775, "releases"), (0o757, "releases/A")] {
+            std::fs::set_permissions(dir.path().join(at), std::fs::Permissions::from_mode(mode)).unwrap();
+            let e = read_as(&releases.join("A/pin.json"), other).unwrap_err();
+            assert!(e.contains("group/other-writable") && e.contains(at), "{mode:o} {at}: {e}");
+            std::fs::set_permissions(dir.path().join(at), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(read_as(&releases.join("A/pin.json"), other).is_ok(), "restored, it reads again");
+    }
+
+    /// A directory on the way that a measured principal OWNS: here the principal is this test's
+    /// own uid, which owns every directory it made. The directory answers before the file does.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_directory_owned_by_a_measured_party_is_refused_before_the_file_is_judged() {
+        let (dir, _) = two_acceptable_manifests();
+        let me = unsafe { libc::getuid() };
+        let e = read_as(&dir.path().join("releases/A/pin.json"), me).unwrap_err();
+        assert!(e.contains("on the way to the TCB pin manifest is owned by uid"), "{e}");
+        assert!(e.contains("/releases") && !e.contains("/releases/A "), "the FIRST such directory: {e}");
+    }
+
+    /// A path that cannot be walked component by component is refused, not resolved some other way.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_path_that_is_not_normalised_is_refused_rather_than_resolved() {
+        let (dir, other) = two_acceptable_manifests();
+        let root = dir.path().to_str().unwrap().to_string();
+        for path in [
+            format!("{root}/releases/B/../A/pin.json"),
+            format!("{root}/releases/./A/pin.json"),
+            format!("{root}/releases//A/pin.json"),
+            "releases/A/pin.json".to_string(),
+        ] {
+            let e = read_pin_manifest_checked(&path, &[other], other).unwrap_err();
+            assert!(e.contains("cannot be opened"), "{path}: {e}");
+        }
+    }
+
+    /// The manifest's own name is held to the same rule as before: a link there is refused too.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_link_in_place_of_the_manifest_itself_is_refused() {
+        let (dir, other) = two_acceptable_manifests();
+        let link = dir.path().join("releases/A/current.json");
+        std::os::unix::fs::symlink(dir.path().join("releases/B/pin.json"), &link).unwrap();
+        let e = read_as(&link, other).unwrap_err();
+        assert!(e.contains("cannot be opened (O_NOFOLLOW)"), "{e}");
+    }
+
+    /// With no test root named, the walk starts at `/` — what ships. A manifest in a temporary
+    /// directory is then refused for a directory above it, which is the production answer.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn from_the_real_root_a_manifest_under_the_temporary_directory_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let pin = dir.path().join("pin.json");
+        std::fs::write(&pin, br#"{"artifacts":[],"owner_uids":{}}"#).unwrap();
+        std::fs::set_permissions(&pin, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let me = unsafe { libc::getuid() };
+        // Judged for this uid: the temporary directory is this uid's, whatever is above it.
+        let e = read_as(&pin, me).unwrap_err();
+        assert!(e.contains("on the way to the TCB pin manifest"), "{e}");
+    }
+
+    /// The pure predicate, on every host: owner and mode each refuse alone.
+    #[test]
+    fn the_ancestor_predicate_refuses_a_measured_owner_and_a_writable_mode() {
+        assert_eq!(manifest_ancestor_violation("/opt/brops", 0, 0o40755, &[5001], 1000), None);
+        assert!(manifest_ancestor_violation("/opt/brops", 1000, 0o40755, &[5001], 1000).is_some());
+        assert!(manifest_ancestor_violation("/opt/brops", 5001, 0o40755, &[5001], 1000).is_some());
+        assert!(manifest_ancestor_violation("/opt/brops", 0, 0o40775, &[5001], 1000).is_some());
+        assert!(manifest_ancestor_violation("/opt/brops", 0, 0o40757, &[5001], 1000).is_some());
+        // The sticky bit is not an exemption: `/tmp` is a place anyone may put a name.
+        assert!(manifest_ancestor_violation("/tmp", 0, 0o41777, &[5001], 1000).is_some());
     }
 
     #[cfg(target_os = "linux")]
@@ -1344,6 +1641,8 @@ mod tests {
                 return; // as root every file here IS root-owned; the refusal under test cannot arise
             }
             let dir = tempfile::tempdir().unwrap();
+            // The walk to the pin manifest starts here: above it is `/tmp` (L-29).
+            super::walk_from(dir.path());
             let doc = anchor_json("install_minted");
             let anchor = dir.path().join("anchor.json");
             std::fs::write(&anchor, &doc).unwrap();
