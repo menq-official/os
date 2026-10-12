@@ -57,6 +57,14 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   read). Seven mutants, six named deaths; the path-length arm cannot be told from the kernel's own
   refusal. Not done: a signal during the connect (`EINTR`) is retried and no test delivers one;
   the reviewer's non-blocking connect with `poll` was not used.
+- **`L-22` (P3) — and wider than filed.** The test named "writes no file" refused four spellings of
+  a write. Eight writers were put into the production code one at a time — `fs::copy`, `rename`,
+  `hard_link`, a symlink, `OpenOptions`, `libc::open`, a raw `syscall`, a `File` imported under
+  another name — and it went red for one, `OpenOptions`: reproduced. It is an allowlist now: what
+  the production half may take from `fs` (two reads and `remove_file`) and from `libc` (the hop
+  socket of `L-21`), and no import of either. Eleven writers, eleven red; each of the three arms
+  removed in turn lets through the writer only it catches. Not done: it reads this one file's text,
+  so a write made by a function it calls elsewhere is not seen, and it is a scan, not a parse.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is

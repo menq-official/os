@@ -2401,22 +2401,96 @@ mod tests {
         );
     }
 
+    /// Every `prefix::name` path in `code`, as the set of names after `prefix::`.
+    ///
+    /// A hand-rolled scan rather than a parse: this crate carries no Rust parser, and what is being
+    /// collected is a path segment, which has one spelling. `prefix` must not itself be the tail
+    /// of a longer identifier (`my_fs::x` is not `fs::x`).
+    fn names_after(code: &str, prefix: &str) -> std::collections::BTreeSet<String> {
+        let needle = format!("{prefix}::");
+        let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let mut names = std::collections::BTreeSet::new();
+        for (at, _) in code.match_indices(&needle) {
+            if code[..at].chars().next_back().is_some_and(ident) {
+                continue;
+            }
+            let rest = &code[at + needle.len()..];
+            let name: String = rest.chars().take_while(|c| ident(*c)).collect();
+            // `fs::{a, b}` and `fs::*` name things this scan cannot list, so they are reported as
+            // what they are and fail the allowlist below.
+            names.insert(if name.is_empty() { rest.chars().take(1).collect() } else { name });
+        }
+        names
+    }
+
     /// The second half of the same property, and the one a "fallback" would break first: the
     /// governed execution writes NO file. It reads the recorder's report and containment out of the
-    /// shared `brops-report` directory and content-addresses them; a `write` reintroduced anywhere
+    /// shared `brops-report` directory and content-addresses them; a write reintroduced anywhere
     /// on this path — even to a different directory, even guarded by "only if the recorder did not"
     /// — is the violation coming back while the deployment looks fixed.
+    ///
+    /// An ALLOWLIST since L-22. This named four spellings of a write (`fs::write`,
+    /// `set_permissions`, `File::create`, `OpenOptions`) and stayed green for `fs::copy`,
+    /// `fs::rename`, `fs::hard_link`, a symlink, `libc::open`, a raw `syscall`, and a `File`
+    /// imported under another name — seven of eight writers tried. What the production half may
+    /// take from `fs` and from `libc` is listed here instead, so a new name is red until someone
+    /// adds it on purpose.
+    ///
+    /// What this does not see: a write made by a function this file CALLS in another module or
+    /// crate, and a path built by a macro. It reads this file's text and nothing else.
     #[test]
     fn the_governed_execution_writes_no_file_of_its_own() {
         let code = broker_production_code();
-        for forbidden in ["fs::write", "set_permissions", "File::create", "OpenOptions"] {
-            assert_eq!(
-                code.matches(forbidden).count(),
-                0,
-                "the broker's governed execution calls `{forbidden}`. It publishes nothing: the \
-                 recorder writes the report, the containment evidence and both store blobs, and a \
-                 turn whose artifacts did not appear must Block, never be written into existence."
+
+        // Two reads, and the removal of the previous turn's report before the recorder runs.
+        let fs_allowed = ["read", "read_to_string", "remove_file"];
+        let fs_used = names_after(&code, "fs");
+        assert!(fs_used.contains("read"), "the scan found no `fs::read` in the execution path");
+        let fs_extra: Vec<_> = fs_used.iter().filter(|n| !fs_allowed.contains(&n.as_str())).collect();
+        assert!(
+            fs_extra.is_empty(),
+            "the broker's governed execution takes {fs_extra:?} from `fs`. It publishes nothing: \
+             the recorder writes the report, the containment evidence and both store blobs, and a \
+             turn whose artifacts did not appear must Block, never be written into existence."
+        );
+
+        // The outbound hop's socket (L-21): made, given a deadline, connected. No descriptor is
+        // opened on a path and nothing is written through `libc`.
+        let libc_allowed = [
+            "socket", "setsockopt", "connect",
+            "AF_UNIX", "SOCK_STREAM", "SOCK_CLOEXEC", "SOL_SOCKET", "SO_SNDTIMEO",
+            "sockaddr_un", "sa_family_t", "socklen_t", "timeval", "time_t", "suseconds_t", "c_char",
+        ];
+        let libc_used = names_after(&code, "libc");
+        assert!(libc_used.contains("connect"), "the scan found no `libc::connect` in the transport");
+        let libc_extra: Vec<_> =
+            libc_used.iter().filter(|n| !libc_allowed.contains(&n.as_str())).collect();
+        assert!(
+            libc_extra.is_empty(),
+            "the broker's production code takes {libc_extra:?} from `libc`, which is not on the \
+             list of what the hop socket needs. A file opened or written through `libc` is still a \
+             file the broker wrote."
+        );
+
+        // `fs` is only ever spelled `std::fs::name(...)` here, so the two lists above see every
+        // use. An import would let a write be called by a bare or renamed identifier.
+        for line in code.lines().map(str::trim).filter(|l| l.starts_with("use ")) {
+            assert!(
+                !line.contains("fs") && !line.contains("libc"),
+                "`{line}` imports from `fs` or `libc`; name them in full at the call so the \
+                 allowlists above can see what is used"
             );
         }
+    }
+
+    /// The scan the allowlist stands on, on text whose answer is known.
+    #[test]
+    fn the_path_scan_lists_every_name_and_reports_what_it_cannot_list() {
+        let found = names_after(
+            "std::fs::read(p); fs::copy(a, b); my_fs::write(x); use std::fs::{File, rename}; fs::*;",
+            "fs",
+        );
+        let found: Vec<&str> = found.iter().map(String::as_str).collect();
+        assert_eq!(found, ["*", "copy", "read", "{"]);
     }
 }
