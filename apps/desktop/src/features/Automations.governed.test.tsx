@@ -362,6 +362,27 @@ describe('the run history belongs to the automation on screen', () => {
   });
 });
 
+// The test above failed once in CI with the page announcing "Evening digest" and showing "Morning
+// digest" selected: the default-selection effect ran AFTER the click and wrote the first row over
+// it. That ordering cannot be produced on demand from here without changing the page — delaying
+// the effect by 300 ms reproduces it every time, and was how the cause was confirmed — so what
+// is held is the shape that makes the ordering harmless: the effect may only fill an empty
+// selection, never replace one.
+describe('the default selection never replaces a selection the user made', () => {
+  const page = Object.values(
+    import.meta.glob('./Automations.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
+  )[0];
+
+  it('reads the page it is about', () => {
+    expect(page).toContain('Default-select the first conduit once data arrives');
+  });
+
+  it('fills an empty selection through a functional update and never assigns the first row outright', () => {
+    expect(page).toMatch(/setSelectedId\(\(current\) => current \?\? first\)/);
+    expect(page).not.toMatch(/setSelectedId\(items\[0\]\.id\)/);
+  });
+});
+
 // `list_automations` is a local SQLite read. Its refusal was titled "Blocked by the wall" and
 // told the owner to "Switch to work mode, or request the required scope/approval".
 describe('a refused read of the automation list is not the wall', () => {

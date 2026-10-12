@@ -9,6 +9,16 @@
 > 400 ms: the old file fails those three, the new one passes all ten. All four go through one waiting
 > helper now.
 
+> **Found by CI on 2026-10-12 — not one of the 1370.** `Automations.governed.test.tsx` failed once on
+> run 38307999515, on a pull request that touched no frontend file, with the page announcing
+> "Evening digest" and showing "Morning digest" selected. It is a defect in the page, not in the
+> test: the effect that selects the first row when nothing is selected held `selectedId === null`
+> from the render that scheduled it and assigned the first row outright, so a click that landed
+> before it ran was overwritten. Not reproduced by repetition (12 runs here, six with every core
+> busy); reproduced every time by delaying that effect 300 ms, and gone with the same delay once
+> the effect fills an empty selection through a functional update. Why the effect ran late on that
+> runner was not established.
+
 ## How it was run
 
 - **35 slices** of at most 300 KB cut from the 527 text files under `apps/desktop` (9.1 MB; images, fonts, lockfiles and generated schemas excluded), one read-only reader per slice, plus **four sweeps**: duplicated Rust, documents against code, dead code and placeholders, tests that do not test.

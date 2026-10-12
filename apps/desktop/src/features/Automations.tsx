@@ -465,8 +465,17 @@ export function Automations() {
   );
 
   // Default-select the first conduit once data arrives (mockup init select(DEFAULT)).
+  //
+  // A FUNCTIONAL update, deliberately. This effect is scheduled by the render in which the rows
+  // arrived, when nothing was selected; a click that lands before it runs selects a row, and the
+  // effect — still holding `selectedId === null` from that render — then wrote the first row over
+  // the user's choice. The page announced one conduit and showed another. Seen once in CI
+  // (2026-10-12, `Automations.governed.test.tsx`); reproduced on demand by delaying this effect.
   useEffect(() => {
-    if (selectedId === null && items.length > 0) setSelectedId(items[0].id);
+    if (selectedId === null && items.length > 0) {
+      const first = items[0].id;
+      setSelectedId((current) => current ?? first);
+    }
   }, [items, selectedId]);
 
   const select = (a: Automation, focusLane = false) => {

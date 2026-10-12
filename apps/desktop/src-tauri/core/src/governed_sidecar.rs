@@ -829,7 +829,7 @@ impl GovernedSidecar {
         if !status.success() {
             return Err(format!("governed engine sidecar crashed: {}", errbuf.trim()));
         }
-        parse_sidecar_stdout(&String::from_utf8_lossy(&obuf))
+        parse_sidecar_stdout(&obuf)
     }
 }
 
@@ -875,8 +875,20 @@ fn hide_console(cmd: &mut std::process::Command) {
 /// The sidecar's stdout as ONE JSON document (audit L-34). `BridgeTurnResult::parse_frame` takes a
 /// `Value`, and by then a repeated key is gone: `"ok":false,"ok":true` under two protocols read as
 /// a signed result. The duplicate is refused here, on the bytes, before a `Value` exists.
-fn parse_sidecar_stdout(stdout: &str) -> Result<Value, String> {
-    crate::strict_json::from_str(stdout.trim()).map_err(|e| format!("could not parse bridge-result ({e:?})"))
+///
+/// And it takes the BYTES (audit L-37). They used to be made into text with a lossy conversion
+/// first, which replaces every invalid byte with U+FFFD: output that was not JSON at all — JSON is
+/// Unicode text — was repaired into JSON and accepted, and what was then logged or stored was not
+/// what the child wrote. Output that is not UTF-8 is refused, naming where it stops being so.
+fn parse_sidecar_stdout(stdout: &[u8]) -> Result<Value, String> {
+    let text = std::str::from_utf8(stdout).map_err(|e| {
+        format!(
+            "the sidecar's output is not UTF-8 at byte {} of {}, so it is not a JSON document",
+            e.valid_up_to(),
+            stdout.len()
+        )
+    })?;
+    crate::strict_json::from_str(text.trim()).map_err(|e| format!("could not parse bridge-result ({e:?})"))
 }
 
 #[cfg(test)]
@@ -893,12 +905,70 @@ mod tests {
             r#"{"protocol":"bridge.governed-turn-result.v1","ok":true,"receipt":{"sig":"a","sig":"b"}}"#,
             r#"{"ok":true,"error":"x","error":"y"}"#,
         ] {
-            let why = parse_sidecar_stdout(stdout).expect_err(stdout);
+            let why = parse_sidecar_stdout(stdout.as_bytes()).expect_err(stdout);
             assert!(why.contains("DuplicateKey"), "{why}");
             assert!(serde_json::from_str::<Value>(stdout).is_ok(), "the plain decoder took it: {stdout}");
         }
-        assert!(parse_sidecar_stdout("  {\"protocol\":\"p\",\"ok\":true}\n").is_ok());
-        assert!(parse_sidecar_stdout("not json").is_err());
+        assert!(parse_sidecar_stdout(b"  {\"protocol\":\"p\",\"ok\":true}\n").is_ok());
+        assert!(parse_sidecar_stdout(b"not json").is_err());
+    }
+
+    /// Audit L-37, the reviewer's bytes: an invalid byte inside a string of an otherwise
+    /// well-formed reply. It is refused, by position; it is not repaired into a reply.
+    #[test]
+    fn l37_sidecar_output_that_is_not_utf8_is_refused_and_not_repaired() {
+        let bytes: &[u8] = b"{\"ok\":false,\"error\":\"bad\xffbyte\"}";
+        let why = parse_sidecar_stdout(bytes).expect_err("an invalid byte was accepted");
+        assert!(why.contains("not UTF-8 at byte 24 of 31"), "{why}");
+        // What the lossy conversion made of the same bytes is a document the decoder takes.
+        let repaired = String::from_utf8_lossy(bytes);
+        assert!(repaired.contains('\u{fffd}'));
+        assert!(crate::strict_json::from_str(&repaired).is_ok(), "the control no longer shows the defect");
+        // A truncated multi-byte character at the very end, and a lone continuation byte.
+        assert!(parse_sidecar_stdout(b"{\"ok\":true,\"note\":\"\xe2\x82\"}").is_err());
+        assert!(parse_sidecar_stdout(b"\x80{\"ok\":true}").is_err());
+        // The control: real non-ASCII text is UTF-8 and is read as it was written.
+        let armenian = "{\"ok\":true,\"note\":\"\u{0562}\u{0561}\u{0580}\u{0565}\u{0582}\"}";
+        let value = parse_sidecar_stdout(armenian.as_bytes()).expect("valid UTF-8 is a document");
+        assert_eq!(value["note"], "\u{0562}\u{0561}\u{0580}\u{0565}\u{0582}");
+    }
+
+    /// The same through a REAL child: a process that exits zero having written one invalid byte
+    /// inside an otherwise well-formed reply. `round_trip` refuses it; the same child writing
+    /// valid text is read.
+    #[cfg(unix)]
+    #[test]
+    fn l37_a_child_that_writes_an_invalid_byte_is_refused_by_the_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let child = |name: &str, printf_format: &str| {
+            let script = dir.path().join(name);
+            std::fs::write(&script, format!("printf '{printf_format}'\n")).unwrap();
+            GovernedSidecar::as_calling_principal(
+                "/bin/sh",
+                script.to_str().unwrap(),
+                dir.path().to_path_buf(),
+                SidecarTrust::RelayFramesOnly,
+            )
+        };
+        let request = format!(r#"{{"protocol":"{}"}}"#, RELAY_PROTOCOLS[0]);
+
+        let good = child("good.sh", r#"{"ok":false,"error":"plain"}"#).round_trip(&request);
+        assert_eq!(good.expect("a well-formed reply is read")["error"], "plain");
+
+        // `\\377` is printf's octal for the byte 0xFF.
+        let bad = child("bad.sh", r#"{"ok":false,"error":"bad\377byte"}"#).round_trip(&request);
+        let why = bad.expect_err("output with an invalid byte was accepted");
+        assert!(why.contains("not UTF-8 at byte 24"), "{why}");
+    }
+
+    /// And `round_trip` hands the parser the bytes the child wrote, not text made from them.
+    #[test]
+    fn the_round_trip_parses_the_childs_bytes_without_converting_them_first() {
+        let source = include_str!("governed_sidecar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("parse_sidecar_stdout(&obuf)"), "the bytes are converted first");
+        let round_trip = production.split("pub fn round_trip").nth(1).unwrap().split("impl SubmitTransport").next().unwrap();
+        assert!(!round_trip.contains("from_utf8_lossy(&obuf)"), "{round_trip}");
     }
 
     /// The relay door reads the request's `protocol` to decide whether it may be sent. A request

@@ -17,6 +17,24 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   `engine/ci/live/run_supervisor.py` passes no output service to `serve_forever`. Engine security
   code — waits for an audit or a waiver. Nothing was changed.
 
+## Read, and waiting on the Owner
+
+Each of these changes a contract or picks a design, so none was changed.
+
+- **`L-25` (P2)** — a signed `key_usage` on manifest keys. It changes the root-signed manifest's
+  shape and its canonical bytes; `WAVE_3B_ISOLATED_SIGNER_DESIGN.md` §1.7 calls building it "an
+  open security decision".
+- **`L-26` (P3)** — the sudoers row of the preflight can never be met. The Owner chose the probe
+  (`sudo -n -l -U`) on 2026-10-12. Not started: the session's command classifier refused the
+  measurement of what `sudo -l` prints here, and a parser written without it could report a
+  grant that is not there.
+- **`L-36` (P3)** — the sidecar invoker validator accepts an argv that changes no principal. The
+  rule exists twice, in `governed_sidecar.rs` and in `engine/ci/live/write_broker_config.py`
+  (`validate_sidecar`), under one shared case table, and the reviewer offers two designs. The
+  Builder's recommendation: one fixed grammar, `sudo -n -u <account> /usr/bin/env` — the shape
+  both validators give as their example. What the two kits actually pass was searched for in
+  their scripts and not found, so whether that grammar admits them is not established.
+
 ## Fixed
 
 - **`L-41` (P3), OS #394 — and wider than filed.** A short stored bundle digest panicked the
@@ -118,6 +136,12 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   named. Six mutants, five named deaths; the row-count comparison survives alone, because nothing
   a test can do makes `INSERT … SELECT` lose a row. Not done: a schema version number — the
   shape is recognised by its constraint text; the other broker tables were not looked at.
+- **`L-37` (P3).** The sidecar's stdout was made into text with a lossy conversion before it was
+  parsed, so `{"ok":false,"error":"bad<0xFF>byte"}` was read as a reply with U+FFFD in it:
+  reproduced. The parser takes the bytes and refuses output that is not UTF-8, naming the byte.
+  Tested through a real child process that writes the invalid byte and exits zero. Three mutants,
+  three named deaths; the old code is caught by the real-child test. Not done: the child's
+  stderr is still read lossily, into a diagnostic only.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
