@@ -741,7 +741,7 @@ pub mod linux {
     use std::process::Command;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-    /// The whole-exchange budget for ONE outbound hop: connect is done, and the request must be
+    /// The whole-exchange budget for ONE outbound hop: the connection must be made, the request
     /// written and the single reply frame read back inside this, or the hop is a closed [`HopError`].
     ///
     /// The broker's accept loop is strictly serial (`main.rs`, audit F-31), and until this existed
@@ -756,9 +756,11 @@ pub mod linux {
     /// signature — none of them waits on the contained execution, which runs between hops — and
     /// because the renderer's own budget for the whole turn is 120 s.
     ///
-    /// NOT bounded here: `connect(2)` itself, which std offers no timeout for on `AF_UNIX` and which
-    /// blocks only while the listener's backlog is full; and, on the direct chain, the recorder
-    /// child's run time (`child.wait()`), which is the lease's and the supervisor's to bound.
+    /// `connect(2)` is inside it since L-21: a listener with a full backlog parks a connect rather
+    /// than refusing it, and std offers no timeout for that on `AF_UNIX` ([`connect_within`]).
+    ///
+    /// NOT bounded here: on the direct chain, the recorder child's run time (`child.wait()`), which
+    /// is the lease's and the supervisor's to bound.
     pub const HOP_EXCHANGE_BUDGET: Duration = Duration::from_secs(30);
 
     /// Socket paths for the trusted principals (each owned by its own service UID; §2.6 provisioning).
@@ -791,8 +793,82 @@ pub mod linux {
     /// hops through [`LinuxHopConnector`] and the execution's supervisor lifecycle ops — so there is
     /// no socket a later change can read from without the budget.
     fn connect_hop(path: &str, budget: Duration) -> Result<UnixHopConn, HopError> {
-        let stream = UnixStream::connect(path).map_err(|_| HopError::Unavailable)?;
-        Ok(UnixHopConn { stream, opened: Instant::now(), budget })
+        // The clock starts BEFORE the connect: what `connect(2)` takes is spent budget (L-21).
+        let opened = Instant::now();
+        let stream = connect_within(path, opened, budget)?;
+        Ok(UnixHopConn { stream, opened, budget })
+    }
+
+    /// `connect(2)` to an AF_UNIX stream socket, giving up when `budget` (counted from `opened`)
+    /// is spent.
+    ///
+    /// std's `UnixStream::connect` has no deadline, and a listener whose backlog is full does not
+    /// refuse a connect — it parks it. On Linux a blocking AF_UNIX connect waits for at most the
+    /// socket's SEND timeout (`unix_stream_connect` takes its wait from `sock_sndtimeo`), so the
+    /// socket is made here, given the remaining budget as `SO_SNDTIMEO`, and only then connected.
+    /// The exchange re-arms that same option before every write.
+    fn connect_within(path: &str, opened: Instant, budget: Duration) -> Result<UnixStream, HopError> {
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+        let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+        addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+        let bytes = path.as_bytes();
+        // A pathname address: non-empty, NUL-free, and short enough to leave the terminator. The
+        // length arm keeps `addr_len` inside the struct the kernel is about to read; the kernel
+        // refuses a longer one itself, so no test here can tell that arm from its absence.
+        if bytes.is_empty() || bytes.contains(&0) || bytes.len() >= addr.sun_path.len() {
+            return Err(HopError::Unavailable);
+        }
+        for (slot, byte) in addr.sun_path.iter_mut().zip(bytes) {
+            *slot = *byte as libc::c_char;
+        }
+        let addr_len = (std::mem::size_of::<libc::sa_family_t>() + bytes.len() + 1) as libc::socklen_t;
+
+        let raw = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+        if raw < 0 {
+            return Err(HopError::Unavailable);
+        }
+        // Owned from here on, so every return below closes it.
+        let socket = unsafe { OwnedFd::from_raw_fd(raw) };
+        loop {
+            // A spent budget ends the hop; `send_timeout` cannot turn what is left into "forever".
+            let left = budget.checked_sub(opened.elapsed()).ok_or(HopError::Unavailable)?;
+            let wait = send_timeout(left);
+            let armed = unsafe {
+                libc::setsockopt(
+                    socket.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_SNDTIMEO,
+                    (&wait as *const libc::timeval).cast(),
+                    std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+                )
+            };
+            if armed != 0 {
+                return Err(HopError::Unavailable);
+            }
+            let rc = unsafe {
+                libc::connect(socket.as_raw_fd(), (&addr as *const libc::sockaddr_un).cast(), addr_len)
+            };
+            if rc == 0 {
+                return Ok(UnixStream::from(socket));
+            }
+            // A signal is not the listener's answer: go round with what is left of the budget.
+            // Anything else — refused, missing, or the deadline (EAGAIN) — is a closed hop.
+            if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                return Err(HopError::Unavailable);
+            }
+        }
+    }
+
+    /// `left` as the `timeval` `SO_SNDTIMEO` takes. Never zero for a non-zero `left`: to the kernel
+    /// a zero timeval is "wait forever", so a remainder under one microsecond rounds UP to one.
+    fn send_timeout(left: Duration) -> libc::timeval {
+        let whole_seconds = left.as_secs();
+        let micros = left.subsec_micros().max(u32::from(whole_seconds == 0));
+        libc::timeval {
+            tv_sec: whole_seconds as libc::time_t,
+            tv_usec: micros as libc::suseconds_t,
+        }
     }
 
     /// A live AF_UNIX peer as a [`HopConn`]: `send_all` writes the framed request; `recv_all` reads exactly
@@ -1307,6 +1383,106 @@ pub mod linux {
             conn.budget = Duration::from_nanos(1);
             assert_eq!(conn.remaining(), Err(HopError::Io));
             assert_eq!(conn.recv_all(), Err(HopError::Io));
+        }
+
+        /// A principal that is listening and accepting NOTHING, with its backlog already full: the
+        /// next `connect(2)` is not refused, it waits. Returns the listener and the connection
+        /// occupying the queue — both must stay alive for the queue to stay full.
+        fn saturated_principal() -> (tempfile::TempDir, String, UnixListener, UnixStream) {
+            use std::os::fd::AsRawFd;
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("principal.sock").to_string_lossy().to_string();
+            let listener = UnixListener::bind(&path).unwrap();
+            // std picks the backlog; a second listen(2) on a listening AF_UNIX socket resets it.
+            // Zero admits one queued connection, and `occupant` is that one.
+            assert_eq!(unsafe { libc::listen(listener.as_raw_fd(), 0) }, 0);
+            let occupant = UnixStream::connect(&path).expect("the one queued connection");
+            (dir, path, listener, occupant)
+        }
+
+        /// L-21: the budget is over the hop, and the hop begins at `connect(2)`. A principal whose
+        /// backlog is full must not hold the broker's one serial thread inside the connect.
+        #[test]
+        fn a_principal_with_a_full_backlog_cannot_hold_a_hop_inside_connect() {
+            let (_dir, path, _listener, _occupant) = saturated_principal();
+            let (done, returned) = std::sync::mpsc::channel();
+            let started = Instant::now();
+            std::thread::spawn(move || {
+                let outcome = connect_hop(&path, Duration::from_millis(300)).map(|_| ());
+                let _ = done.send(outcome);
+            });
+            let outcome = returned.recv_timeout(MUST_RETURN_WITHIN).unwrap_or_else(|_| {
+                panic!("connect_hop was still inside connect(2) after {:?}", started.elapsed())
+            });
+            assert_eq!(outcome, Err(HopError::Unavailable));
+            assert!(started.elapsed() >= Duration::from_millis(300), "it gave up before its budget");
+        }
+
+        /// The time `connect(2)` took is spent budget: what is left for the request and the reply
+        /// is the budget minus the wait, not a fresh one that starts when the connection opens.
+        #[test]
+        fn the_time_spent_connecting_comes_out_of_the_exchange_budget() {
+            let (_dir, path, listener, _occupant) = saturated_principal();
+            let waits_for = Duration::from_millis(400);
+            std::thread::spawn(move || {
+                std::thread::sleep(waits_for);
+                // Taking the occupant off the queue is what lets the waiting connect through.
+                let _first = listener.accept();
+                let _second = listener.accept();
+                std::thread::sleep(PRINCIPAL_HOLDS_FOR);
+            });
+            let budget = Duration::from_secs(3);
+            let conn = connect_hop(&path, budget).expect("it connects once the queue has room");
+            let left = conn.remaining().expect("most of the budget is left");
+            assert!(
+                left <= budget - waits_for + Duration::from_millis(50),
+                "{left:?} is left of {budget:?} after waiting about {waits_for:?} to connect"
+            );
+        }
+
+        /// A remainder too small for a microsecond must not become the zero timeval, which the
+        /// kernel reads as no deadline at all — at the very moment the budget is nearly gone.
+        #[test]
+        fn a_sliver_of_budget_is_never_armed_as_no_deadline() {
+            let sliver = send_timeout(Duration::from_nanos(1));
+            assert_eq!((sliver.tv_sec, sliver.tv_usec), (0, 1));
+            let whole = send_timeout(Duration::from_secs(2));
+            assert_eq!((whole.tv_sec, whole.tv_usec), (2, 0));
+            let mixed = send_timeout(Duration::from_micros(1_500_000));
+            assert_eq!((mixed.tv_sec, mixed.tv_usec), (1, 500_000));
+        }
+
+        /// The address is built by hand now, so the two things std refused are refused here: a
+        /// path with a NUL in it names the socket BEFORE the NUL to the kernel, and one too long
+        /// for `sun_path` has no honest address at all.
+        #[test]
+        fn a_path_that_is_not_one_socket_address_is_not_connected_to() {
+            let (_dir, path) = principal(|stream| {
+                std::thread::sleep(Duration::from_millis(200));
+                drop(stream);
+            });
+            let with_nul = format!("{path}\0.elsewhere");
+            assert_eq!(connect_hop(&with_nul, Duration::from_secs(1)).map(|_| ()), Err(HopError::Unavailable));
+            let too_long = format!("/{}", "s".repeat(200));
+            assert_eq!(connect_hop(&too_long, Duration::from_secs(1)).map(|_| ()), Err(HopError::Unavailable));
+            // The empty path, built by hand, is the abstract address of one NUL byte — a name any
+            // local process may bind. One is bound here, so that reaching it would be seen.
+            use std::os::linux::net::SocketAddrExt;
+            let abstract_empty = std::os::unix::net::SocketAddr::from_abstract_name(b"").unwrap();
+            let _squatter = UnixListener::bind_addr(&abstract_empty).expect("the abstract name is free");
+            assert_eq!(connect_hop("", Duration::from_secs(1)).map(|_| ()), Err(HopError::Unavailable));
+            // The control: the same listener, named exactly, is reached.
+            assert!(connect_hop(&path, Duration::from_secs(1)).is_ok());
+        }
+
+        /// A hop handed no budget makes no connection, even to a principal that would accept.
+        #[test]
+        fn a_spent_budget_opens_no_connection() {
+            let (_dir, path) = principal(|stream| {
+                std::thread::sleep(Duration::from_millis(200));
+                drop(stream);
+            });
+            assert_eq!(connect_hop(&path, Duration::ZERO).map(|_| ()), Err(HopError::Unavailable));
         }
 
         fn execution(supervisor_sock: &str) -> LinuxGovernedExecution {

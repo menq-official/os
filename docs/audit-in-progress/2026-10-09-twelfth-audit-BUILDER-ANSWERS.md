@@ -48,7 +48,15 @@ there needs an Architect audit or an Owner waiver, and none has been made.
   restarts, and no deadline for the frame: with a real socket pair, a peer dripping one byte every
   30 ms held a read with a 100 ms timeout for the whole 3 s it kept dripping — reproduced.
   `read_one_frame` takes one budget for the whole frame; each read may wait only for what is left.
-  The broker still serves one connection at a time. Not done: `L-21`, the outbound connect.
+  The broker still serves one connection at a time.
+- **`L-21` (P2).** The outbound hop's 30 s budget began after `connect(2)` returned. Against a real
+  listener with a full backlog that accepted nothing, `connect_hop` with a 300 ms budget was still
+  inside the connect after 2 s, and 400 ms spent connecting left 2.999 s of a 3 s budget: both
+  reproduced. The clock starts before the socket is made, and the connect waits only for what is
+  left (`SO_SNDTIMEO`, which a blocking `AF_UNIX` connect on Linux obeys — measured by the test, not
+  read). Seven mutants, six named deaths; the path-length arm cannot be told from the kernel's own
+  refusal. Not done: a signal during the connect (`EINTR`) is retried and no test delivers one;
+  the reviewer's non-blocking connect with `poll` was not used.
 - **`L-39` (P2), OS #397.** `check_and_persist` compared a manifest with a floor the caller had parsed
   earlier. A holder of an epoch-5 snapshot accepted 7 and then 6, and the file ended at 6;
   eight concurrent holders left 11 where 12 had been accepted: both reproduced. The advance is
