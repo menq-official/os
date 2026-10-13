@@ -118,7 +118,10 @@ pub struct Step {
     /// default, because a default here would be a destination nobody named.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_ref: Option<String>,
-    /// For `store`: the verb `execute_action` understands.
+    /// For `store`: what the step writes. The one verb the run executor implements is
+    /// [`STORE_VERB_KNOWLEDGE_NOTE`]; any other, or none, is refused when the step is reached.
+    /// (This said "the verb `execute_action` understands" — that is the automation
+    /// vocabulary, a different one, and the executor here read neither.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verb: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -324,6 +327,9 @@ pub struct Manifest {
     pub files: Vec<FileEntry>,
 }
 
+/// The one `store` verb the run executor implements: write a knowledge note.
+pub const STORE_VERB_KNOWLEDGE_NOTE: &str = "knowledge_note";
+
 /// Typed, closed set. Never free text: a reason a reader has to interpret is a
 /// reason a reader will interpret differently next time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,6 +360,10 @@ pub enum Refusal {
     CredentialSlotUnbound,
     FlowUnparseable,
     StepKindNotExecutable,
+    /// A `store` step whose `verb` is not one this executor implements. The executor used to
+    /// ignore the verb and write a knowledge note for every store step, so a flow that said
+    /// `notify` did something it had not declared.
+    StoreVerbNotExecutable,
     /// A `call` step that names no row of the grant's egress table. Not the
     /// same fact as naming a row that does not exist: "nobody said where" and
     /// "somewhere the grant does not allow" call for different answers.
@@ -415,6 +425,7 @@ refusal_reasons! {
     CredentialSlotUnbound => "credential_slot_unbound",
     FlowUnparseable => "flow_unparseable",
     StepKindNotExecutable => "step_kind_not_executable",
+    StoreVerbNotExecutable => "store_verb_not_executable",
     CallRefMissing => "call_ref_missing",
     EgressNotGranted => "egress_not_granted",
     EgressNotExpressible => "egress_not_expressible",
@@ -1152,7 +1163,7 @@ mod tests {
             );
         }
         assert_eq!(seen.len(), Refusal::ALL.len());
-        assert_eq!(Refusal::ALL.len(), 20, "a new reason is a deliberate act; count it here");
+        assert_eq!(Refusal::ALL.len(), 21, "a new reason is a deliberate act; count it here");
     }
 
     /// Re-point one manifest field, keep everything else, and rename the

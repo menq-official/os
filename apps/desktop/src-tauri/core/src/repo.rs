@@ -3376,6 +3376,12 @@ pub mod agent_runs {
             match step.kind {
                 StepKind::Branch => { *steps_run += 1; }
                 StepKind::Store => {
+                    // The verb is part of what the flow declared. Exactly one is implemented
+                    // here, compared exactly; anything else — another verb, a different case,
+                    // none at all — is a refusal, not a knowledge note written in its place.
+                    if step.verb.as_deref() != Some(agent_bundle::STORE_VERB_KNOWLEDGE_NOTE) {
+                        return Ok(("refused", Some(Refusal::StoreVerbNotExecutable.as_str())));
+                    }
                     let note = format!(
                         "{} · step {} · {}",
                         bundle.manifest.display_name,
@@ -4445,6 +4451,31 @@ pub mod agent_runs {
                 .unwrap();
             assert_eq!((state.as_str(), reason.as_deref()),
                        ("refused", Some("step_kind_not_executable")));
+        }
+
+        /// R3-0142: a `store` step carries a `verb`, and the executor never read it — every
+        /// store step wrote a knowledge note, whatever the flow had said it would do. A flow that
+        /// says `notify` and gets a note written is a flow doing something nobody declared.
+        #[test]
+        fn a_store_step_runs_only_the_verb_this_executor_implements() {
+            for verb in [Some("notify"), Some("task"), Some("Knowledge_Note"), Some(""), None] {
+                let conn = crate::db::open(":memory:").unwrap();
+                let dir = tempfile::tempdir().unwrap();
+                let mut s = spec(1_000_000);
+                s.steps[1].verb = verb.map(str::to_string);
+                let digest = agent_bundle::build(dir.path(), &s).unwrap();
+                register_and_arm(&conn, &digest);
+                tick(&conn, dir.path(), 1_000_000_000);
+                let (state, reason): (String, Option<String>) = conn
+                    .query_row("SELECT state, refusal_reason FROM flow_runs", [], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .unwrap();
+                assert_eq!((state.as_str(), reason.as_deref()), ("refused", Some("store_verb_not_executable")), "{verb:?}");
+                // The first step, whose verb IS implemented, ran; the second wrote nothing.
+                let notes: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM knowledge_notes WHERE tags = 'produced-agent'", [], |r| r.get(0))
+                    .unwrap();
+                assert_eq!(notes, 1, "{verb:?}");
+            }
         }
 
         /// Constraint 4, the bound: one tick may not become unbounded work.
