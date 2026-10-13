@@ -123,6 +123,11 @@ pub enum ReceiptError {
     BadBase64,
     #[error("wire: envelope is {0} bytes, over the {MAX_ENVELOPE_BYTES}-byte cap")]
     TooLarge(usize),
+    /// The pre-decode guard: the base64 STRING is too long to decode to an envelope under the
+    /// cap. It counts characters, and says characters — it used to return [`Self::TooLarge`]
+    /// with the character count in the place of a byte count.
+    #[error("wire: envelope is {0} base64 characters, too long to decode under the {MAX_ENVELOPE_BYTES}-byte cap")]
+    EncodedTooLarge(usize),
     #[error("wire: not valid strict JSON: {0}")]
     BadJson(String),
     #[error("wire: duplicate key `{0}`")]
@@ -145,6 +150,10 @@ pub enum ReceiptError {
     KeyIdMismatch { claimed: String, resolved: String },
     #[error("crypto: signature is {0} bytes, expected 64")]
     BadSignatureLength(usize),
+    /// The pre-decode guard on the signature string. As [`Self::EncodedTooLarge`]: a character
+    /// count, reported as one.
+    #[error("crypto: signature is {0} base64 characters, over the 128-character cap for a 64-byte signature")]
+    SignatureTooLong(usize),
     #[error("crypto: public key is {0} bytes, expected 32")]
     BadKeyLength(usize),
     #[error("crypto: public key is not a valid Ed25519 point")]
@@ -379,7 +388,7 @@ impl Parsed {
         // An Ed25519 signature base64url-encodes to 86 chars; cap the input before
         // decoding so a giant `signature_b64` can't force a large allocation.
         if signature_b64.len() > 128 {
-            return Err(ReceiptError::BadSignatureLength(signature_b64.len()));
+            return Err(ReceiptError::SignatureTooLong(signature_b64.len()));
         }
         let sig_bytes = URL_SAFE_NO_PAD
             .decode(signature_b64.as_bytes())
@@ -659,7 +668,7 @@ pub fn parse_strict(envelope_jcs_b64: &str) -> Result<Parsed, ReceiptError> {
     // Cheap length guard before allocating a decode buffer: base64 expands ~4/3, so
     // a string this long cannot decode to <= MAX_ENVELOPE_BYTES.
     if envelope_jcs_b64.len() > MAX_ENVELOPE_BYTES / 3 * 4 + 4 {
-        return Err(ReceiptError::TooLarge(envelope_jcs_b64.len()));
+        return Err(ReceiptError::EncodedTooLarge(envelope_jcs_b64.len()));
     }
 
     // Step 1: base64url-decode to the exact bytes; enforce the size cap.
@@ -967,6 +976,31 @@ mod tests {
     #[test]
     fn non_base64_is_rejected() {
         assert_eq!(parse_strict("not valid base64!!"), Err(ReceiptError::BadBase64));
+    }
+
+    // R3-0121 / R3-0122: both pre-decode guards measure a base64 STRING and reported its length
+    // as bytes — "signature is 200 bytes, expected 64" for a 200-character string, and an
+    // envelope size in bytes that was a character count. A refusal that names a number names
+    // the unit it was measured in.
+    #[test]
+    fn an_oversize_wire_string_is_reported_in_the_unit_it_was_measured_in() {
+        let key = signing_key(7);
+        let (env, _) = wire(&valid_fields(), &key);
+        let long_sig = "A".repeat(200);
+        let e = decode_and_verify(&env, &long_sig, key.verifying_key().as_bytes()).unwrap_err();
+        assert_eq!(e, ReceiptError::SignatureTooLong(200));
+        assert!(e.to_string().contains("200 base64 characters"), "{e}");
+
+        let big = URL_SAFE_NO_PAD.encode(vec![b'x'; MAX_ENVELOPE_BYTES * 2]);
+        let e = parse_strict(&big).unwrap_err();
+        assert_eq!(e, ReceiptError::EncodedTooLarge(big.len()));
+        assert!(e.to_string().contains(&format!("{} base64 characters", big.len())), "{e}");
+
+        // The guards AFTER decoding still count bytes, and say bytes.
+        let short_sig = URL_SAFE_NO_PAD.encode([0u8; 10]);
+        let e = decode_and_verify(&env, &short_sig, key.verifying_key().as_bytes()).unwrap_err();
+        assert_eq!(e, ReceiptError::BadSignatureLength(10));
+        assert!(e.to_string().contains("10 bytes"), "{e}");
     }
 
     #[test]
