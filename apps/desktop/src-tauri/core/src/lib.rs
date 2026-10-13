@@ -1457,6 +1457,23 @@ mod tests {
         assert!(matches!(&err, CoreError::Invalid { field: "actor_type", .. }), "got {err:?}");
     }
 
+    // R3-0143: `escalated` is a pending approval routed to A3 — "neither granted nor denied"
+    // (migration 0019). The posture summary counted it under neither heading, so escalating an
+    // approval made it vanish from the count of what is still waiting for a decision.
+    #[test]
+    fn an_escalated_approval_is_still_awaiting_a_decision_in_the_summary() {
+        let c = conn();
+        repo::seed(&c).unwrap();
+        let before = repo::security::summary(&c).unwrap();
+        let id: String = c
+            .query_row("SELECT id FROM approvals WHERE status = 'pending' LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        repo::approvals::escalate(&c, &id, crate::repo::audit::Actor::local_operator()).unwrap();
+        let after = repo::security::summary(&c).unwrap();
+        assert_eq!(after.pending_approvals, before.pending_approvals, "an escalation decides nothing");
+        assert_eq!(after.decided_approvals, before.decided_approvals);
+    }
+
     #[test]
     fn analytics_and_security_compute_over_seed() {
         let c = conn();

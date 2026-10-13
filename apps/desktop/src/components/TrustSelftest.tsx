@@ -86,8 +86,8 @@ export function TrustSelftestPanel() {
              Shown with the engine's own state and detail, and never with the pass chain. */
           <div className="ts-pass">
             <p className="ts-verdict" role="status">
-              {/* `trust_state` is deliberately NOT shown here: the command sets it from `bound` alone,
-                  so on a run whose chain resolved no key it still reads "trusted_verified". */}
+              {/* `trust_state` is deliberately NOT shown here: it is the label on the committed
+                  row, and a run that did not verify has no label worth reading as a result. */}
               <span className="pill bad">{tr('SELF-TEST DID NOT VERIFY', 'ԻՆՔՆԱՍՏՈՒԳՈՒՄԸ ՉՀԱՍՏԱՏՎԵՑ', 'САМОПРОВЕРКА НЕ ПОДТВЕРЖДЕНА')}</span>
             </p>
             <p className="ts-caveat" role="note">

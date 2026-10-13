@@ -4880,8 +4880,11 @@ pub mod security {
     /// Read-only security posture computed from approvals and the audit log.
     /// "Sensitive" events are approvals, deletions, and status changes.
     pub fn summary(conn: &Connection) -> CoreResult<SecuritySummary> {
+        // `escalated` is a pending approval routed to A3 — neither granted nor denied (0019) — so
+        // it is still awaiting a decision. It was counted under neither heading, and escalating
+        // an approval made it leave the posture count altogether.
         let pending: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM approvals WHERE status = 'pending'", [], |r| r.get(0))?;
+            "SELECT COUNT(*) FROM approvals WHERE status IN ('pending','escalated')", [], |r| r.get(0))?;
         // 'consumed' grants were approved and then spent by a completed step
         // (M-2) — they remain decided approvals for posture reporting.
         let decided: i64 = conn.query_row(

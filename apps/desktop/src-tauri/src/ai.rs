@@ -2350,8 +2350,20 @@ pub fn agent_origin(subagent_type: &str) -> AgentOrigin {
 }
 
 /// Strip the decoration Bro writes around a path (backticks, quotes, trailing punctuation).
+///
+/// Peeled until neither is left, in whichever order they were written: `` `path`. `` and
+/// `"path."` both leave `path`. It used to strip the quotes once and then the punctuation once,
+/// so a backticked path that ended a sentence kept its closing backtick and was refused.
 fn clean_path_token(raw: &str) -> &str {
-    raw.trim().trim_matches(|c| c == '`' || c == '"' || c == '\'').trim_end_matches([',', '.', ';'])
+    let quote = |c: char| c == '`' || c == '"' || c == '\'';
+    let mut token = raw.trim();
+    loop {
+        let next = token.trim_end_matches([',', '.', ';']).trim_matches(quote);
+        if next.len() == token.len() {
+            return token;
+        }
+        token = next;
+    }
 }
 
 /// Does this token look like a path a task contract could carry?
@@ -2416,6 +2428,18 @@ pub fn parse_task_grant(prompt: &str) -> (Vec<String>, Vec<String>) {
         } else {
             continue;
         };
+        // A Markdown-bold label, `**scope:** path`, leaves the closing `**` in front of the
+        // paths. It is the label's decoration, not the first path: skipped when it stands alone
+        // before whitespace, and only then — `*.md` is a path and keeps its star.
+        let rest = match rest.trim_start().split_once(char::is_whitespace) {
+            Some((first, tail)) if !first.is_empty() && first.chars().all(|c| c == '*' || c == '_') => tail,
+            _ => rest,
+        };
+        // The line's own paths, taken or dropped TOGETHER. They used to go straight into the
+        // running list, and a refused token cleared that list — so a prose line erased the
+        // paths an earlier line had stated.
+        let mut taken: Vec<String> = Vec::new();
+        let mut is_grant_line = true;
         for token in rest.split([' ', '\t', ',']) {
             let token = clean_path_token(token);
             if token.is_empty() {
@@ -2427,11 +2451,16 @@ pub fn parse_task_grant(prompt: &str) -> (Vec<String>, Vec<String>) {
             // "(repo-relative)" and "READ-ONLY". A grant assembled out of English words is worse
             // than no grant: it renders as a precise, validated list of places nobody named.
             if !is_grant_path(token) {
-                target.clear();
+                is_grant_line = false;
                 break;
             }
-            if target.len() < 32 {
-                target.push(token.to_string());
+            taken.push(token.to_string());
+        }
+        if is_grant_line {
+            for path in taken {
+                if target.len() < 32 {
+                    target.push(path);
+                }
             }
         }
     }
@@ -4091,6 +4120,41 @@ mod tests {
         let (scope, prohibited) = parse_task_grant(inline);
         assert_eq!(scope, Vec::<String>::new(), "prose is not a grant");
         assert_eq!(prohibited, Vec::<String>::new(), "and neither half is kept partially");
+    }
+
+    /// Three ways a line Bro DID write as paths was read as no grant at all, or erased one
+    /// already read (cockpit read R3-0165, R3-0166, R3-0167). None of them loosens what a path
+    /// is: `is_grant_path` is untouched, and prose is still not a grant.
+    #[test]
+    fn the_grant_reader_reads_a_decorated_path_once_and_keeps_what_it_already_read() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+
+        // R3-0165: a backticked path that ends a sentence. The quote was stripped before the
+        // full stop, so the closing backtick survived and the token was refused.
+        assert_eq!(parse_task_grant("scope: `apps/desktop/src`.").0, s(&["apps/desktop/src"]));
+        assert_eq!(parse_task_grant("scope: `tools`, `engine/tests`.").0, s(&["tools", "engine/tests"]));
+        // The older order still works too: punctuation inside the quotes.
+        assert_eq!(parse_task_grant("scope: \"tools.\"").0, s(&["tools"]));
+
+        // R3-0166: a Markdown-bold label. The label was found and what followed it — `**` —
+        // was read as the first path, refused, and the line dropped.
+        assert_eq!(parse_task_grant("**scope:** apps/desktop/src").0, s(&["apps/desktop/src"]));
+        assert_eq!(parse_task_grant("- **prohibited_scope:** `engine`").1, s(&["engine"]));
+
+        // R3-0167: the rule is per LINE. A later line that is prose is dropped; it does not
+        // reach back and erase the paths an earlier line stated.
+        let two = "scope: tools\nscope: Everything outside that path is READ-ONLY.\n";
+        assert_eq!(parse_task_grant(two).0, s(&["tools"]));
+        let (scope, prohibited) = parse_task_grant("prohibited_scope: .claude\nprohibited_scope: Do not touch it.\nscope: tools");
+        assert_eq!((scope, prohibited), (s(&["tools"]), s(&[".claude"])));
+        // (Written with a capital on purpose. A line of all-lowercase prose — "do not touch it"
+        // — IS read as four paths, before this change and after it: `tools` and `do` are the
+        // same shape, and `is_grant_path` cannot tell them apart. That is a limit of reading a
+        // grant out of text, it is recorded beside R3-0167, and it is not fixed here.)
+
+        // And the rule itself is intact: one prose token still discards ITS line, whole.
+        assert_eq!(parse_task_grant("scope: tools (repo-relative)").0, Vec::<String>::new());
+        assert_eq!(parse_task_grant("**scope:** Everything").0, Vec::<String>::new());
     }
 
     // ---- The trust surface is not writable by a model turn (audit) ---------------------

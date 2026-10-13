@@ -92,6 +92,10 @@ pub struct ProofOutcome {
     pub chain_bound: bool,
     pub bound: bool,
     pub trust_str: String,
+    /// The trust label on the DURABLE row this run committed — read from the row, and already
+    /// required above to equal what the resolved custody would write. A caller that reports a
+    /// label reports this one; the self-test used to report a string of its own (R3-0182).
+    pub committed_label: String,
 }
 
 impl ProofOutcome {
@@ -465,7 +469,8 @@ where
         ),
         TrustState::NoTrustedManifest(r) => format!("no_trusted_manifest({r})"),
     };
-    Ok(ProofOutcome { production_verified, chain_bound, bound, trust_str })
+    let committed_label = message.trust_state.clone();
+    Ok(ProofOutcome { production_verified, chain_bound, bound, trust_str, committed_label })
 }
 
 #[cfg(test)]

@@ -19,7 +19,10 @@ import { TrustSelftestPanel } from './TrustSelftest';
 function result(over: Partial<TrustSelftest>): TrustSelftest {
   return {
     available: true,
-    trust_state: 'trusted_verified',
+    // The label the chain wrote on the row. The self-test runs under the demonstration anchor,
+    // so it is `demonstration_custody`; the command used to return a hardcoded
+    // `trusted_verified` here, and so did this fixture (R3-0182).
+    trust_state: 'demonstration_custody',
     // What the in-process kit really returns on a good run: custody is the demonstration anchor,
     // so this is ALWAYS false. A fixture with `true` here tests a result that does not exist.
     production_verified: false,
@@ -67,7 +70,7 @@ describe('TrustSelftestPanel — a chain that ran and did not verify is said, no
 
   it.each([
     ['the committed row is not what the receipt bound', { bound: false, trust_state: '', detail: 'trusted_verified(demonstration_custody key=k-1 epoch=1 root=demo)' }],
-    ['the chain resolved no key under a verified anchor', { chain_bound: false, trust_state: 'trusted_verified', detail: 'no_trusted_manifest(root_unknown)' }],
+    ['the chain resolved no key under a verified anchor', { chain_bound: false, trust_state: 'demonstration_custody', detail: 'no_trusted_manifest(root_unknown)' }],
   ] as const)('%s: the screen says it did not verify, and why', async (_name, over) => {
     const panel = await run(result(over));
     const verdict = await waitFor(() => within(panel).getByText('SELF-TEST DID NOT VERIFY'));
@@ -77,7 +80,8 @@ describe('TrustSelftestPanel — a chain that ran and did not verify is said, no
     // And nothing on screen reads as a pass: no verdict, and none of the pass chain's steps.
     expect(within(panel).queryByText('SELF-TEST PASSED')).toBeNull();
     expect(within(panel).queryByText('challenge')).toBeNull();
-    // `trust_state` is set from `bound` alone, so it can read trusted_verified on a failed run.
+    // A failed run shows no trust label at all — neither the row's nor the production one.
     expect(within(panel).queryByText('trusted_verified')).toBeNull();
+    expect(within(panel).queryByText('demonstration_custody')).toBeNull();
   });
 });

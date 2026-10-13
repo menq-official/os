@@ -123,8 +123,13 @@ use serde_json::Value;
 const MAX_REASON_CHARS: usize = 400;
 
 fn bounded(reason: &str) -> String {
-    let cleaned: String = reason.chars().filter(|c| !c.is_control() || *c == ' ').collect();
-    let cleaned = cleaned.trim();
+    // A control character is a SEPARATOR here, not noise: a line break between two sentences
+    // became nothing, and the words either side of it ran together. Each becomes a space and
+    // runs of whitespace collapse to one. (The old filter read `!is_control() || == ' '`; a
+    // space is not a control character, so its second half could never matter.)
+    let spaced: String = reason.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let cleaned = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cleaned = cleaned.as_str();
     if cleaned.chars().count() <= MAX_REASON_CHARS {
         cleaned.to_string()
     } else {
@@ -1194,6 +1199,19 @@ mod tests {
         assert!(parse_identified_record(&json!({ "id": "" })).is_err());
         assert!(parse_identified_record(&json!({ "title": "no id" })).is_err());
         assert!(parse_identified_record(&json!("not an object")).is_err());
+    }
+
+    // R3-0180: control characters were FILTERED OUT, so a two-line engine reason came out with
+    // the last word of one line glued to the first word of the next. They are separators.
+    #[test]
+    fn a_reason_keeps_its_words_apart_when_its_line_breaks_are_removed() {
+        assert_eq!(bounded("lease refused\nno grant on file"), "lease refused no grant on file");
+        assert_eq!(bounded("a\r\n\tb"), "a b");
+        assert_eq!(bounded("  one   two\u{0}three  "), "one two three");
+        // Nothing but separators is an empty reason, not a run of spaces.
+        assert_eq!(bounded("\n\t \r"), "");
+        // Ordinary text is untouched.
+        assert_eq!(bounded("engine_refused"), "engine_refused");
     }
 
     #[test]

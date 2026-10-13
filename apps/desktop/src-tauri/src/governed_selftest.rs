@@ -165,7 +165,9 @@ pub fn governed_trust_selftest() -> Result<TrustSelftest, String> {
         let answer = String::from_utf8_lossy(&captured.into_inner()).chars().take(4000).collect::<String>();
         Ok(TrustSelftest {
             available: true,
-            trust_state: if outcome.bound { "trusted_verified".to_string() } else { String::new() },
+            // The label the chain wrote on the row, not one written here. It was the literal
+            // "trusted_verified" — for a run that commits as `demonstration_custody`.
+            trust_state: if outcome.bound { outcome.committed_label.clone() } else { String::new() },
             production_verified: outcome.production_verified,
             demonstration_custody: true, // the in-process self-test always runs under the TCB demonstration anchor
             bound: outcome.bound,
@@ -239,7 +241,12 @@ mod runs_everywhere {
         assert!(r.available, "the self-test must be available on {}", std::env::consts::OS);
         assert!(r.bound, "the turn did not bind: {}", r.detail);
         assert!(r.chain_bound, "the chain did not bind: {}", r.detail);
-        assert_eq!(r.trust_state, "trusted_verified");
+        // The label is the one the chain WROTE on the durable row. The self-test always runs
+        // under the demonstration anchor, so that row is `demonstration_custody`; this assertion
+        // used to pin `trusted_verified`, the hardcoded string the command returned instead
+        // (cockpit read R3-0182).
+        assert_eq!(r.trust_state, "demonstration_custody");
+        assert!(!r.production_verified, "a demonstration run is never production-verified");
         // And it is still not production trust, on any platform.
         assert!(r.demonstration_custody);
         assert_eq!(r.platform_note, std::env::consts::OS);
