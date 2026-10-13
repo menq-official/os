@@ -34,9 +34,10 @@ fn main() {
 #[cfg(not(windows))]
 fn real_main() -> i32 {
     eprintln!(
-        "brops-audit-signer: this service exists to create a SECOND WINDOWS PRINCIPAL. On {} the \
-         audit signer is already a separate uid whose key file the engine's account cannot read, \
-         provisioned outside this crate. There is nothing here to run.",
+        "brops-audit-signer: this service exists to create a SECOND WINDOWS PRINCIPAL. On {} a \
+         second principal is a separate uid, which this crate does not create — and no POSIX \
+         audit-anchor signer exists yet, so the ledger stays unanchored there. There is nothing \
+         here to run.",
         brops_provision::platform_name()
     );
     brops_audit_signer::relay::EXIT_UNSUPPORTED

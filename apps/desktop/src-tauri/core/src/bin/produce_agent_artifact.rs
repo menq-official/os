@@ -88,9 +88,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // BORN DISARMED. Registering records a built bundle and arms nothing.
     repo::agent_runs::register(&conn, &digest, &spec.bundle_id, 1, &spec.display_name)?;
 
-    // Arming is a separate act behind a natively confirmed grant — the same two
-    // calls `commands::confirm_approval` makes. There is no way around it here
-    // because there is no way around it anywhere, which is the point.
+    // Arming is a separate act behind a grant — the same two calls
+    // `commands::confirm_approval` makes. THIS BINARY CONFIRMS IT ITSELF: no OS dialog
+    // runs here. It approves as `NATIVE_CONFIRMER_PRINCIPAL` with the actor
+    // `native:producer`, which is how the row says who confirmed. The dialog is the
+    // desktop's; a proof driver has no window to raise one in.
     let approval = repo::approvals::create(
         &conn,
         repo::approvals::AGENT_BUNDLE_ARM_ACTION_TYPE,

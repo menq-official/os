@@ -2093,6 +2093,19 @@ pub async fn stream_run_step(
         }
     };
 
+    // Which provider this is, BEFORE the claim (cockpit read R3-0011). The claim below consumes
+    // a natively confirmed grant and a failed attempt is terminal, and this answer does not
+    // depend on the step: it is the process's own configuration. It was asked after the claim,
+    // so a machine with no allow flag set spent the owner's confirmation and failed the step —
+    // and, since K-08, the run — on an error that was already true before he confirmed.
+    let governed = match crate::ai::provider_is_governed() {
+        Ok(governed) => governed,
+        Err(e) => {
+            let _ = on_event.send(RunStepEvent::Error { message: e });
+            return Ok(());
+        }
+    };
+
     // T-011 concurrency fix: atomically CLAIM the step for execution BEFORE calling
     // the provider. This writes a one-time execution_attempt_id (the claim token; the
     // status is unchanged) and, for a gated step, consumes the native-confirmed grant
@@ -2149,9 +2162,8 @@ pub async fn stream_run_step(
     // conversation-less HELD accept (verify_and_record_held_answer), whose VERIFIED body becomes the step
     // result. In production (NoTrustedManifest) every governed step Blocks (fails the attempt). Either way we
     // end with the exact result bytes to persist under this attempt.
-    let full: String = match crate::ai::provider_is_governed() {
-        Err(e) => fail_attempt!(e),
-        Ok(true) => {
+    let full: String = match governed {
+        true => {
             // The whole challenge → pre-flight → turn → verify pipeline is `run_governed_turn`;
             // this surface's own part is what a refusal MEANS here — the claiming attempt fails.
             match run_governed_turn(&state, GovernedDelivery::Held, &system, &history).await {
@@ -2165,7 +2177,7 @@ pub async fn stream_run_step(
                 Err(e) => fail_attempt!(e),
             }
         }
-        Ok(false) => {
+        false => {
             // Ungoverned (dev-only, BROPS_ALLOW_UNGOVERNED): streamed as before.
             let ch = on_event.clone();
             // No delegation surface on the run-step channel: `RunStepEvent` has no variant for
@@ -3307,6 +3319,34 @@ mod tests {
             assert!(err.contains("returned an accept"), "{err}");
         }
         assert_eq!(only_a_block(Err("db".into())).unwrap_err(), "db");
+    }
+
+    // Cockpit read R3-0011. A run step's claim spends a natively confirmed grant, and a failed
+    // attempt is terminal. Which provider answers is the process's own configuration and is
+    // known before the step is: it is resolved BEFORE the claim, and a refusal there fails
+    // nothing. A text check, and it says so — the handler needs a Tauri window to run.
+    #[test]
+    fn a_run_step_resolves_its_provider_before_it_spends_the_grant() {
+        let src = include_str!("commands.rs");
+        let production = src.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+        let handler = production
+            .split("pub async fn stream_run_step(")
+            .nth(1)
+            .expect("the run-step handler is gone")
+            .split("\npub async fn ")
+            .next()
+            .unwrap();
+        let resolved = handler
+            .find(concat!("crate::ai::provider_is_", "governed()"))
+            .expect("the handler does not resolve its provider");
+        let claimed = handler
+            .find(concat!("repo::runs::claim_step_for_", "execution("))
+            .expect("the handler does not claim the step");
+        assert!(resolved < claimed, "the provider is resolved after the grant is spent");
+        // Asked once: a second resolution after the claim is the old shape coming back.
+        assert_eq!(handler.matches(concat!("crate::ai::provider_is_", "governed()")).count(), 1);
+        // And between the two, nothing fails the step.
+        assert!(!handler[resolved..claimed].contains(concat!("fail_step_", "execution")));
     }
 
     // ONE governed pipeline. It was written three times (conversation, Ask Bro, run step) under a

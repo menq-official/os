@@ -295,7 +295,7 @@ mod linux {
         use brops_broker::manifest_resolver::{ProductionResolver, ResolvedFacts};
         use brops_core::broker_turns::DurableAcceptanceLedger;
         use brops_core::governed_sidecar::{GovernedSidecar, SidecarTrust};
-        use brops_core::key_manifest::{AntiRollbackFloor, KeyManifest};
+        use brops_core::key_manifest::KeyManifest;
         use serde_json::Value;
 
         let fail_closed = || -> Box<dyn GovernedExecutor> { Box::new(UpstreamBlockedExecutor) };

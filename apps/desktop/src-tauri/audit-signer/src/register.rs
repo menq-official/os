@@ -430,7 +430,7 @@ pub fn apply(
     Err(spec::AnchorRefusal::Unsupported {
         platform: brops_provision::platform_name().to_string(),
         what: "registering a Windows service and stamping a protected DACL. On POSIX the audit \
-               signer is already a separate uid, provisioned outside this crate"
+               signer would be a separate uid provisioned outside this crate, and none exists yet"
             .to_string(),
     })
 }

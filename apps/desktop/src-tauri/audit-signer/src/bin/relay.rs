@@ -49,15 +49,17 @@ fn roundtrip(pipe: &str, request: &serde_json::Value) -> Result<serde_json::Valu
 }
 
 /// Off Windows there is no second principal to relay to, and pretending otherwise would produce a
-/// ledger that looks anchored. POSIX deployments name their own signer command directly — the
-/// engine's `signer` user already is the second principal there.
+/// ledger that looks anchored. A POSIX deployment would name its own signer command directly
+/// (`BRO_AUDIT_ANCHOR_SIGNER`) — and none does: nothing in this repository sets that variable or
+/// provisions a POSIX anchor signer, so the ledger there stays unanchored (O-2).
 #[cfg(not(windows))]
 fn roundtrip(pipe: &str, _request: &serde_json::Value) -> Result<serde_json::Value, String> {
     Err(format!(
         "there is no named-pipe audit-anchor signer on {}: `{pipe}` cannot exist. On POSIX the \
-         signer is a separate uid whose key the engine's account cannot read, and \
-         BRO_AUDIT_ANCHOR_SIGNER points straight at it — this shim is the Windows-only workaround \
-         for a platform where a child process inherits the caller's token.",
+         signer would be a separate uid whose key the engine's account cannot read, named by \
+         BRO_AUDIT_ANCHOR_SIGNER — and no such signer is deployed anywhere, so the audit ledger \
+         is not anchored on this platform. This shim is the Windows-only workaround for a \
+         platform where a child process inherits the caller's token.",
         brops_provision::platform_name()
     ))
 }

@@ -1260,6 +1260,12 @@ pub const BRO_PROTECTED_PATHS: &[&str] = &[
     "engine/schemas",
     "engine/contracts",
     "engine/laws",
+    // The trusted-key registry (`trusted-keys.json`) and the protected-control-plane list the
+    // wall reads; and the tools that HOLD the signing keys — the receipt signer, the signer and
+    // supervisor services, `broctl`. A turn that could not touch the verifier could rewrite
+    // what it verifies against, and who signs (cockpit read R3-0060, R3-0061).
+    "engine/config",
+    "engine/tools",
     "bridge",
     // — the desktop's verification core —
     "apps/desktop/src-tauri/core/src/receipt.rs",
@@ -3917,6 +3923,11 @@ mod tests {
             "apps/desktop/src-tauri/launcher",
             "tools",
             ".github",
+            // The registry that says which keys are trusted, and the tools that hold and use
+            // the signing keys. `engine/runtime` was listed and these two were not, so a turn
+            // could not edit the verifier and could edit what it verifies against.
+            "engine/config",
+            "engine/tools",
         ] {
             assert!(BRO_PROTECTED_PATHS.contains(&required), "{required} must be protected");
         }

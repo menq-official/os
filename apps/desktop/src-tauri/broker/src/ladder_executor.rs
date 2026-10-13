@@ -56,7 +56,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::Value;
 
 use brops_core::governed_bridge_result::SignedTurnResult;
 use brops_core::governed_message_store::AcceptedOutput;
@@ -452,7 +451,7 @@ mod tests {
     use crate::chain_hops::Principal;
     use brops_core::governed_prepare::GovernedGenerationConfig;
     use brops_core::receipt::sha256_hex;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::cell::RefCell;
     use std::rc::Rc;
 

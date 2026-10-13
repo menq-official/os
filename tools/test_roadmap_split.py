@@ -121,6 +121,15 @@ ANNOTATED_LINES: dict[int, str] = {
          "commit-identity bullet told every session to end its commits with a Claude Co-Authored-By "
          "trailer; it says the opposite now, in the same two lines",
     125: "the second line of the same §B.3 bullet (see 124) -- it carried the trailer text itself",
+    21: "R3-0065: the 'real state' bullet said `rust_symbols` 'is now empty'. It was emptied then "
+        "and holds 14 entries again (counted 2026-10-13); the tense is corrected and the count "
+        "stated, on the same LINE",
+    22: "R3-0032: the bullet said only the main chat seam is governed. All four AI entry points "
+        "route through `ai::governed_turn` since phase 2 closed; the line says so and says what it "
+        "used to say",
+    70: "R3-0065, the phase-1 status-board row: it said the desktop hop of the output pull does "
+        "not exist. It is `broker/src/ladder_executor.rs` (`pull_output`), reached only when the "
+        "broker serves something other than the blocking executor; the row names it",
 }
 
 

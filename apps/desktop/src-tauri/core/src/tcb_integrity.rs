@@ -17,7 +17,8 @@
 //! - **Ownership + non-writability floor.** Every artifact **and every ancestor directory up to `/`**
 //!   MUST be owned by a dedicated TCB principal (`root` or a dedicated `brops-admin` that is NOT any
 //!   runtime principal) and MUST NOT be writable — by mode bits, POSIX ACL, or group — by the login user
-//!   or by any runtime UID. A writable ancestor is treated as writable (a rename/replace vector).
+//!   or by any runtime UID. (That is the rule. The shipped probe enforces the mode-bit and ownership
+//!   part of it and does not read ACLs: see [`FileFacts`].) A writable ancestor is treated as writable (a rename/replace vector).
 //! - **Fail-closed.** [`verify_tcb_integrity`] refuses (returns a [`TcbViolation`] naming the failing
 //!   artifact + reason) if ANY artifact or ancestor is **missing**, **wrong-owner**,
 //!   **writable-by-login-or-runtime**, or **hash-mismatched** — never a partial/degraded pass. The
@@ -111,8 +112,10 @@ impl TcbPinManifest {
 pub const ROOT_ANCHOR_ROLE: &str = "key-manifest.root-anchor";
 
 /// The facts a [`FsProbe`] reports about one path. In production these come from an `fstat` of an
-/// `O_NOFOLLOW`-opened `fd` (never a path re-lookup — no TOCTOU) plus an ACL/group scan; in tests they
-/// are injected directly. `sha256` is the lowercase-hex digest of the opened bytes (ignored for
+/// `O_NOFOLLOW`-opened `fd` (never a path re-lookup — no TOCTOU); in tests they are injected
+/// directly. The one shipped probe, `broker/src/tcb_probe.rs::LinuxFsProbe`, decides writability
+/// from the mode bits and from ownership by a measured principal and reads NO POSIX ACL — it says
+/// so itself. An ACL that grants write is therefore not seen by this floor today. `sha256` is the lowercase-hex digest of the opened bytes (ignored for
 /// directory ancestors).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileFacts {
