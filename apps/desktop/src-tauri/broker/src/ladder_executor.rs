@@ -282,7 +282,8 @@ impl LadderChain {
     /// `prepared.request_sha256()` against the authority's own recomputation, and `requested_at` is one
     /// of the eight §2.2 fields both sides hash. A second `now()` here would differ by however long
     /// preparation took and the turn would Block on a binding that is really a clock skew.
-    /// [`tests::the_challenge_facts_are_the_prepared_facts`] is that equality, as arithmetic.
+    /// `tests::the_create_pending_hop_sends_exactly_the_prepared_facts` is that equality, read off the
+    /// request this function sends. (This line cited a test that never called this function.)
     ///
     /// The two hops themselves — the ten-key `create-pending` object, the `issue` request, the one
     /// reply parser — are `chain_executor::request_challenge`, the same function the direct path
@@ -461,6 +462,7 @@ impl GovernedTurnChain for LadderChain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chain_executor::receipt_fixtures::{EnvelopeFacts, EvidenceFacts};
     use crate::chain_hops::Principal;
     use brops_core::governed_prepare::GovernedGenerationConfig;
     use brops_core::receipt::sha256_hex;
@@ -516,42 +518,29 @@ mod tests {
         assert_ne!(a.request_sha256(), b.request_sha256());
     }
 
-    /// `create-pending`'s `requested_at_ms` must be `prepared.context().requested_at` parsed back, and
-    /// not a second clock read.
-    ///
-    /// The arithmetic: `requested_at` is one of the eight §2.2 fields `request_sha256` is computed
-    /// over, and `submit_frame` refuses with `CrossBinding::RequestSha256` when the authority's
-    /// recomputation disagrees. Two clock reads differ by the preparation time, so a fresh `now()` in
-    /// `issue_challenge` would make every turn Block on what is really a skew. Asserted on the value
-    /// the hop actually sends.
-    #[test]
-    fn the_challenge_facts_are_the_prepared_facts() {
-        let now = 1_900_000_123_456i64;
-        let prepared = prepare_governed_turn_v1b(
-            "sys", &msgs(&[("user", "hi")]), config(), now as u64, "ws", "inst",
-        )
-        .unwrap();
-        let ctx = prepared.context();
-        assert_eq!(ctx.requested_at, now.to_string());
-        let sent_back: i64 = ctx.requested_at.parse().unwrap();
-        assert_eq!(sent_back, now);
-        // The eight-field envelope digest is stable across a re-read of the same context, which is the
-        // property the equality above exists to preserve.
-        assert_eq!(prepared.request_sha256(), prepared.issued_request().request_sha256());
-    }
+    // (Cockpit read R3-1210: `the_challenge_facts_are_the_prepared_facts` stood here. It prepared a
+    // turn, parsed `requested_at` back and compared it with the number it had just passed in; it
+    // never called `issue_challenge`, and a `+ 1` there left it green. What it asserted is now in
+    // `the_create_pending_hop_sends_exactly_the_prepared_facts`, which reads the request the hop sent.)
 
     // ---------------------------------------------------------------------------------------------
     // The content source
     // ---------------------------------------------------------------------------------------------
 
-    fn messages_db(rows: &[(&str, &str, &str, &str)]) -> rusqlite::Connection {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, \
-             role TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);",
-        )
-        .unwrap();
+    /// Rows `(id, conversation, role, body)` written straight into the desktop's REAL tables — the
+    /// migrated schema, not a copy of it (cockpit read R3-0655). Three hand-typed `CREATE TABLE
+    /// messages` stood in this module, and with a column of migration 0003 renamed all five tests
+    /// built on them stayed green. The rows go in by SQL rather than through `chat::post_message`
+    /// because several of these tests need a role the product refuses to store.
+    fn store_messages(conn: &rusqlite::Connection, rows: &[(&str, &str, &str, &str)]) {
         for (id, conv, role, body) in rows {
+            // `messages.conversation_id` REFERENCES `conversations(id)`, and foreign keys are on.
+            conn.execute(
+                "INSERT OR IGNORE INTO conversations (id, kind, title, created_at, updated_at) \
+                 VALUES (?1, 'direct', 't', '0', '0')",
+                [conv],
+            )
+            .unwrap();
             conn.execute(
                 "INSERT INTO messages (id, conversation_id, role, author, body, created_at) \
                  VALUES (?1, ?2, ?3, 'u', ?4, ?1)",
@@ -559,6 +548,11 @@ mod tests {
             )
             .unwrap();
         }
+    }
+
+    fn messages_db(rows: &[(&str, &str, &str, &str)]) -> rusqlite::Connection {
+        let conn = brops_core::db::open_in_memory().unwrap();
+        store_messages(&conn, rows);
         conn
     }
 
@@ -649,15 +643,13 @@ mod tests {
     fn a_conversation_with_no_messages_is_not_a_turn() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("messages.db");
+        // The real schema, holding another conversation's message and none for the one asked.
         {
-            let conn = rusqlite::Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, \
-                 role TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);",
-            )
-            .unwrap();
+            let conn = brops_core::db::open(&path.to_string_lossy()).unwrap();
+            store_messages(&conn, &[("001", "c-other", "user", "not this conversation")]);
         }
         let src = SqliteTurnContent::new(path.to_string_lossy().to_string(), "sys", 10);
+        assert!(src.resolve(&req("c-other")).is_ok(), "the control: the store is readable");
         assert!(matches!(src.resolve(&req("c-empty")), Err(TurnReason::UpstreamBlocked)));
         // An unopenable database is the same refusal, never an empty history.
         let missing = SqliteTurnContent::new(
@@ -688,13 +680,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("messages.db");
         {
-            let conn = rusqlite::Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, \
-                 role TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL); \
-                 INSERT INTO messages VALUES ('001', 'c1', 'user', 'u', 'hi', '001');",
-            )
-            .unwrap();
+            let conn = brops_core::db::open(&path.to_string_lossy()).unwrap();
+            store_messages(&conn, &[("001", "c1", "user", "hi")]);
         }
         let src = SqliteTurnContent::new(path.to_string_lossy().to_string(), "sys", 10);
         let material = src.resolve(&req("c1")).expect("the conversation is read");
@@ -886,6 +873,10 @@ mod tests {
         )
         .unwrap();
         let ctx = prepared.context().clone();
+        // The prepared side of the equality: the canonical decimal of the clock reading, and one
+        // eight-field digest whichever way the prepared object is asked for it.
+        assert_eq!(ctx.requested_at, now.to_string());
+        assert_eq!(prepared.request_sha256(), prepared.issued_request().request_sha256());
         let document = json!({
             "payload": {
                 "task_id": "task-1",
@@ -1125,84 +1116,72 @@ mod tests {
             let pending = self.wire.borrow().pending.clone().expect("submit before create-pending");
             let text = |k: &str| pending[k].as_str().unwrap_or_default().to_string();
             let output_sha256 = sha256_hex(LADDER_OUTPUT);
-            let mut evidence = serde_json::Map::new();
-            for (k, v) in [
-                ("run_id", text("run_id")),
-                ("execution_attempt_id", "att-ladder-1".to_string()),
-                ("task_id", text("task_id")),
-                ("request_nonce", text("request_nonce")),
-                ("receipt_id", "receipt-ladder-1".to_string()),
-                ("workspace_id", text("workspace_id")),
-                ("install_id", text("install_id")),
-                ("supervisor_id", "sup".to_string()),
-                ("executor_id", "exec".to_string()),
-                ("builder_id", "build".to_string()),
-                ("policy_id", "pol".to_string()),
-                ("policy_version", "1".to_string()),
-                ("policy_bundle_handle", H64.to_string()),
-                ("system_handle", text("system_sha256")),
-                ("history_handle", text("history_sha256")),
-                ("generation_config_handle", text("generation_config_sha256")),
-                ("output_handle", output_sha256.clone()),
-                ("containment_evidence_handle", H64.to_string()),
-                ("record_handle", H64.to_string()),
-                ("lease_handle", H64.to_string()),
-                ("execution_receipt_handle", H64.to_string()),
-                ("evidence_final_event_hash", H64.to_string()),
-                ("decision", "completed".to_string()),
-            ] {
-                evidence.insert(k.to_string(), Value::String(v));
-            }
-            for (k, v) in [
-                ("requested_at", pending["requested_at_ms"].as_i64().unwrap_or_default()),
-                ("challenge_accepted_at_ms", T_PREPARED_MS),
-                ("completed_at", T_COMPLETED_MS),
-                ("evidence_event_count", 3),
-                ("evidence_last_sequence", 12),
-                ("evidence_head_sequence", 12),
-            ] {
-                evidence.insert(k.to_string(), json!(v));
-            }
-            let evidence_jcs = serde_json::to_vec(&Value::Object(evidence)).unwrap();
+            // The key sets are `chain_executor::receipt_fixtures`, shared with the direct chain's
+            // suite; only the values are this fixture's (cockpit read R3-0652).
+            let evidence = EvidenceFacts {
+                run_id: text("run_id"),
+                execution_attempt_id: "att-ladder-1".to_string(),
+                task_id: text("task_id"),
+                request_nonce: text("request_nonce"),
+                receipt_id: "receipt-ladder-1".to_string(),
+                workspace_id: text("workspace_id"),
+                install_id: text("install_id"),
+                supervisor_id: "sup".to_string(),
+                executor_id: "exec".to_string(),
+                builder_id: "build".to_string(),
+                policy_id: "pol".to_string(),
+                policy_version: "1".to_string(),
+                policy_bundle_handle: H64.to_string(),
+                system_handle: text("system_sha256"),
+                history_handle: text("history_sha256"),
+                generation_config_handle: text("generation_config_sha256"),
+                output_handle: output_sha256.clone(),
+                containment_evidence_handle: H64.to_string(),
+                record_handle: H64.to_string(),
+                lease_handle: H64.to_string(),
+                execution_receipt_handle: H64.to_string(),
+                evidence_final_event_hash: H64.to_string(),
+                decision: "completed".to_string(),
+                requested_at: pending["requested_at_ms"].as_i64().unwrap_or_default(),
+                challenge_accepted_at_ms: T_PREPARED_MS,
+                completed_at: T_COMPLETED_MS,
+                evidence_event_count: 3,
+                evidence_last_sequence: 12,
+                evidence_head_sequence: 12,
+            };
+            let evidence_jcs = serde_json::to_vec(&evidence.object()).unwrap();
             let evidence_signer = match self.behaviour {
                 Sidecar::AttestationSignedByAnotherKey => SigningKey::from_bytes(&[0x77; 32]),
                 _ => supervisor_key(),
             };
             let evidence_sig = URL_SAFE_NO_PAD.encode(evidence_signer.sign(&evidence_jcs).to_bytes());
 
-            let mut envelope = serde_json::Map::new();
-            for (k, v) in [
-                ("artifact_type", RECEIPT_ENVELOPE_ARTIFACT_TYPE.to_string()),
-                ("key_id", "signer-1".to_string()),
-                ("receipt_id", "receipt-ladder-1".to_string()),
-                ("run_id", text("run_id")),
-                ("execution_attempt_id", "att-ladder-1".to_string()),
-                ("task_id", text("task_id")),
-                ("workspace_id", text("workspace_id")),
-                ("install_id", text("install_id")),
-                ("request_nonce", text("request_nonce")),
-                ("record_handle", H64.to_string()),
-                ("lease_handle", H64.to_string()),
-                ("execution_receipt_handle", H64.to_string()),
-                ("evidence_final_event_hash", H64.to_string()),
-                ("supervisor_attestation_key_id", "sup-1".to_string()),
-                ("request_sha256", text("request_sha256")),
-                ("output_sha256", output_sha256.clone()),
-                ("attestation_evidence_sha256", sha256_hex(&evidence_jcs)),
-            ] {
-                envelope.insert(k.to_string(), Value::String(v));
-            }
-            for (k, v) in [
-                ("output_bytes", LADDER_OUTPUT.len() as i64),
-                ("challenge_accepted_at_ms", T_PREPARED_MS),
-                ("completed_at_ms", T_COMPLETED_MS),
-                ("evidence_event_count", 3),
-                ("evidence_last_sequence", 12),
-                ("evidence_head_sequence", 12),
-            ] {
-                envelope.insert(k.to_string(), json!(v));
-            }
-            let envelope_jcs = serde_json::to_vec(&Value::Object(envelope)).unwrap();
+            let envelope = EnvelopeFacts {
+                artifact_type: RECEIPT_ENVELOPE_ARTIFACT_TYPE.to_string(),
+                key_id: "signer-1".to_string(),
+                receipt_id: "receipt-ladder-1".to_string(),
+                run_id: text("run_id"),
+                execution_attempt_id: "att-ladder-1".to_string(),
+                task_id: text("task_id"),
+                workspace_id: text("workspace_id"),
+                install_id: text("install_id"),
+                request_nonce: text("request_nonce"),
+                record_handle: H64.to_string(),
+                lease_handle: H64.to_string(),
+                execution_receipt_handle: H64.to_string(),
+                evidence_final_event_hash: H64.to_string(),
+                supervisor_attestation_key_id: "sup-1".to_string(),
+                request_sha256: text("request_sha256"),
+                output_sha256: output_sha256.clone(),
+                attestation_evidence_sha256: sha256_hex(&evidence_jcs),
+                output_bytes: LADDER_OUTPUT.len() as i64,
+                challenge_accepted_at_ms: T_PREPARED_MS,
+                completed_at_ms: T_COMPLETED_MS,
+                evidence_event_count: 3,
+                evidence_last_sequence: 12,
+                evidence_head_sequence: 12,
+            };
+            let envelope_jcs = serde_json::to_vec(&envelope.object()).unwrap();
             let envelope_signer = match self.behaviour {
                 Sidecar::EnvelopeSignedByAnotherKey => SigningKey::from_bytes(&[0x66; 32]),
                 _ => signer_key(),

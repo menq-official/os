@@ -224,11 +224,29 @@ mod tests {
         assert_eq!(parse_reply("accept-open", br#"{"ok":true}"#), Err(HopError::BadReply));
     }
 
-    /// The full set of ops the broker sends, each answered by its own principal's success shape.
-    /// Listed here so adding a hop without adding its reply shape is visible.
+    /// Every `"op": "<name>"` a request builder writes in the production half of `source` (the
+    /// text above its first test attribute, `//` comments removed).
+    fn ops_written_in(source: &str) -> std::collections::BTreeSet<String> {
+        let production = source.split_once("#[cfg(test)]").expect("no test attribute to stop at").0;
+        let code: String =
+            production.lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        code.split("\"op\": \"").skip(1).filter_map(|rest| rest.split('"').next()).map(str::to_string).collect()
+    }
+
+    /// The ops the broker sends, held equal to the ops its request builders write.
+    ///
+    /// Cockpit read R3-1209. This was a hand-typed list, a `{"ok":true,"op":<op>}` built from each
+    /// entry, and an assertion that it parsed under that same entry — true of any string at all
+    /// (`no-such-op-anywhere` passed), and tied neither to what the broker sends nor to any
+    /// principal's reply. The list is now compared with the source: a hop added to
+    /// `chain_executor.rs` and not here is red, and so is an entry here that nothing sends.
+    ///
+    /// What it still does not hold: the SHAPE each principal answers with. Those are Python
+    /// (`engine/runtime/*_server.py`); the fields the broker reads off each reply are asserted
+    /// where they are read, in `chain_executor`'s own tests.
     #[test]
-    fn every_broker_op_parses_its_own_principals_success_reply() {
-        for op in [
+    fn the_op_list_is_the_ops_the_request_builders_write_and_a_reply_answers_only_its_own() {
+        let listed = [
             "create-pending",
             "issue",
             "accept-open",
@@ -237,10 +255,33 @@ mod tests {
             "complete-run",
             "attest-run",
             "sign-result",
-        ] {
+        ];
+        let written = ops_written_in(include_str!("chain_executor.rs"));
+        let listed_set: std::collections::BTreeSet<String> = listed.iter().map(|op| op.to_string()).collect();
+        assert_eq!(written, listed_set, "the ops written in chain_executor.rs are not the ops listed here");
+        // The ladder writes no hop request of its own: its two authority hops are
+        // `chain_executor::request_challenge`, and the rest goes through the sidecar transport.
+        assert!(ops_written_in(include_str!("ladder_executor.rs")).is_empty());
+
+        for op in listed {
             let reply = format!(r#"{{"ok":true,"op":"{op}"}}"#);
             assert!(parse_reply(op, reply.as_bytes()).is_ok(), "op {op} must parse");
+            for other in listed.iter().filter(|other| **other != op) {
+                assert_eq!(
+                    parse_reply(other, reply.as_bytes()),
+                    Err(HopError::BadReply),
+                    "a `{op}` reply was taken as the answer to `{other}`"
+                );
+            }
         }
+    }
+
+    /// The scan above, on text whose answer is known: comments and the test half are not read.
+    #[test]
+    fn the_op_scan_reads_request_builders_and_neither_comments_nor_tests() {
+        let source = "json!({ \"op\": \"a-b\", \"x\": 1 });\n// \"op\": \"commented\"\n    \"op\": \"c\",\n#[cfg(test)]\n\"op\": \"in-a-test\"";
+        let found: Vec<String> = ops_written_in(source).into_iter().collect();
+        assert_eq!(found, ["a-b", "c"]);
     }
 
     #[test]

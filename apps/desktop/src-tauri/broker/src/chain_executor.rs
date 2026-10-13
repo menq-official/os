@@ -1,7 +1,9 @@
 //! Wave 3b-1B — the broker's real governed-turn chain executor (design-GREEN rev-30 §4.10(g)/§5/§6/§7).
 //!
-//! This replaces the interim `UpstreamBlockedExecutor` with a [`GovernedExecutor`] that actually drives the
-//! trusted chain. It separates ORCHESTRATION (this module — the ordered hops through
+//! This is the [`GovernedExecutor`] that actually drives the trusted chain: [`ChainExecutor`] wraps a
+//! [`GovernedTurnChain`] for a deployment that earns one. It does not replace `UpstreamBlockedExecutor`,
+//! which stays the broker's default (`main.rs`: "the default, not an interim") and is what is served
+//! whenever no such deployment is configured. It separates ORCHESTRATION (this module — the ordered hops through
 //! challenge-authority → supervisor(+lease) → launcher → executor → isolated-signer → final verification)
 //! from CRYPTO VERIFICATION (`brops_core::governed_verification`, which is independently exhaustively
 //! tested). The sub-chain is injected as a [`GovernedTurnChain`] so the orchestration wiring is
@@ -258,7 +260,8 @@ pub struct ExecutionArtifacts {
 //    1970-stamped receipt. [`SystemWallClock`] returns `None` there instead, and a `None` clock Blocks
 //    the turn.
 //  * **The default is the real one.** `GovernedChain::new` installs [`SystemWallClock`]; a fixed clock
-//    is only ever reachable through [`GovernedChain::with_clock`]. A test suite that injected a clock
+//    is only ever reachable through `with_clock`, which exists in a test build alone (it is defined
+//    in this file's test module, not here). A test suite that injected a clock
 //    everywhere would leave the shipped configuration unexercised, so
 //    `the_shipped_chain_reads_the_real_clock_and_refuses_a_stale_receipt` drives `new` itself.
 
@@ -315,8 +318,8 @@ where
     /// test injects an in-memory one. Behind a `Mutex` so `run_verified(&self, …)` can consume it without
     /// two concurrent turns sharing a borrow.
     ledger: Mutex<L>,
-    /// The §7.1 acceptance clock. `new` installs the real [`SystemWallClock`]; only
-    /// [`with_clock`](GovernedChain::with_clock) can replace it.
+    /// The §7.1 acceptance clock. `new` installs the real [`SystemWallClock`]; only `with_clock`,
+    /// which this file's test module defines and no other build has, can replace it.
     clock: Arc<dyn WallClock>,
 }
 
@@ -335,14 +338,6 @@ where
             ledger: Mutex::new(ledger),
             clock: Arc::new(SystemWallClock),
         }
-    }
-
-    /// Replace the §7.1 acceptance clock. The ONLY reason this exists is that a freshness test needs a
-    /// deterministic "now"; every production construction goes through [`new`](GovernedChain::new) and
-    /// gets [`SystemWallClock`].
-    pub fn with_clock(mut self, clock: Arc<dyn WallClock>) -> Self {
-        self.clock = clock;
-        self
     }
 
     /// One framed request→reply roundtrip to `principal` over a fresh connection — [`hop_request`].
@@ -784,14 +779,22 @@ pub mod linux {
         pub sockets: ChainSockets,
     }
 
-    impl HopConnector for LinuxHopConnector {
-        fn connect(&self, principal: Principal) -> Result<Box<dyn HopConn>, HopError> {
+    impl LinuxHopConnector {
+        /// The connection [`HopConnector::connect`] boxes, as its concrete type — so a test can read
+        /// the budget this connector really armed, which a `Box<dyn HopConn>` does not show.
+        fn open(&self, principal: Principal) -> Result<UnixHopConn, HopError> {
             let path = match principal {
                 Principal::ChallengeAuthority => &self.sockets.authority,
                 Principal::Supervisor => &self.sockets.supervisor,
                 Principal::IsolatedSigner => &self.sockets.signer,
             };
-            Ok(Box::new(connect_hop(path, HOP_EXCHANGE_BUDGET)?))
+            connect_hop(path, HOP_EXCHANGE_BUDGET)
+        }
+    }
+
+    impl HopConnector for LinuxHopConnector {
+        fn connect(&self, principal: Principal) -> Result<Box<dyn HopConn>, HopError> {
+            Ok(Box::new(self.open(principal)?))
         }
     }
 
@@ -947,9 +950,13 @@ pub mod linux {
         }
     }
 
-    /// The deployment-static remainder the live privileged execution needs beyond the per-turn plan: the
-    /// paths of the setuid chain + protected store, the supervisor `attest-run` socket, and the fixed run
-    /// facts (ids, identities, protected-chain + authorization handles, evidence-head counters). The per-turn
+    /// The deployment-static remainder the live privileged execution needs beyond the per-turn plan, in
+    /// nine fields: the recorder invoker command; the setuid chain's launcher, executor image, lease file
+    /// and cgroup argument; the recorder's store-INPUT, report and evidence-state directories; and the
+    /// supervisor lifecycle socket (`execution-started`, `complete-run`, `attest-run`). It holds no run
+    /// facts and no path into the protected store: the ids, identities, handles and evidence-head counters
+    /// this doc used to list were removed (F-01, F-02, rev-30 §2.3 — the notes between the fields say
+    /// where each went). The per-turn
     /// facts (`workspace/install/run/task/request_nonce/requested_at` + the granted lease) come from the
     /// plan — never duplicated here — so the attestation is bound to exactly the broker's own resolution.
     #[derive(Debug, Clone)]
@@ -966,7 +973,10 @@ pub mod linux {
         pub launcher_path: String,
         /// The pinned executor image the launcher `fexecve`s.
         pub executor_path: String,
-        /// The launcher's §4.3 `key=value` lease FILE (recorder/executor uid/gid + executor image digest).
+        /// The launcher's §4.3 `key=value` lease FILE (recorder/executor uid/gid + executor image digest,
+        /// and the three request pins `system_sha256` / `history_sha256` / `generation_config_sha256`).
+        /// The broker reads the pins out of this same file ([`lease_request_pins`]) and `execute`
+        /// Blocks before any spawn when one is absent or differs from what the turn resolved.
         pub lease_file: String,
         /// The launcher's third argv token (cgroup path).
         pub cgroup_arg: String,
@@ -976,8 +986,12 @@ pub mod linux {
         // NEITHER `brops-store` nor any owner". The recorder publishes both blobs itself, addressed
         // under the path in its OWN root-owned policy, so there is nothing here for a caller to steer
         // and no field a later change can quietly start writing through.
-        /// A world-writable staging dir for the recorder's `--out` report (owned by the recorder uid, read by
-        /// the broker uid). Trust for the bytes is the isolated-signer envelope, not this path.
+        /// The staging dir for the recorder's `--out` report and `--containment-out` evidence. The
+        /// recorder writes both; the broker reads them, and also WRITES here: it removes a previous
+        /// turn's two files before the spawn. Not world-writable in the live kit — a setgid `2770`
+        /// directory of group `brops-report`, whose members are the recorder and the broker
+        /// (`engine/ci/live/run_live_turn.sh`). Trust for the bytes is the isolated-signer envelope,
+        /// not this path.
         pub report_dir: String,
         /// The supervisor lifecycle socket (the broker's own uid is SO_PEERCRED-allowlisted).
         pub supervisor_sock: String,
@@ -1031,11 +1045,16 @@ pub mod linux {
         /// one reply parser. So `execution-started`, `complete-run` and `attest-run` are now held to
         /// the same predicate (`chain_hops::parse_reply`) and the same exchange budget as the rest.
         fn supervisor_op(&self, req: &Value) -> Result<Value, TurnReason> {
-            let socket = self.config.supervisor_sock.as_str();
             let connector = |_principal: Principal| -> Result<Box<dyn HopConn>, HopError> {
-                Ok(Box::new(connect_hop(socket, HOP_EXCHANGE_BUDGET)?))
+                Ok(Box::new(self.open_supervisor()?))
             };
             hop_request(&connector, Principal::Supervisor, req)
+        }
+
+        /// The connection [`supervisor_op`](Self::supervisor_op) makes, as its concrete type (see
+        /// [`LinuxHopConnector::open`]).
+        fn open_supervisor(&self) -> Result<UnixHopConn, HopError> {
+            connect_hop(self.config.supervisor_sock.as_str(), HOP_EXCHANGE_BUDGET)
         }
     }
 
@@ -1079,11 +1098,6 @@ pub mod linux {
             let _ = std::fs::remove_file(&report_path);
             let _ = std::fs::remove_file(&containment_path);
             let mut command = Command::new(&cfg.recorder_command[0]);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW — no console flash on spawn
-            }
             command.args(&cfg.recorder_command[1..]);
             command.args(
                 RecorderArgs {
@@ -1375,10 +1389,41 @@ pub mod linux {
             assert!(parse_reply("issue", &reply).is_ok());
         }
 
+        /// Cockpit read R3-1208. The test below this one is named for the shipped connector and
+        /// opens its connection with `connect_hop` itself, so it measured its own argument: with
+        /// both production call sites changed to fifty minutes, all 216 tests of this crate passed.
+        /// This one reads the budget off the connection each call site makes — the three
+        /// principals through [`LinuxHopConnector`], and the execution's supervisor lifecycle ops.
         #[test]
-        fn the_shipped_connector_opens_every_hop_with_the_exchange_budget() {
-            // The constant is what `LinuxHopConnector::connect` and `supervisor_op` pass; a budget
-            // nobody arms is the defect this replaced. Asserted on the connection it produces.
+        fn each_production_call_site_arms_the_exchange_budget_on_the_connection_it_makes() {
+            fn listening() -> (tempfile::TempDir, String, UnixListener) {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("principal.sock").to_string_lossy().to_string();
+                let listener = UnixListener::bind(&path).unwrap();
+                (dir, path, listener)
+            }
+            let (_a, authority, _la) = listening();
+            let (_s, supervisor, _ls) = listening();
+            let (_i, signer, _li) = listening();
+            let connector = LinuxHopConnector {
+                sockets: ChainSockets { authority, supervisor: supervisor.clone(), signer },
+            };
+            for principal in
+                [Principal::ChallengeAuthority, Principal::Supervisor, Principal::IsolatedSigner]
+            {
+                let conn = connector.open(principal).expect("a listening principal is connected to");
+                assert_eq!(conn.budget, HOP_EXCHANGE_BUDGET, "{principal:?}");
+            }
+            let conn = execution(&supervisor).open_supervisor().expect("the supervisor is listening");
+            assert_eq!(conn.budget, HOP_EXCHANGE_BUDGET, "supervisor_op");
+            // And the constant itself: thirty seconds, under the renderer's 120 s for the turn.
+            assert_eq!(HOP_EXCHANGE_BUDGET, Duration::from_secs(30));
+        }
+
+        /// What `connect_hop` does with the budget it is handed. It does NOT show what the shipped
+        /// call sites hand it; the test above does.
+        #[test]
+        fn a_connection_carries_its_budget_and_a_spent_one_is_a_closed_error() {
             let (_dir, path) = principal(|stream| {
                 std::thread::sleep(Duration::from_millis(200));
                 drop(stream);
@@ -1549,7 +1594,6 @@ mod tests {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine as _;
     use ed25519_dalek::{Signer as _, SigningKey};
-    use serde_json::{Map, Number};
 
     use brops_core::broker_orchestrator::{run_governed_turn, BrokerIds};
     use brops_core::broker_turns;
@@ -1559,6 +1603,8 @@ mod tests {
     use brops_core::ipc_framing::{decode_one, encode_frame};
     use brops_core::receipt::request_envelope_sha256;
     use rusqlite::Connection;
+
+    use super::receipt_fixtures::{EnvelopeFacts, EvidenceFacts};
 
     const CRID: &str = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
     const NONCE: &str = "nonce-1";
@@ -1572,7 +1618,7 @@ mod tests {
     // ---- the fixture's time-chain (§1), in REAL epoch-ms. Not 1000/2000: with a toy clock the §7.1
     // stale limit `now - 300000` goes negative and no freshness test over this fixture could ever
     // exercise the stale branch, so the orchestration tests would stay green over an unguarded path.
-    const T_REQUESTED_MS: i64 = 1_754_000_000_000; // 2025-08-01T00:53:20Z
+    const T_REQUESTED_MS: i64 = 1_754_000_000_000; // 2025-07-31T22:13:20Z
     const REQUESTED_AT_STR: &str = "1754000000000";
     /// The broker's clock for the fixture turn: 1 s after it completed.
     const T_NOW_MS: i64 = T_REQUESTED_MS + 3_000;
@@ -1606,47 +1652,38 @@ mod tests {
     /// them to agree with the isolated signer's envelope AND with the broker's own resolution, so a
     /// placeholder blob here would make every orchestration test refuse for the wrong reason.
     fn evidence_bytes(t: Times) -> Vec<u8> {
-        let mut m: Map<String, Value> = Map::new();
-        let strings: [(&str, String); 23] = [
-            ("run_id", "run-1".into()),
-            ("execution_attempt_id", "att-1".into()),
-            ("task_id", "task-1".into()),
-            ("request_nonce", NONCE.into()),
-            ("receipt_id", "receipt-abc".into()),
-            ("workspace_id", "ws-1".into()),
-            ("install_id", "install-1".into()),
-            ("supervisor_id", "sup-1".into()),
-            ("executor_id", "exec-1".into()),
-            ("builder_id", "build-1".into()),
-            ("policy_id", "pol-1".into()),
-            ("policy_version", "1".into()),
-            ("policy_bundle_handle", H_POLICY.into()),
-            ("system_handle", hx(0x55)),
-            ("history_handle", hx(0x66)),
-            ("generation_config_handle", hx(0x44)),
-            ("output_handle", sha256_hex(OUTPUT)),
-            ("containment_evidence_handle", H_CONTAIN.into()),
-            ("record_handle", H64.into()),
-            ("lease_handle", H64.into()),
-            ("execution_receipt_handle", H64.into()),
-            ("evidence_final_event_hash", H64.into()),
-            ("decision", "completed".into()),
-        ];
-        for (k, v) in strings {
-            m.insert(k.to_string(), Value::String(v));
-        }
-        let ints: [(&str, i64); 6] = [
-            ("requested_at", T_REQUESTED_MS),
-            ("challenge_accepted_at_ms", t.accepted),
-            ("completed_at", t.completed),
-            ("evidence_event_count", 3),
-            ("evidence_last_sequence", 12),
-            ("evidence_head_sequence", 12),
-        ];
-        for (k, v) in ints {
-            m.insert(k.to_string(), Value::Number(Number::from(v)));
-        }
-        serde_json::to_vec(&Value::Object(m)).unwrap()
+        let evidence = EvidenceFacts {
+            run_id: "run-1".into(),
+            execution_attempt_id: "att-1".into(),
+            task_id: "task-1".into(),
+            request_nonce: NONCE.into(),
+            receipt_id: "receipt-abc".into(),
+            workspace_id: "ws-1".into(),
+            install_id: "install-1".into(),
+            supervisor_id: "sup-1".into(),
+            executor_id: "exec-1".into(),
+            builder_id: "build-1".into(),
+            policy_id: "pol-1".into(),
+            policy_version: "1".into(),
+            policy_bundle_handle: H_POLICY.into(),
+            system_handle: hx(0x55),
+            history_handle: hx(0x66),
+            generation_config_handle: hx(0x44),
+            output_handle: sha256_hex(OUTPUT),
+            containment_evidence_handle: H_CONTAIN.into(),
+            record_handle: H64.into(),
+            lease_handle: H64.into(),
+            execution_receipt_handle: H64.into(),
+            evidence_final_event_hash: H64.into(),
+            decision: "completed".into(),
+            requested_at: T_REQUESTED_MS,
+            challenge_accepted_at_ms: t.accepted,
+            completed_at: t.completed,
+            evidence_event_count: 3,
+            evidence_last_sequence: 12,
+            evidence_head_sequence: 12,
+        };
+        serde_json::to_vec(&evidence.object()).unwrap()
     }
 
     struct FixedIds;
@@ -1786,44 +1823,32 @@ mod tests {
     /// Expected + output + attestation, and sign its JCS with the isolated-signer key. `to_vec` of a sorted
     /// `Map` is byte-identical to `ReceiptEnvelope::payload_jcs`, so the signature verifies in the broker.
     fn signed_payload(out_bytes: u64, out_sha: &str, t: Times) -> (Value, String) {
-        let mut m = Map::new();
-        let strings = [
-            ("artifact_type", RECEIPT_ENVELOPE_ARTIFACT_TYPE),
-            ("key_id", ISO_KEY_ID),
-            ("receipt_id", "receipt-abc"),
-            ("run_id", "run-1"),
-            ("execution_attempt_id", "att-1"),
-            ("task_id", "task-1"),
-            ("workspace_id", "ws-1"),
-            ("install_id", "install-1"),
-            ("request_nonce", NONCE),
-            ("record_handle", H64),
-            ("lease_handle", H64),
-            ("execution_receipt_handle", H64),
-            ("evidence_final_event_hash", H64),
-            ("supervisor_attestation_key_id", SUP_KEY_ID),
-        ];
-        for (k, v) in strings {
-            m.insert(k.to_string(), Value::String(v.to_string()));
+        let payload = EnvelopeFacts {
+            artifact_type: RECEIPT_ENVELOPE_ARTIFACT_TYPE.into(),
+            key_id: ISO_KEY_ID.into(),
+            receipt_id: "receipt-abc".into(),
+            run_id: "run-1".into(),
+            execution_attempt_id: "att-1".into(),
+            task_id: "task-1".into(),
+            workspace_id: "ws-1".into(),
+            install_id: "install-1".into(),
+            request_nonce: NONCE.into(),
+            record_handle: H64.into(),
+            lease_handle: H64.into(),
+            execution_receipt_handle: H64.into(),
+            evidence_final_event_hash: H64.into(),
+            supervisor_attestation_key_id: SUP_KEY_ID.into(),
+            request_sha256: expected_request_sha256(),
+            output_sha256: out_sha.to_string(),
+            attestation_evidence_sha256: sha256_hex(&evidence_bytes(t)),
+            output_bytes: i64::try_from(out_bytes).expect("a fixture length fits"),
+            challenge_accepted_at_ms: t.accepted,
+            completed_at_ms: t.completed,
+            evidence_event_count: 3,
+            evidence_last_sequence: 12,
+            evidence_head_sequence: 12,
         }
-        m.insert("request_sha256".to_string(), Value::String(expected_request_sha256()));
-        m.insert("output_sha256".to_string(), Value::String(out_sha.to_string()));
-        m.insert(
-            "attestation_evidence_sha256".to_string(),
-            Value::String(sha256_hex(&evidence_bytes(t))),
-        );
-        let ints: [(&str, u64); 6] = [
-            ("output_bytes", out_bytes),
-            ("challenge_accepted_at_ms", t.accepted as u64),
-            ("completed_at_ms", t.completed as u64),
-            ("evidence_event_count", 3),
-            ("evidence_last_sequence", 12),
-            ("evidence_head_sequence", 12),
-        ];
-        for (k, v) in ints {
-            m.insert(k.to_string(), Value::Number(Number::from(v)));
-        }
-        let payload = Value::Object(m);
+        .object();
         let jcs = serde_json::to_vec(&payload).unwrap();
         let env_sig = sign_b64(&signing_key(7), &jcs);
         (payload, env_sig)
@@ -2007,6 +2032,22 @@ mod tests {
         tamper: bool,
     ) -> GovernedChain<FakeConnector, FakeResolver, FakeExecution, InMemoryLedger> {
         chain_at(connector, tamper, FIXTURE_TIMES, Arc::new(FixedClock(T_NOW_MS)))
+    }
+
+    impl<C, R, E, L> GovernedChain<C, R, E, L>
+    where
+        C: HopConnector,
+        R: TurnResolver,
+        E: GovernedExecution,
+        L: AcceptanceLedger,
+    {
+        /// Replace the §7.1 acceptance clock: a freshness test needs a deterministic "now".
+        /// Defined HERE, in the test module, so no other build has it (cockpit read R3-0299);
+        /// every production construction goes through `new` and gets [`SystemWallClock`].
+        fn with_clock(mut self, clock: Arc<dyn WallClock>) -> Self {
+            self.clock = clock;
+            self
+        }
     }
 
     fn chain_at(
@@ -2520,5 +2561,114 @@ mod tests {
         );
         let found: Vec<&str> = found.iter().map(String::as_str).collect();
         assert_eq!(found, ["*", "copy", "read", "{"]);
+    }
+
+    /// Cockpit read R3-0299. The acceptance clock decides §7.1 freshness, and a `pub fn with_clock`
+    /// in the production half let any caller of this library hand the chain a clock of its own.
+    /// Its one caller was `chain_at` in this module. It is defined in this module now, so a build
+    /// without `cfg(test)` has no way to replace [`SystemWallClock`].
+    #[test]
+    fn the_acceptance_clock_cannot_be_replaced_outside_a_test_build() {
+        let code = broker_production_code();
+        assert!(code.contains("clock: Arc::new(SystemWallClock)"), "`new` no longer installs the real clock");
+        assert!(
+            !code.contains("fn with_clock"),
+            "the production half defines `with_clock`: a shipped caller can replace the §7.1 clock"
+        );
+        assert_eq!(code.matches("self.clock = ").count(), 0, "the clock is assigned outside `new`");
+    }
+
+    /// Cockpit read R3-0300 / R3-0301. `mod linux` is `#[cfg(target_os = "linux")]`, so a
+    /// `#[cfg(windows)]` block inside it is compiled on no host. One sat in the recorder spawn.
+    #[test]
+    fn the_linux_module_carries_no_windows_only_block() {
+        // CRLF on a Windows checkout would hide the line break the split below is anchored on.
+        let code = broker_production_code().replace("\r\n", "\n");
+        let linux = code
+            .split_once("#[cfg(target_os = \"linux\")]\npub mod linux {")
+            .expect("`mod linux` is no longer gated on target_os = \"linux\"")
+            .1;
+        assert!(linux.contains("fn execute("), "the split lost the execution path");
+        assert!(!linux.contains("cfg(windows)") && !linux.contains("std::os::windows"));
+    }
+
+    /// The shared fixture writes the frozen record's key counts: 29 in the evidence (23 strings
+    /// and 6 integers) and 23 in the envelope. The envelope's exact key SET is held by
+    /// `OwnedReceiptEnvelope::from_exact_payload` in every accepting test of both suites.
+    #[test]
+    fn the_shared_receipt_fixture_writes_29_evidence_keys_and_23_envelope_keys() {
+        let evidence: Value = serde_json::from_slice(&evidence_bytes(FIXTURE_TIMES)).unwrap();
+        assert_eq!(evidence.as_object().unwrap().len(), 29);
+        let (payload, _sig) = signed_payload(1, H64, FIXTURE_TIMES);
+        assert_eq!(payload.as_object().unwrap().len(), 23);
+        assert!(OwnedReceiptEnvelope::from_exact_payload(&payload).is_ok());
+    }
+}
+
+/// The frozen §4.9 record's two key sets — the 29-key supervisor evidence and the 23-key signed
+/// envelope — written ONCE for this crate's tests (cockpit read R3-0652).
+///
+/// `chain_executor`'s suite and `ladder_executor`'s each listed all 52 key names by hand, so a key
+/// added to the record had to be added in both or one suite refused for the wrong reason. A key is
+/// a FIELD here: a fixture that does not give it a value does not compile, in either suite. The
+/// VALUES stay with each suite — constants there, what the fake principals were sent here.
+///
+/// After `mod tests` on purpose: this file's source-scan tests read everything above the first
+/// test attribute as production code.
+#[cfg(test)]
+pub(crate) mod receipt_fixtures {
+    use serde_json::{Map, Value};
+
+    macro_rules! keyed_record {
+        ($(#[$doc:meta])* $name:ident { text: [$($text:ident),* $(,)?], whole: [$($whole:ident),* $(,)?] }) => {
+            $(#[$doc])*
+            pub(crate) struct $name {
+                $(pub(crate) $text: String,)*
+                $(pub(crate) $whole: i64,)*
+            }
+            impl $name {
+                /// The record as a JSON object, each field under its own name. `serde_json::to_vec`
+                /// of it is sorted-key and compact: the JCS both verifiers reconstruct.
+                pub(crate) fn object(&self) -> Value {
+                    let mut m = Map::new();
+                    $(m.insert(stringify!($text).to_string(), Value::String(self.$text.clone()));)*
+                    $(m.insert(stringify!($whole).to_string(), Value::Number(self.$whole.into()));)*
+                    Value::Object(m)
+                }
+            }
+        };
+    }
+
+    keyed_record! {
+        /// The supervisor's attested evidence: 23 strings and 6 integers.
+        EvidenceFacts {
+            text: [
+                run_id, execution_attempt_id, task_id, request_nonce, receipt_id, workspace_id,
+                install_id, supervisor_id, executor_id, builder_id, policy_id, policy_version,
+                policy_bundle_handle, system_handle, history_handle, generation_config_handle,
+                output_handle, containment_evidence_handle, record_handle, lease_handle,
+                execution_receipt_handle, evidence_final_event_hash, decision,
+            ],
+            whole: [
+                requested_at, challenge_accepted_at_ms, completed_at, evidence_event_count,
+                evidence_last_sequence, evidence_head_sequence,
+            ]
+        }
+    }
+
+    keyed_record! {
+        /// The isolated signer's flat envelope payload: 17 strings and 6 integers.
+        EnvelopeFacts {
+            text: [
+                artifact_type, key_id, receipt_id, run_id, execution_attempt_id, task_id,
+                workspace_id, install_id, request_nonce, record_handle, lease_handle,
+                execution_receipt_handle, evidence_final_event_hash, supervisor_attestation_key_id,
+                request_sha256, output_sha256, attestation_evidence_sha256,
+            ],
+            whole: [
+                output_bytes, challenge_accepted_at_ms, completed_at_ms, evidence_event_count,
+                evidence_last_sequence, evidence_head_sequence,
+            ]
+        }
     }
 }
