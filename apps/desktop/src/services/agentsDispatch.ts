@@ -461,6 +461,9 @@ export function validateAssignment(a: Assignment): Problem[] {
   for (const s of d.inputs) {
     if (!isRepoPath(s)) p.push({ field: 'inputs', message: `'${s}' must be a path relative to this checkout` });
   }
+  // `inputs` is `uniqueItems` in the task contract, like the two scope lists above; it was the
+  // one of the three this pre-flight did not hold to it (cockpit read R3-0279).
+  for (const dup of dupes(d.inputs)) p.push({ field: 'inputs', message: `'${dup}' is listed twice; entries must be unique` });
 
   if (d.core_skills.length === 0) {
     p.push({
@@ -475,6 +478,16 @@ export function validateAssignment(a: Assignment): Problem[] {
   if (d.done_criteria.length === 0) {
     p.push({ field: 'done_criteria', message: 'at least one criterion is required — otherwise nobody can say the task finished' });
   }
+  // The task contract gives every entry of these three lists `minLength: 1` (cockpit read
+  // R3-0280). An empty string passed here and was refused by the engine's schema afterwards.
+  const emptyEntry = (field: string, list: readonly string[], what: string): void => {
+    if (list.some((entry) => entry.length === 0)) {
+      p.push({ field, message: `an empty ${what} is not one — remove it or state it` });
+    }
+  };
+  emptyEntry('done_criteria', d.done_criteria, 'criterion');
+  emptyEntry('verification.commands', d.verification.commands, 'verification command');
+  emptyEntry('rollback.commands', d.rollback.commands, 'rollback command');
   if (!d.rollback.strategy.trim()) {
     p.push({ field: 'rollback.strategy', message: 'is required — a grant with no way back is not reversible' });
   }
@@ -717,8 +730,10 @@ export async function attemptDispatch(
     return { state: 'unreachable', reason: e instanceof Error ? e.message : String(e) };
   }
   const outcome = parseDispatchReply(raw);
-  if (outcome.state === 'accepted' && outcome.clientRequestId !== clientRequestId) {
-    return { state: 'unreachable', reason: 'accepted frame does not correlate with this request' };
+  // A refusal is an answer about ONE request, exactly as an acceptance is. Shown without
+  // this check, a refusal of some other request reads as the engine declining this contract.
+  if ((outcome.state === 'accepted' || outcome.state === 'refused') && outcome.clientRequestId !== clientRequestId) {
+    return { state: 'unreachable', reason: `${outcome.state} frame does not correlate with this request` };
   }
   return outcome;
 }

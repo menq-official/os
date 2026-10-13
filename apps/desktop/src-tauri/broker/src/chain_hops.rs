@@ -285,7 +285,8 @@ mod tests {
 
         // And the one hop function writes it for a typed refusal before it collapses the reason.
         // A text check, and it says so: the line goes to stderr, which a test cannot read back.
-        let source = include_str!("chain_executor.rs");
+        // CRLF on a Windows checkout would hide the `\n}\n` that ends the function; normalised.
+        let source = include_str!("chain_executor.rs").replace("\r\n", "\n");
         let hop = source
             .split("pub(crate) fn hop_request<")
             .nth(1)

@@ -88,7 +88,7 @@
       ]
     },
     "frontend_test_files": {
-      "value": 87,
+      "value": 88,
       "command": "cd apps/desktop && npm test   (the 'Test Files' line)",
       "derive": {
         "glob": "apps/desktop/src/**/*.test.ts|apps/desktop/src/**/*.test.tsx"
@@ -276,13 +276,17 @@
       ]
     },
     "frontend_tests": {
-      "value": 1155,
+      "value": 1171,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-13",
-        "head": "b6f70b7",
+        "head": "8bef40c",
         "environments": {
+          "Debian 13 (trixie) native @ 8bef40c + the renderer holds a governed result to its contract's closed keys, the dispatch pre-flight refuses what the task contract forbids, and six more low findings of the cockpit read": {
+            "ran": 1171,
+            "skipped": 0
+          },
           "Debian 13 (trixie) native @ b6f70b7 + the default selection never replaces one the user made": {
             "ran": 1155,
             "skipped": 0

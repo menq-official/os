@@ -88,10 +88,14 @@ export function parseApprovalRequestOutcome(raw: unknown): ApprovalRequestOutcom
   if (sequence < 1) return blocked('the outcome carries no usable `sequence`');
   const digest = typeof doc.entry_sha256 === 'string' ? doc.entry_sha256 : '';
   if (!HEX64.test(digest)) return blocked('the outcome carries no 64-hex `entry_sha256`');
+  // A record names the ask it records (cockpit read R3-0282). This used to fall back to `''`,
+  // so a record of no identifiable ask was shown as the answer to this one.
+  const requestId = typeof doc.request_id === 'string' ? doc.request_id : '';
+  if (!requestId.trim()) return blocked('the outcome names no `request_id`, so it records no identifiable ask');
 
   return {
     state: 'recorded',
-    requestId: typeof doc.request_id === 'string' ? doc.request_id : '',
+    requestId,
     sequence,
     entrySha256: digest,
     duplicate: doc.duplicate === true,

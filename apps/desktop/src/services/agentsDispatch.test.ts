@@ -190,6 +190,37 @@ describe('buildAssignment — produces a contract-shaped draft', () => {
   });
 });
 
+describe('validateAssignment — what the task contract forbids is refused before it is sent', () => {
+  // Cockpit read R3-0279, R3-0280. `contracts/task-contract.schema.json` says `inputs` is
+  // `uniqueItems` and that every `done_criteria`, `verification.commands` and
+  // `rollback.commands` entry has `minLength: 1`. The pre-flight checked neither, so a draft
+  // the engine refuses on its schema was shown as ready to send.
+  it('refuses an input listed twice', () => {
+    const a = build();
+    a.draft.inputs = ['docs/a.md', 'docs/b.md', 'docs/a.md'];
+    const problems = validateAssignment(a).filter((p) => p.field === 'inputs');
+    expect(problems).toHaveLength(1);
+    expect(problems[0].message).toContain("'docs/a.md' is listed twice");
+    a.draft.inputs = ['docs/a.md', 'docs/b.md'];
+    expect(fields(a)).not.toContain('inputs');
+  });
+
+  it('refuses an empty criterion or command', () => {
+    for (const field of ['done_criteria', 'verification.commands', 'rollback.commands'] as const) {
+      const a = build();
+      if (field === 'done_criteria') a.draft.done_criteria = ['it works', ''];
+      if (field === 'verification.commands') a.draft.verification.commands = ['npm test', ''];
+      if (field === 'rollback.commands') a.draft.rollback.commands = [''];
+      expect(fields(a), field).toContain(field);
+    }
+    // A non-empty entry in each is still clean.
+    const a = build();
+    a.draft.verification.commands = ['npm test'];
+    a.draft.rollback.commands = ['git restore .'];
+    expect(validateAssignment(a)).toEqual([]);
+  });
+});
+
 describe('validateAssignment — refuses, never accepts', () => {
   it('requires a scope: a grant with no paths grants nothing', () => {
     expect(fields(build({ scope: [] }))).toContain('scope');
@@ -380,6 +411,18 @@ describe('attemptDispatch', () => {
       },
     }));
     expect((await attemptDispatch(build(), transport, genId)).state).toBe('unreachable');
+  });
+
+  it('refuses a refused frame that does not correlate with the request', async () => {
+    // A refusal answering some OTHER request says nothing about this one: shown as this
+    // request's refusal, it tells the owner the engine declined a contract it never judged.
+    const transport = vi.fn(async () => ({
+      protocol: DISPATCH_RESULT_PROTOCOL, status: 'refused',
+      client_request_id: 'a-different-request', reason: 'scope_denied',
+    }));
+    const out = await attemptDispatch(build(), transport, genId);
+    expect(out.state).toBe('unreachable');
+    expect(out).toMatchObject({ reason: expect.stringContaining('does not correlate') });
   });
 
   it('refuses a non-UUIDv4 correlation id rather than sending an uncorrelatable request', async () => {

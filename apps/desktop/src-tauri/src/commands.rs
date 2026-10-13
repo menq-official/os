@@ -3382,7 +3382,8 @@ mod tests {
         }
         // And the command asks before it reaches the repository. A text check, and it says so —
         // the handler needs a Tauri state to run.
-        let src = include_str!("commands.rs");
+        // CRLF on a Windows checkout would hide the `\n` markers; normalised first.
+        let src = include_str!("commands.rs").replace("\r\n", "\n");
         let production = src.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
         let handler = production
             .split("pub fn create_conversation(")

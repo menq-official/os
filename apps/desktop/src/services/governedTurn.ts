@@ -106,6 +106,21 @@ function asRecord(v: unknown): Record<string, unknown> {
   if (typeof v !== 'object' || v === null) throw new Error('governed-turn reply is not an object');
   return v as Record<string, unknown>;
 }
+/**
+ * The contract closes each object: `additionalProperties: false`. A member it does not define
+ * is a frame it refuses, so it is one this parser refuses — it used to read the fields it wanted
+ * and ignore the rest (cockpit read R3-0283). The lists below are the schema's `properties`.
+ */
+const COMMITTED_KEYS = ['protocol', 'status', 'client_request_id', 'broker_turn_id', 'conversation_id', 'message'] as const;
+const BLOCKED_KEYS = ['protocol', 'status', 'client_request_id', 'broker_turn_id', 'conversation_id', 'reason'] as const;
+const MESSAGE_KEYS = ['message_id', 'role', 'author', 'body', 'created_at_ms', 'trust_state'] as const;
+
+function onlyKeys(o: Record<string, unknown>, allowed: readonly string[], what: string): void {
+  for (const key of Object.keys(o)) {
+    if (!allowed.includes(key)) throw new Error(`governed-turn ${what} carries an unexpected member '${key}'`);
+  }
+}
+
 function str(o: Record<string, unknown>, k: string): string {
   const v = o[k];
   if (typeof v !== 'string') throw new Error(`governed-turn reply field '${k}' is not a string`);
@@ -134,10 +149,17 @@ export function parseResult(raw: unknown): GovernedTurnResult {
   const status = o.status;
   if (status === 'committed') {
     if ('reason' in o) throw new Error('committed frame must not carry a reason');
+    onlyKeys(o, COMMITTED_KEYS, 'committed frame');
     const m = asRecord(o.message);
+    onlyKeys(m, MESSAGE_KEYS, 'committed message');
     if (m.role !== 'assistant') throw new Error('committed message role must be assistant');
-    const createdAtMs = o.message && typeof (m.created_at_ms) === 'number' ? (m.created_at_ms as number) : NaN;
-    if (!Number.isFinite(createdAtMs)) throw new Error('committed message created_at_ms invalid');
+    // An INTEGER, as the contract says (R3-0284): `Number.isFinite` let 1700.5 through. A safe
+    // one, so the value is the number the broker wrote and not its nearest double. The contract
+    // sets no minimum, so none is invented here.
+    const createdAtMs = m.created_at_ms;
+    if (typeof createdAtMs !== 'number' || !Number.isSafeInteger(createdAtMs)) {
+      throw new Error('committed message created_at_ms invalid');
+    }
     const messageId = str(m, 'message_id');
     const author = str(m, 'author');
     const body = str(m, 'body');
@@ -159,6 +181,7 @@ export function parseResult(raw: unknown): GovernedTurnResult {
   }
   if (status === 'blocked') {
     if ('message' in o) throw new Error('blocked frame must not carry a message');
+    onlyKeys(o, BLOCKED_KEYS, 'blocked frame');
     const reason = o.reason;
     if (typeof reason !== 'string' || !(TURN_REASONS as readonly string[]).includes(reason)) {
       throw new Error('blocked frame reason is outside the closed enum');

@@ -134,6 +134,37 @@ describe('renderer governed-turn thin proxy', () => {
       .rejects.toBeInstanceOf(CommitNotAcceptedError);
   });
 
+  // Cockpit read R3-0283, R3-0284. The contract closes both frames and the message
+  // (`additionalProperties: false`) and says `created_at_ms` is an integer. The parser read the
+  // fields it wanted and ignored the rest, so a frame the schema refuses — one carrying a
+  // member nobody defined, or a fractional timestamp — was returned as a typed result.
+  it('refuses a frame that carries a member the contract does not define', () => {
+    const extraTop = { ...committedFrame(), note: 'x' };
+    expect(() => parseResult(extraTop)).toThrow(/unexpected member 'note'/);
+    const extraMessage = committedFrame();
+    (extraMessage.message as Record<string, unknown>).html = '<b>x</b>';
+    expect(() => parseResult(extraMessage)).toThrow(/unexpected member 'html'/);
+    const extraBlocked = { ...blockedFrame('upstream_blocked'), detail: 'x' };
+    expect(() => parseResult(extraBlocked)).toThrow(/unexpected member 'detail'/);
+    // The two frames with exactly their members still parse.
+    expect(parseResult(committedFrame()).status).toBe('committed');
+    expect(parseResult(blockedFrame('upstream_blocked')).status).toBe('blocked');
+  });
+
+  it('refuses a committed frame whose created_at_ms is not an integer', () => {
+    for (const bad of [1700.5, Number.MAX_SAFE_INTEGER + 2, Infinity, NaN, '1700', null]) {
+      const frame = committedFrame();
+      (frame.message as Record<string, unknown>).created_at_ms = bad;
+      expect(() => parseResult(frame), String(bad)).toThrow(/created_at_ms invalid/);
+    }
+    // Every integer the contract admits is admitted: it sets no minimum.
+    for (const good of [0, -1, 1_754_000_000_000]) {
+      const frame = committedFrame();
+      frame.message.created_at_ms = good;
+      expect(parseResult(frame).status, String(good)).toBe('committed');
+    }
+  });
+
   it('refuses a committed frame whose message role is not assistant', () => {
     const bad = committedFrame();
     (bad.message as Record<string, unknown>).role = 'system';

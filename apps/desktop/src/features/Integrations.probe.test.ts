@@ -109,6 +109,16 @@ describe('parseDeclareReply refuses to invent a connector row', () => {
     expect(parseDeclareReply(full)).toEqual({ ok: true, integration: full });
   });
 
+  it('carries the credential reference through, and refuses one that is not a string', () => {
+    // The page reads `authRef` to say whether a reference is recorded; a record that lost it
+    // on the way in says "none recorded" about a connector that has one.
+    const withRef = { ...full, authRef: 'keyring:slack-bot' };
+    expect(parseDeclareReply(withRef)).toEqual({ ok: true, integration: withRef });
+    const noRef = { ...full, authRef: null };
+    expect(parseDeclareReply(noRef)).toEqual({ ok: true, integration: noRef });
+    expect(parseDeclareReply({ ...full, authRef: 7 }).ok).toBe(false);
+  });
+
   it('refuses a partial or wrongly-typed record', () => {
     for (const key of ['id', 'name', 'provider', 'status', 'createdAt', 'updatedAt']) {
       const partial: Record<string, unknown> = { ...full };

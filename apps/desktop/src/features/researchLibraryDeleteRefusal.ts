@@ -69,10 +69,13 @@ function messageOf(err: unknown): string {
  * "not allowed" is not promoted to a permanent verdict.
  */
 export function isPolicyRefusal(message: string, command: string): boolean {
-  if (message.includes(`${FORBIDDEN_COMMAND_PREFIX}:`)) return true;
+  // The handler's refusal STARTS with the prefix and names its own command; the prefix
+  // anywhere else, or for another command, is some other message.
+  if (message.startsWith(`${FORBIDDEN_COMMAND_PREFIX}:${command}:`)) return true;
   if (!message.includes(command)) return false;
-  return /not allowed|not permitted|forbidden|denied|permissions associated with this command/i
-    .test(message);
+  // Only the ACL's own wording. A bare "denied" or "forbidden" is what an operating system
+  // or a proxy says too, and those may be transient.
+  return /not allowed|not permitted|permissions associated with this command/i.test(message);
 }
 
 /**

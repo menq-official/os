@@ -132,3 +132,64 @@ describe('Notifications — the feed is not called ranked or sorted by priority'
     expect(NTF_STR.inboxNote.en).toMatch(/newest first/i);
   });
 });
+
+// Three things the page said that the store had not: an unknown severity ranked above
+// `critical`, "0 signals shown" while nothing had been read yet, and "All clear" over a
+// filter that merely matched none of the signals that exist.
+describe('Notifications — what the page says when the list is not the ordinary one', () => {
+  const page = () => render(
+    <AppProvider>
+      <ToastProvider>
+        <Notifications />
+      </ToastProvider>
+    </AppProvider>,
+  );
+  const listing = (list: () => Promise<unknown>) => invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === 'list_notifications') return list();
+    if (cmd === 'read_evidence_chain') return Promise.reject(new Error('broker_unavailable'));
+    return Promise.resolve(null);
+  });
+  const live = () => document.querySelector('.nsig-sr')?.textContent ?? '';
+
+  it('a severity the page does not know never leads ahead of a critical signal', async () => {
+    listing(() => Promise.resolve([
+      { ...NOTE, id: 'n-odd', severity: 'notice', title: 'An odd one' },
+      { ...NOTE, id: 'n-crit', severity: 'critical', title: 'Ledger write refused' },
+    ]));
+    page();
+    await waitFor(() => expect(document.querySelector('.nsig-now-title')).not.toBeNull());
+    expect(document.querySelector('.nsig-now-title')).toHaveTextContent('Ledger write refused');
+  });
+
+  it('the live region says the list is loading, not that zero signals are shown', async () => {
+    listing(() => new Promise(() => {}));
+    page();
+    await waitFor(() => expect(live()).not.toBe(''));
+    expect(live()).toBe(NTF_STR.liveLoading.en);
+    expect(live()).not.toMatch(/^0 /);
+  });
+
+  it('the live region says the read failed, not that zero signals are shown', async () => {
+    listing(() => Promise.reject(new Error('store locked')));
+    page();
+    // jsdom has no Tauri runtime, so the error state renders as the offline panel; either way
+    // the read is over and it did not succeed.
+    await waitFor(() => expect(document.querySelector('.empty')).not.toBeNull());
+    expect(live()).toBe(NTF_STR.liveError.en);
+  });
+
+  it('a filter that matches nothing does not say "All clear" while signals exist', async () => {
+    listing(() => Promise.resolve([{ ...NOTE, readAt: '1700000001000' }]));
+    page();
+    await waitFor(() => expect(screen.getAllByText('Disk almost full').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${NTF_STR.filterUnread.en}`) }));
+    await waitFor(() => expect(screen.getByText(NTF_STR.filteredEmptyTitle.en)).toBeInTheDocument());
+    expect(screen.queryByText(NTF_STR.clearTitle.en)).toBeNull();
+  });
+
+  it('an empty store still says "All clear"', async () => {
+    listing(() => Promise.resolve([]));
+    page();
+    await waitFor(() => expect(screen.getByText(NTF_STR.clearTitle.en)).toBeInTheDocument());
+  });
+});

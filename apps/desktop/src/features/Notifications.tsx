@@ -19,6 +19,12 @@ import { parseTimestamp } from './timestamps';
 
 // Fixed priority order for the severity filter chips (most severe first).
 const SEVERITY_ORDER = ['critical', 'error', 'warning', 'success', 'info'];
+// A severity outside the list ranks AFTER every known one. `indexOf` alone answers -1 for
+// it, which sorts an unrecognised word ahead of `critical`.
+const severityRank = (sev: string): number => {
+  const i = SEVERITY_ORDER.indexOf(sev);
+  return i < 0 ? SEVERITY_ORDER.length : i;
+};
 
 // Semantic-token color for a signal's severity accent (left rail + focus).
 function severityColor(sev: string): string {
@@ -96,7 +102,7 @@ export function Notifications() {
       const ua = a.readAt === null ? 0 : 1;
       const ub = b.readAt === null ? 0 : 1;
       if (ua !== ub) return ua - ub;
-      return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
+      return severityRank(a.severity) - severityRank(b.severity);
     })[0];
   }, [items]);
 
@@ -284,15 +290,18 @@ export function Notifications() {
 
       {/* Live region: new/changed signals are announced politely. */}
       <p className="nsig-sr" aria-live="polite">
-        {`${visible.length} ${L('liveCount')}`}
+        {loading ? L('liveLoading') : state.error ? L('liveError') : `${visible.length} ${L('liveCount')}`}
       </p>
 
       {loading ? (
         <Skeleton rows={4} />
       ) : state.error ? (
         <ErrorState message={state.error} onRetry={state.reload} />
-      ) : visible.length === 0 ? (
+      ) : items.length === 0 ? (
         <EmptyState title={L('clearTitle')} hint={L('clearHint')} glyph="✓" />
+      ) : visible.length === 0 ? (
+        // Signals exist and this filter shows none of them: that is not "all clear".
+        <EmptyState title={L('filteredEmptyTitle')} hint={L('filteredEmptyHint')} glyph="◌" />
       ) : (
         <div
           className="nsig-feed"

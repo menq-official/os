@@ -83,6 +83,20 @@ describe('a desktop approval-request never carries a key or a lease', () => {
   });
 });
 
+describe('a recorded ask names the request it records (cockpit read R3-0282)', () => {
+  // The outcome was accepted with `requestId: ''` when it carried no `request_id` — a record of
+  // no identifiable ask, shown as the answer to this one. The Rust side refuses that shape
+  // before it gets here; this parser is the renderer's own check and must not be the weaker one.
+  it('a record with no usable request_id is blocked, not shown with an empty id', () => {
+    for (const bad of [{ request_id: undefined }, { request_id: '' }, { request_id: '   ' }, { request_id: 7 }, { request_id: null }]) {
+      const out = parseApprovalRequestOutcome(recorded(bad));
+      expect(out.state, JSON.stringify(bad)).toBe('blocked');
+      if (out.state === 'blocked') expect(out.reason).toMatch(/request_id/);
+    }
+    expect(parseApprovalRequestOutcome(recorded()).state).toBe('recorded');
+  });
+});
+
 describe('what the renderer may believe coming back', () => {
   it('a complete record is recorded, and carries the unadjudicated flag through', async () => {
     invokeMock.mockResolvedValue(recorded({ duplicate: true, sequence: 3 }));

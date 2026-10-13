@@ -4927,7 +4927,8 @@ mod tests {
 
         // And the cached path goes through that judgement on every use. A text check, and it
         // says so: the cache is a process-wide `OnceLock` a test cannot reset.
-        let source = include_str!("ai.rs");
+        // CRLF on a Windows checkout would hide the `\n` marker; normalised first.
+        let source = include_str!("ai.rs").replace("\r\n", "\n");
         let production = source.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
         assert_ne!(production.len(), source.len(), "the test module marker moved");
         let cached = production
@@ -4997,7 +4998,8 @@ mod tests {
             assert_eq!(ollama_endpoint(base, "/api/tags"), "http://localhost:11434/api/tags", "{base}");
         }
         assert!(validate_ollama_url("http://localhost:11434/").is_ok(), "the validator accepts this base");
-        let source = include_str!("ai.rs");
+        // CRLF on a Windows checkout would hide the `\n` marker; normalised first.
+        let source = include_str!("ai.rs").replace("\r\n", "\n");
         let production = source.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
         assert_ne!(production.len(), source.len(), "the test module marker moved");
         let joined_as_text = concat!("format!(\"{url}", "/api/");

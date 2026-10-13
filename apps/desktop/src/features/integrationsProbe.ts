@@ -180,7 +180,18 @@ export function parseDeclareReply(raw: unknown): DeclareOutcome {
       reason: `${DECLARE_COMMAND} reply was not a complete connector record`,
     };
   }
-  return { ok: true, integration: { id, name, provider, status, createdAt, updatedAt } };
+  // `authRef` is optional in the record, but when it is there it is what the page reads to
+  // say whether a credential reference is recorded. Dropping it says "none" about a
+  // connector that has one; a value of another type is not a record this page can show.
+  const integration: Integration = { id, name, provider, status, createdAt, updatedAt };
+  if ('authRef' in raw) {
+    const authRef = raw.authRef;
+    if (authRef !== null && typeof authRef !== 'string') {
+      return { ok: false, kind: 'refused', reason: `${DECLARE_COMMAND} reply carried an authRef that is not a reference` };
+    }
+    integration.authRef = authRef;
+  }
+  return { ok: true, integration };
 }
 
 /**

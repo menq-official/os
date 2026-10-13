@@ -22,6 +22,22 @@ export const STR = {
   feedLabel: { en: 'Signal feed', hy: 'Ազդանշանների հոսք', ru: 'Лента сигналов' },
   filtersLabel: { en: 'Filter signals', hy: 'Զտել ազդանշանները', ru: 'Фильтровать сигналы' },
   liveCount: { en: 'signals shown', hy: 'ազդանշան ցուցադրված է', ru: 'сигналов показано' },
+  liveLoading: { en: 'Loading signals.', hy: 'Ազդանշանները բեռնվում են։', ru: 'Сигналы загружаются.' },
+  liveError: {
+    en: 'The signals could not be read.',
+    hy: 'Ազդանշանները չհաջողվեց կարդալ։',
+    ru: 'Не удалось прочитать сигналы.',
+  },
+  filteredEmptyTitle: {
+    en: 'Nothing in this filter',
+    hy: 'Այս զտիչում ոչինչ չկա',
+    ru: 'В этом фильтре ничего нет',
+  },
+  filteredEmptyHint: {
+    en: 'There are signals outside it — choose All to see them.',
+    hy: 'Դրանից դուրս ազդանշաններ կան․ ընտրիր «Բոլորը»՝ տեսնելու համար։',
+    ru: 'Вне его есть сигналы — выберите «Все», чтобы увидеть их.',
+  },
   eyebrowPrism: {
     en: 'SIGNAL PRISM · TRIAGE',
     hy: 'ԱԶԴԱՆՇԱՆՆԵՐԻ ՊՐԻԶՄԱ · SIGNAL PRISM',
