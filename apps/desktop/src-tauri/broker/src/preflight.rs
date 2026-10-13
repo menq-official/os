@@ -9,7 +9,10 @@
 //! several of them produce it before anything is printed. An operator who wants to know **why** a
 //! machine cannot run a governed turn has to read Rust and then guess which branch fired first.
 //!
-//! This module answers the question directly and by name: it walks the SAME requirement set, reports
+//! This module answers the question directly and by name: it walks that requirement set — less two
+//! refusals of the §2.5 floor it has no row for, the pin manifest's own custody
+//! (`tcb_probe`'s `manifest_custody_violation`) and the broker's self-identity (the manifest must
+//! pin the running broker executable and its config; this process is neither) — reports
 //! each one as met / not met / not measurable **on this platform**, and says who would have to
 //! provision it. It is a REPORT. It writes nothing, provisions nothing, and cannot make any governed
 //! surface reachable — see [`Host`], whose whole surface is reads.
@@ -148,7 +151,11 @@ pub struct Requirement {
     pub refusal: &'static str,
 }
 
-/// Every prerequisite, in the order `build_governed_executor` would meet them.
+/// Every prerequisite, grouped by kind: platform and OS topology, then the deployment config,
+/// then custody. That is NOT the order `build_governed_executor` meets them in, which this doc
+/// used to claim — the function reads the environment variable and the config first, runs the
+/// §2.5 floor and reads the root anchor before any other trust material, and the root-anchor row
+/// here is second to last.
 ///
 /// `Provisioner` is the column that matters: thirteen `installer`, eleven `machine-admin`, one
 /// `install-minted-root` (the root the install mints — see [`Provisioner::InstallMintedRoot`]), one
@@ -636,23 +643,39 @@ impl Report {
 // The evaluation
 // ---------------------------------------------------------------------------------------------
 
-/// Small helper over the parsed config, mirroring `main.rs`'s `s` / `i` closures.
+/// The string at a dotted path of the deployment config, or `None` when any step of the path is
+/// absent or the value there is not a string.
+///
+/// This and [`config_i64`] are the ONE reader of `$BROPS_BROKER_CONFIG`'s nested keys: `main.rs`'s
+/// `s` / `i` closures in `build_governed_executor` call them, and so does [`Cfg`] below. They were
+/// written out in both places (cockpit read R3-0657), with a comment here saying this copy mirrored
+/// that one and nothing holding the two equal.
+pub fn config_str(cfg: &Value, path: &[&str]) -> Option<String> {
+    let mut cur = cfg;
+    for k in path {
+        cur = cur.get(*k)?;
+    }
+    cur.as_str().map(|x| x.to_string())
+}
+
+/// The integer at a dotted path of the deployment config; see [`config_str`].
+pub fn config_i64(cfg: &Value, path: &[&str]) -> Option<i64> {
+    let mut cur = cfg;
+    for k in path {
+        cur = cur.get(*k)?;
+    }
+    cur.as_i64()
+}
+
+/// The parsed config, or its absence, read through the broker's own two readers above.
 struct Cfg(Option<Value>);
 
 impl Cfg {
     fn s(&self, path: &[&str]) -> Option<String> {
-        let mut cur = self.0.as_ref()?;
-        for k in path {
-            cur = cur.get(*k)?;
-        }
-        cur.as_str().map(|x| x.to_string())
+        config_str(self.0.as_ref()?, path)
     }
     fn i(&self, path: &[&str]) -> Option<i64> {
-        let mut cur = self.0.as_ref()?;
-        for k in path {
-            cur = cur.get(*k)?;
-        }
-        cur.as_i64()
+        config_i64(self.0.as_ref()?, path)
     }
     fn get(&self, key: &str) -> Option<&Value> {
         self.0.as_ref()?.get(key)
@@ -1270,6 +1293,11 @@ fn check_floor_custody(host: &dyn Host, cfg: &Cfg) -> Status {
              floor another principal can write is no floor",
             f.mode & 0o7777
         )),
+        // What this arm does NOT measure (cockpit read R3-0098, OPEN — the verdict is the Owner's
+        // to change): the floor's DIRECTORY. The persist does not write this file; it creates
+        // `<floor>.json.tmp` beside it and renames it over (`write_floor_atomically`), so a
+        // broker-owned 0600 floor in a directory the broker cannot write reads MET here while
+        // every turn refuses. The ledger row does stat its directory; this one stops at the file.
         (Some(f), Some(b)) => Status::met(format!(
             "{path} is 0{:o} owned by the broker uid {b}",
             f.mode & 0o7777
@@ -1406,6 +1434,12 @@ fn check_sidecar_principal(host: &dyn Host, cfg: &Cfg) -> Status {
 }
 
 fn check_resolved(cfg: &Cfg) -> Status {
+    // What this row asks for and what the ladder reads are not the same set (cockpit read
+    // R3-0100, OPEN — the verdict is the Owner's to change, not this module's). Of the five,
+    // the LADDER takes only `workspace_id` and `install_id` from config: `KeyResolver::resolve_keys`
+    // hands it those and the author. `run_id` and `task_id` it mints, and the request time comes
+    // from the prepared turn, so the row reports NOT MET for three values no receipt of the
+    // binary's only chain can carry.
     let mut empty = Vec::new();
     for key in ["workspace_id", "install_id", "run_id", "task_id"] {
         if cfg.s(&["resolved", key]).filter(|v| !v.is_empty()).is_none() {
@@ -1818,12 +1852,106 @@ mod tests {
     /// Extract every configuration key `build_governed_executor` reads, out of its OWN source, and
     /// require it to be exactly [`CONFIG_KEYS_READ_BY_BUILD_GOVERNED_EXECUTOR`].
     ///
-    /// This is the anti-duplication gate. A new `s(&["trust","something"])` in `main.rs` fails this
-    /// test until the preflight is told about it, and a key removed from `main.rs` fails it until
-    /// the preflight stops claiming it.
+    /// This is the anti-duplication gate. A new `s(&["trust","something"])` in that function fails
+    /// this test until the preflight is told about it, and a key the function stops reading fails
+    /// it until the preflight stops claiming it — whatever the rest of `main.rs` still spells.
     #[test]
     fn the_config_key_mirror_does_not_drift_from_main_rs() {
-        let src = include_str!("main.rs");
+        let found = config_keys_read_in(&build_governed_executor_code(include_str!("main.rs")));
+        let declared: BTreeSet<String> = CONFIG_KEYS_READ_BY_BUILD_GOVERNED_EXECUTOR
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
+        let unknown: Vec<&String> = found.difference(&declared).collect();
+        let stale: Vec<&String> = declared.difference(&found).collect();
+        assert!(
+            unknown.is_empty(),
+            "main.rs reads config keys the preflight does not know about: {unknown:?}"
+        );
+        assert!(
+            stale.is_empty(),
+            "the preflight claims config keys main.rs does not read: {stale:?}"
+        );
+    }
+
+    /// What the scan above is run over: `build_governed_executor` alone — from its `fn` line to the
+    /// brace that closes it — with full-line comments removed, as `tcb_probe`'s `code_only` does.
+    ///
+    /// The function is an item of `mod linux`, so its closing brace is the first one at that
+    /// module's item indentation. Line endings are normalised first: a Windows checkout hands
+    /// `include_str!` CRLF, and a marker containing a newline would not be found there.
+    fn build_governed_executor_code(main_rs: &str) -> String {
+        let source = main_rs.replace("\r\n", "\n");
+        let start = source
+            .find("    fn build_governed_executor(")
+            .expect("main.rs no longer defines build_governed_executor as an item of `mod linux`");
+        let from_fn = &source[start..];
+        let end = from_fn
+            .find("\n    }\n")
+            .expect("build_governed_executor has no closing brace at its own indentation");
+        from_fn[..end]
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Cockpit read R3-1214. The scan ran over ALL of `main.rs`: a key the function had stopped
+    /// reading stayed "found" for as long as a comment or `main.rs`'s own test module still
+    /// spelled it — and both spell `cfg.get("sidecar")`. A made-up file stands in for `main.rs`
+    /// here so that this can be shown without the broker having to stop reading a key first.
+    #[test]
+    fn the_key_scan_reads_the_function_and_not_its_comments_or_the_test_module() {
+        let main_rs = "mod linux {\n    \
+            fn build_governed_executor(login_uid: u32) -> u32 {\n        \
+            // it used to read cfg.get(\"commented\") and s(&[\"trust\", \"commented\"])\n        \
+            let kept = s(&[\"trust\", \"kept\"]);\n        \
+            let uids = cfg\n            .get(\"uids\");\n        \
+            if kept.is_some() {\n            return 1;\n        }\n        \
+            0\n    }\n\n    \
+            fn another_function() {\n        let x = i(&[\"another\", \"function\"]);\n    }\n}\n\
+            #[cfg(test)]\nmod tests {\n    \
+            fn a_copy() {\n        let y = cfg.get(\"test_module\");\n    }\n}\n";
+        let found = config_keys_read_in(&build_governed_executor_code(main_rs));
+        let expected: BTreeSet<String> = ["trust.kept", "uids"].iter().map(|k| k.to_string()).collect();
+        assert_eq!(found, expected);
+        // CRLF, as a Windows checkout hands `include_str!` the file: the same answer.
+        let crlf = main_rs.replace('\n', "\r\n");
+        assert_eq!(config_keys_read_in(&build_governed_executor_code(&crlf)), expected);
+    }
+
+    /// Cockpit read R3-0657. The path readers were written twice — closures in
+    /// `build_governed_executor`, methods on `Cfg` here — and are one pair of functions now. What
+    /// they answer, and that the broker's function reads its config through them and no longer
+    /// through a loop of its own.
+    #[test]
+    fn the_broker_and_the_preflight_read_the_config_through_one_pair_of_readers() {
+        let cfg = serde_json::json!({
+            "trust": {"floor_path": "/f", "epoch": 3},
+            "content": {"window": 8, "system": "x"}
+        });
+        assert_eq!(config_str(&cfg, &["trust", "floor_path"]).as_deref(), Some("/f"));
+        assert_eq!(config_str(&cfg, &["trust", "epoch"]), None, "a number is not a string");
+        assert_eq!(config_str(&cfg, &["trust", "absent"]), None);
+        assert_eq!(config_str(&cfg, &["absent", "floor_path"]), None);
+        assert_eq!(config_str(&cfg, &["trust"]), None, "a block is not a string");
+        assert_eq!(config_i64(&cfg, &["content", "window"]), Some(8));
+        assert_eq!(config_i64(&cfg, &["content", "system"]), None, "a string is not a number");
+        assert_eq!(config_i64(&cfg, &["content", "window", "deeper"]), None);
+        // `Cfg` is those functions over an optional document.
+        assert_eq!(Cfg(Some(cfg.clone())).s(&["trust", "floor_path"]).as_deref(), Some("/f"));
+        assert_eq!(Cfg(Some(cfg.clone())).i(&["content", "window"]), Some(8));
+        assert_eq!(Cfg(None).s(&["trust", "floor_path"]), None);
+        assert_eq!(Cfg(None).i(&["content", "window"]), None);
+
+        let broker = build_governed_executor_code(include_str!("main.rs"));
+        assert!(broker.contains("brops_broker::preflight::config_str(&cfg, p)"), "`s` is not the shared reader");
+        assert!(broker.contains("brops_broker::preflight::config_i64(&cfg, p)"), "`i` is not the shared reader");
+        assert!(!broker.contains("cur.get(*k)?"), "the broker walks a config path with a loop of its own again");
+    }
+
+    /// Every configuration key the given source reads, dotted.
+    fn config_keys_read_in(src: &str) -> BTreeSet<String> {
         let mut found: BTreeSet<String> = BTreeSet::new();
 
         // `s(&["a", "b"])` / `i(&["a", "b"])`
@@ -1857,21 +1985,7 @@ mod tests {
             }
             scan = at + ".get(\"".len() + end;
         }
-
-        let declared: BTreeSet<String> = CONFIG_KEYS_READ_BY_BUILD_GOVERNED_EXECUTOR
-            .iter()
-            .map(|k| k.to_string())
-            .collect();
-        let unknown: Vec<&String> = found.difference(&declared).collect();
-        let stale: Vec<&String> = declared.difference(&found).collect();
-        assert!(
-            unknown.is_empty(),
-            "main.rs reads config keys the preflight does not know about: {unknown:?}"
-        );
-        assert!(
-            stale.is_empty(),
-            "the preflight claims config keys main.rs does not read: {stale:?}"
-        );
+        found
     }
 
     #[test]
@@ -2348,14 +2462,27 @@ mod tests {
 
     // ---- one negative per measured requirement ----------------------------------------------
 
+    /// Why the row named `name` is NOT MET — and a panic if it is anything else.
+    ///
+    /// Cockpit read R3-1215. Sixteen of the negatives below read only `detail()`, which is the
+    /// same text whichever variant carries it: with `Status::not_met` building a `Met` row, all
+    /// sixteen stayed green. That is the weakness the comment in
+    /// `a_present_but_unreadable_config_is_distinguished_from_an_unparseable_one` names, left
+    /// standing in every test written before it. A negative reads its reason through here.
+    fn not_met_because(report: &Report, name: &str) -> String {
+        match status_of(report, name) {
+            Status::NotMet { because } => because.clone(),
+            other => panic!("`{name}` was to be NOT MET and the row said {other:?}"),
+        }
+    }
+
     #[test]
     fn a_missing_pin_manifest_is_not_met_by_name() {
         let mut host = provisioned();
         host.files.remove("/kit/pin.json");
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "trust.tcb_pin_manifest_path").detail().contains("absent"));
-        assert!(status_of(&r, "trust.tcb_pin_manifest_covers_the_required_set")
-            .detail()
+        assert!(not_met_because(&r, "trust.tcb_pin_manifest_path").contains("absent"));
+        assert!(not_met_because(&r, "trust.tcb_pin_manifest_covers_the_required_set")
             .contains("absent"));
     }
 
@@ -2369,7 +2496,7 @@ mod tests {
         .unwrap();
         host.files.insert("/kit/pin.json".into(), thin.into_bytes());
         let r = evaluate(&host, None);
-        let detail = status_of(&r, "trust.tcb_pin_manifest_covers_the_required_set").detail();
+        let detail = not_met_because(&r, "trust.tcb_pin_manifest_covers_the_required_set");
         assert!(detail.contains("privileged-launcher.bin"), "{detail}");
         assert!(detail.contains("unpinned"), "{detail}");
     }
@@ -2382,7 +2509,7 @@ mod tests {
         cfg["uids"].as_object_mut().unwrap().remove("sidecar");
         host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
         let r = evaluate(&host, None);
-        let d = status_of(&r, "principals.tcb_floor_covers_the_sidecar").detail();
+        let d = not_met_because(&r, "principals.tcb_floor_covers_the_sidecar");
         assert!(d.contains("does not name it"), "{d}");
         // The SEVEN ACCOUNTS still exist and are still distinct — that is a different question, and
         // the two rows must not be collapsed. This is the live kit's actual state: seven real
@@ -2398,8 +2525,7 @@ mod tests {
         cfg["uids"]["broker"] = serde_json::json!(5003);
         host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "principals.sidecar_distinct_from_broker")
-            .detail()
+        assert!(not_met_because(&r, "principals.sidecar_distinct_from_broker")
             .contains("principal collapse"));
     }
 
@@ -2516,14 +2642,14 @@ mod tests {
     fn a_launcher_without_the_setuid_bit_is_not_met() {
         let host = provisioned().stat("/kit/privileged-launcher.bin", 0, 0o100755, false);
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "launcher.setuid_root_binary").detail().contains("not setuid"));
+        assert!(not_met_because(&r, "launcher.setuid_root_binary").contains("not setuid"));
     }
 
     #[test]
     fn a_setuid_launcher_owned_by_a_service_account_is_not_met() {
         let host = provisioned().stat("/kit/privileged-launcher.bin", 5001, 0o104750, false);
         let r = evaluate(&host, None);
-        let d = status_of(&r, "launcher.setuid_root_binary").detail();
+        let d = not_met_because(&r, "launcher.setuid_root_binary");
         assert!(d.contains("owned by uid 5001"), "{d}");
     }
 
@@ -2582,7 +2708,7 @@ mod tests {
         // now reports that file, not the fixture's setuid one.
         let host = repin(provisioned(), "privileged-launcher.bin", "/kit/other-launcher.bin")
             .stat("/kit/other-launcher.bin", 0, 0o100755, false);
-        let d = status_of(&evaluate(&host, None), "launcher.setuid_root_binary").detail().to_string();
+        let d = not_met_because(&evaluate(&host, None), "launcher.setuid_root_binary");
         assert!(d.contains("/kit/other-launcher.bin") && d.contains("not setuid"), "{d}");
     }
 
@@ -2671,14 +2797,14 @@ mod tests {
     fn a_world_readable_supervisor_store_is_not_met() {
         let host = provisioned().stat("/kit/supervisor-state", 5004, 0o40755, true);
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "store.supervisor_private_0700").detail().contains("mode 755"));
+        assert!(not_met_because(&r, "store.supervisor_private_0700").contains("mode 755"));
     }
 
     #[test]
     fn a_root_owned_floor_is_not_met_and_names_the_persist_refusal() {
         let host = provisioned().stat("/kit/floor.json", 0, 0o100644, false);
         let r = evaluate(&host, None);
-        let d = status_of(&r, "trust.floor_is_broker_owned_0600").detail();
+        let d = not_met_because(&r, "trust.floor_is_broker_owned_0600");
         assert!(d.contains("owned by uid 0"), "{d}");
         // The reason named is the one the BROKER returns. This asserted `floor_not_persisted`,
         // which is `ladder_turn`'s outcome string and appears nowhere in the broker's refusal.
@@ -2712,7 +2838,7 @@ mod tests {
     fn a_group_writable_floor_is_not_met() {
         let host = provisioned().stat("/kit/floor.json", 5001, 0o100660, false);
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "trust.floor_is_broker_owned_0600").detail().contains("mode 660"));
+        assert!(not_met_because(&r, "trust.floor_is_broker_owned_0600").contains("mode 660"));
     }
 
     #[test]
@@ -2720,7 +2846,7 @@ mod tests {
         let mut host = provisioned();
         host.files.insert("/kit/floor.json".into(), b"{}".to_vec());
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "trust.floor_path").detail().contains("does not parse"));
+        assert!(not_met_because(&r, "trust.floor_path").contains("does not parse"));
     }
 
     /// Cockpit read R3-0099. The row said MET for anything that existed at the path — a regular
@@ -2747,7 +2873,7 @@ mod tests {
         let mut host = provisioned();
         host.stats.remove("/kit/authority.sock");
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "sockets.authority").detail().contains("nothing to dial"));
+        assert!(not_met_because(&r, "sockets.authority").contains("nothing to dial"));
     }
 
     #[test]
@@ -2758,8 +2884,7 @@ mod tests {
         cfg["content"].as_object_mut().unwrap().remove("messages_db");
         host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "content.messages_db")
-            .detail()
+        assert!(not_met_because(&r, "content.messages_db")
             .contains("nothing honest to sign"));
     }
 
@@ -2773,7 +2898,7 @@ mod tests {
         host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
         let r = evaluate(&host, None);
         assert!(matches!(status_of(&r, "content.system"), Status::NotMet { .. }));
-        assert!(status_of(&r, "content.window").detail().contains("must be positive"));
+        assert!(not_met_because(&r, "content.window").contains("must be positive"));
     }
 
     #[test]
@@ -2806,8 +2931,7 @@ mod tests {
         let mut host = provisioned();
         host.accounts.remove("brops-sidecar");
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "sidecar.principal_and_invoker")
-            .detail()
+        assert!(not_met_because(&r, "sidecar.principal_and_invoker")
             .contains("not an account on this machine"));
     }
 
@@ -2816,7 +2940,7 @@ mod tests {
         let mut host = provisioned();
         host.stats.remove("/usr/bin/python3");
         let r = evaluate(&host, None);
-        assert!(status_of(&r, "sidecar.spawn_triple").detail().contains("which is absent"));
+        assert!(not_met_because(&r, "sidecar.spawn_triple").contains("which is absent"));
     }
 
     #[test]
@@ -2828,7 +2952,7 @@ mod tests {
         cfg["resolved"].as_object_mut().unwrap().remove("task_id");
         host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
         let r = evaluate(&host, None);
-        let d = status_of(&r, "resolved.identifiers").detail();
+        let d = not_met_because(&r, "resolved.identifiers");
         assert!(d.contains("resolved.run_id"), "{d}");
         assert!(d.contains("resolved.task_id"), "{d}");
     }
@@ -2841,7 +2965,7 @@ mod tests {
             Status::Unmeasurable { .. }
         ));
         let r = evaluate(&host, Some("/nowhere/broker.sock"));
-        let d = status_of(&r, "db.durable_acceptance_ledger").detail();
+        let d = not_met_because(&r, "db.durable_acceptance_ledger");
         assert!(d.contains("does not exist"), "{d}");
         // What the broker does there is EXIT, before it binds. This said it "serves fail-closed".
         assert!(d.contains("EXIT_DB") && !d.contains("serves fail-closed"), "{d}");

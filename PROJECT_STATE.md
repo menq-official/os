@@ -11,9 +11,9 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #451 · branch `ck-m41`** (base `main`, tip `42feb8f`, task T-145).
+> **⏭️ CURRENT ACTIVE: PR #452 · branch `ck-m44`** (base `main`, tip `4aff195`, task T-145).
 >
-> cockpit read, ui primitives and Activity group
+> cockpit read, broker main and preflight group
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
@@ -48,7 +48,7 @@ Each row carries the date it was measured, because they are not measured togethe
 | frontend · 2026-10-14 | tsc clean, 1250 / 88 files, a11y 82 |
 | **Debian** | |
 | engine (Python), non-root, Debian 13 · 2026-10-13 | 2741 OK, 17 skipped |
-| Rust, 10 crates · 2026-10-13 | 1629 passed, 1 ignored (needs root; CI runs it) |
+| Rust, 10 crates · 2026-10-14 | 1632 passed, 1 ignored (needs root; CI runs it) |
 | `npm audit --audit-level=high` · 2026-09-01 | 0 vulns |
 | FW-1 boundary proof · 2026-09-01 | 23/23 x3 |
 

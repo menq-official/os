@@ -81,6 +81,14 @@ const CONN_IO_TIMEOUT_MS: u64 = 120_000;
 // module's own `CREATE TABLE IF NOT EXISTS governed_output_streams` ran on THIS connection one line before
 // `supervisor_ledger::create_schema`, so its divergent shape would have won the race and made the canonical
 // DDL a silent no-op.
+//
+// What that leaves, said plainly (cockpit read R3-0563): the third call below still runs the supervisor's
+// DDL on the BROKER's connection, so the broker's database carries all eight supervisor tables —
+// `governed_output_streams` among them — which the paragraph above places in the supervisor-only DB.
+// Nothing in `broker/src` reads or writes one of them, and neither do the `brops-core` modules this
+// binary hands its connection to (`broker_turns`, `broker_orchestrator`, `governed_message_store`); the
+// call is this crate's only use of `supervisor_ledger`. The tables are created here and stay empty. Dropping the call is a change to
+// this database's schema and has not been made.
 // ---------------------------------------------------------------------------------------------------
 
 /// Initialize the three rev-30 governed-turn schemas on `conn` (idempotent — every `create_schema` uses
@@ -125,6 +133,38 @@ impl GovernedExecutor for UpstreamBlockedExecutor {
     ) -> Result<(AcceptedOutput, brops_core::production_trust::TrustState), TurnReason> {
         Err(TurnReason::UpstreamBlocked)
     }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The §2.6 sidecar wiring: WHO the sidecar this broker starts runs as, and WHAT it may be sent.
+//
+// Deliberately NOT inside `#[cfg(target_os = "linux")] mod linux`, where its only production caller
+// (`build_governed_executor`) lives: out here it is compiled on every host and can be CALLED by a
+// test. It used to be three lines in that function and the same three lines again in a `#[cfg(test)]`
+// copy, and the door test drove the copy (cockpit read R3-1212).
+// ---------------------------------------------------------------------------------------------------
+
+/// Build the 4.10(g) submit transport from the deployment config's `sidecar` block.
+///
+/// `SidecarPrincipal::from_config` is the only constructor of that type and no value of it means
+/// "as me": an unresolved principal is an `Err` here, and the caller serves fail-closed on it. The
+/// trust is `SidecarTrust::RelayFramesOnly` and is not a parameter — this binary cannot hold the
+/// provisioned set (see the comment at the call), so there is nothing else it could pass.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn broker_sidecar_wiring(
+    sidecar_block: Option<&serde_json::Value>,
+    python: &str,
+    script: &str,
+    sandbox: std::path::PathBuf,
+) -> Result<brops_core::governed_sidecar::GovernedSidecar, String> {
+    let principal = brops_core::governed_sidecar::SidecarPrincipal::from_config(sidecar_block)?;
+    Ok(brops_core::governed_sidecar::GovernedSidecar::as_distinct_principal(
+        python,
+        script,
+        sandbox,
+        brops_core::governed_sidecar::SidecarTrust::RelayFramesOnly,
+        principal,
+    ))
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -274,7 +314,7 @@ mod linux {
     /// Build the broker's [`GovernedExecutor`], FAIL-CLOSED by default.
     ///
     /// Reads the optional deployment config at `$BROPS_BROKER_CONFIG`: if it parses, passes the 2.5 TCB
-    /// integrity floor, and carries `[trust]` (manifest + signature + floor + both key ids),
+    /// integrity floor, and carries `[trust]` (a manifest that parses, a signature file, a floor that parses),
     /// `[sockets].authority`, `[content]` (the conversation source) and `[sidecar]` (the one-shot bridge
     /// spawn -- `python`/`script`/`cwd` AND the 2.6 `principal`/`invoker` that make the child the
     /// SIDECAR account rather than this one), the 4.10(g) `LadderChain` is served. ANY problem -- no env var, unreadable/malformed
@@ -283,6 +323,16 @@ mod linux {
     /// unconfigured conversation source, or an acceptance ledger that will not open -- returns the
     /// fail-closed `UpstreamBlockedExecutor`, so the broker keeps rendering `blocked` (never a
     /// fabricated acceptance).
+    ///
+    /// **"ANY problem" is the list above and no more, and nothing is VERIFIED here.** The manifest is
+    /// parsed and its signature file read; `ProductionResolver::provisioned` stores both, and the root
+    /// signature, the anti-rollback floor and both keys are checked PER TURN, in `resolve_keys`.
+    /// `trust.signer_key_id`, `trust.supervisor_attestation_key_id` and every `[resolved]` value are
+    /// `unwrap_or_default()`: a config missing one of them is not refused by this function — it gets
+    /// the `LadderChain`, whose every turn then ends `blocked` in `resolve_keys`. So the line printed
+    /// below, `trusted manifest provisioned`, means a manifest was found and parsed; it is printed
+    /// before any signature has been checked. (This doc used to count "both key ids" among what the
+    /// config must carry, and the unqualified "ANY problem" read as if a bad signature were one.)
     ///
     /// **What it deliberately no longer builds.** The direct `LinuxGovernedTurnChain` and its
     /// `[sockets].supervisor` / `[sockets].signer` / `[execution]` config are gone from this function.
@@ -300,7 +350,6 @@ mod linux {
         use brops_broker::ladder_executor::{LadderChain, SqliteTurnContent, UuidTurnIds};
         use brops_broker::manifest_resolver::{ProductionResolver, ResolvedFacts};
         use brops_core::broker_turns::DurableAcceptanceLedger;
-        use brops_core::governed_sidecar::{GovernedSidecar, SidecarTrust};
         use brops_core::key_manifest::KeyManifest;
         use serde_json::Value;
 
@@ -327,20 +376,10 @@ mod linux {
             }
         };
 
-        let s = |p: &[&str]| -> Option<String> {
-            let mut cur = &cfg;
-            for k in p {
-                cur = cur.get(*k)?;
-            }
-            cur.as_str().map(|x| x.to_string())
-        };
-        let i = |p: &[&str]| -> Option<i64> {
-            let mut cur = &cfg;
-            for k in p {
-                cur = cur.get(*k)?;
-            }
-            cur.as_i64()
-        };
+        // One reader of the config's nested keys, shared with the preflight that reports on the
+        // same keys; both loops used to be written out here as well (cockpit read R3-0657).
+        let s = |p: &[&str]| -> Option<String> { brops_broker::preflight::config_str(&cfg, p) };
+        let i = |p: &[&str]| -> Option<i64> { brops_broker::preflight::config_i64(&cfg, p) };
 
         // ---- §2.5 TCB INTEGRITY FLOOR (audit F-10) ----
         //
@@ -503,8 +542,15 @@ mod linux {
         // the agent's system prompt; `content.window` is how many of the most recent messages are sent.
         // The three artifact DIGESTS are not read from config at all any more -- `prepare_governed_turn_v1b`
         // computes each one from the bytes this turn actually sends. `resolved.{system,history,
-        // generation_config}_sha256` are therefore dead on this path; they remain in `ResolvedFacts` only
-        // for the direct chain the proof driver wires, and that type's doc says so.
+        // generation_config}_sha256` are therefore dead on this path, and so are `resolved.requested_at`,
+        // `requested_at_ms`, `run_id` and `task_id`: the ladder mints the two ids and takes the time from
+        // the prepared turn. All seven are still read above into `ResolvedFacts`, where only
+        // `impl TurnResolver for ProductionResolver` consumes them — and no binary builds a chain over
+        // that impl (the proof driver's direct chain has a resolver of its own, `FixedResolver` in
+        // `proof/src/bin/live_turn.rs`; this comment used to say it was kept for that driver). The
+        // preflight's `resolved.identifiers` row still asks for `run_id`, `task_id` and
+        // `requested_at_ms` beside `workspace_id` and `install_id`, the two the ladder does take from
+        // config; that row's verdict is the Owner's to change (cockpit read R3-0100).
         let messages_db = match s(&["content", "messages_db"]) {
             Some(p) => p,
             None => {
@@ -587,10 +633,12 @@ mod linux {
         // deployment's invoker prefix, and no value of it means "as me". A broker that cannot resolve
         // one therefore has nothing to pass to `as_distinct_principal` and must refuse -- BY NAME, so
         // an operator is told which key is missing rather than left reading a `blocked` reply.
-        let principal = match brops_core::governed_sidecar::SidecarPrincipal::from_config(
-            cfg.get("sidecar"),
-        ) {
-            Ok(p) => p,
+        //
+        // Both steps are `broker_sidecar_wiring`, above `mod linux`: the principal resolved from this
+        // block, then the transport built for it with `SidecarTrust::RelayFramesOnly`. One function,
+        // so the test that drives the protocol door drives the transport this line serves.
+        let transport = match broker_sidecar_wiring(cfg.get("sidecar"), &python, &script, sandbox) {
+            Ok(transport) => transport,
             Err(why) => {
                 eprintln!(
                     "brops-broker: this deployment cannot start the sidecar AS the sidecar \
@@ -601,13 +649,6 @@ mod linux {
                 return fail_closed();
             }
         };
-        let transport = GovernedSidecar::as_distinct_principal(
-            &python,
-            &script,
-            sandbox,
-            SidecarTrust::RelayFramesOnly,
-            principal,
-        );
 
         // ---- 7.1(c)(d) DURABLE replay ledger (audit IDX-67 / IDX-86 / IDX-94) ----
         //
@@ -851,9 +892,15 @@ mod linux {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Tests — pure, offline, host-independent (run on Windows/macOS/Linux alike). They exercise the broker DB
-// schema init and the governed-turn wiring over an in-memory connection with a fake executor; no socket, no
-// peer-cred syscall.
+// Tests — offline, and compiled on Windows/macOS/Linux alike. They exercise the broker DB schema init
+// and the governed-turn wiring over an in-memory connection with a fake executor; no socket, no
+// peer-cred syscall. (The socket tests are `linux::frame_budget_tests`, above.)
+//
+// One of them is NOT pure and not host-independent, and this banner used to say all were:
+// `the_brokers_transport_cannot_carry_a_task_request` sends the two relay frames through a transport
+// whose invoker is `/usr/bin/sudo`, so on a host that has one a `sudo` process is started (and exits
+// on the unknown `brops-sidecar` account); on a host without one the spawn fails instead. The test
+// asserts neither outcome — its own comment says why.
 // ---------------------------------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -862,7 +909,7 @@ mod tests {
     use brops_core::governed_message_store::sha256_hex;
 
     // =============================================================================================
-    // §2.6 — the one thing about `mod linux` that CAN be checked from a non-Linux host
+    // §2.6 — what can be checked about `mod linux` from any host, without a deployment
     // =============================================================================================
     //
     // `build_governed_executor` lives inside `#[cfg(target_os = "linux")] mod linux`, so on any other
@@ -1024,73 +1071,95 @@ mod tests {
         );
     }
 
-    /// The refusal is a refusal. `SidecarPrincipal::from_config` is resolved in the same function
-    /// that serves the ladder, and its error arm returns `fail_closed()` — never a transport built
-    /// anyway. Checked textually for the same reason as above, and deliberately narrow: it pins the
-    /// pairing of the resolver with `fail_closed`, not the prose around it.
+    /// The refusal is a refusal. `SidecarPrincipal::from_config` is resolved by the wiring before
+    /// any transport exists, an unresolved one leaves it by `?`, and the one caller's error arm
+    /// returns `fail_closed()` — never a transport built anyway. The first half is no longer only
+    /// text: `the_brokers_wiring_refuses_a_config_without_a_sidecar_block` calls the function. The
+    /// caller's half is textual because `build_governed_executor` cannot be called without a whole
+    /// deployment, and deliberately narrow: it pins the pairing of the wiring's `Err` with
+    /// `fail_closed`, not the prose around it.
     #[test]
     fn an_unresolved_sidecar_principal_returns_the_fail_closed_executor() {
         let code = broker_code();
-        let at = code
-            .find("SidecarPrincipal::from_config")
-            .expect("the broker resolves the §2.6 sidecar principal");
-        let after = &code[at..];
-        let build = after.find("as_distinct_principal").expect("the transport is built after it");
+        let wiring = code
+            .split("fn broker_sidecar_wiring(")
+            .nth(1)
+            .expect("the broker's sidecar wiring is gone");
+        let wiring = &wiring[..wiring.find("\n}\n").expect("the wiring's closing brace")];
+        let resolved = wiring
+            .find("SidecarPrincipal::from_config(sidecar_block)?;")
+            .expect("the wiring no longer leaves on an unresolved §2.6 sidecar principal");
+        let built = wiring.find("as_distinct_principal").expect("the transport is built after it");
+        assert!(resolved < built, "the transport is built before the principal is resolved");
+
+        // The caller's match on the wiring, and nothing after it: the next `return fail_closed()`
+        // down the function is the ledger's, and finding THAT would say nothing about this arm.
+        let call = code.find("match broker_sidecar_wiring(").expect("nothing calls the wiring");
+        let whole = &code[call..];
+        let whole = &whole[..whole.find("\n        };").expect("the match on the wiring is not closed")];
+        let refusal = whole.find("Err(why) => {").expect("the wiring's refusal has no arm");
         assert!(
-            after[..build].contains("return fail_closed();"),
-            "there is no fail-closed return between resolving the sidecar principal and building \
-             the transport, so an unresolved principal would reach the spawn"
+            whole[refusal..].contains("return fail_closed();"),
+            "the arm for an unresolved sidecar principal does not return the fail-closed executor: {whole}"
         );
     }
 
-    /// The Linux-only wiring, written ONCE more here so a non-Linux host type-checks it.
-    ///
-    /// `build_governed_executor` lives in `#[cfg(target_os = "linux")] mod linux`, so on this
-    /// developer box and on the Windows CI job its body is never compiled — a wrong argument type or
-    /// a renamed constructor there is invisible until the Linux job runs. This function has the same
-    /// three lines and the same types, and it compiles everywhere.
-    ///
-    /// It builds its own `SidecarTrust::RelayFramesOnly` — the same value the Linux function
-    /// passes — rather than taking one, because that variant holds nothing and needs nothing
-    /// resolved. (It could not take a `TrustEnvironment`: `engine_trust::apply` is that type's only
-    /// constructor and reads a process-global that must stay empty in a test binary. That is exactly
-    /// the fact that made the old requirement unsatisfiable in this process, here as in the real
-    /// one.) What needs proving is that `cfg.get("sidecar")` satisfies `from_config`, and that
-    /// `as_distinct_principal` accepts `(&String, &String, PathBuf, SidecarTrust, SidecarPrincipal)`
-    /// in that order. It is deliberately NOT a second production path: nothing calls it, it is
-    /// inside `#[cfg(test)]`, and the guard tests above are what keep the real one in the shape this
-    /// one describes.
-    fn broker_sidecar_wiring(
-        cfg: &serde_json::Value,
-        python: String,
-        script: String,
-        sandbox: std::path::PathBuf,
-    ) -> Result<brops_core::governed_sidecar::GovernedSidecar, String> {
-        let principal =
-            brops_core::governed_sidecar::SidecarPrincipal::from_config(cfg.get("sidecar"))?;
-        Ok(brops_core::governed_sidecar::GovernedSidecar::as_distinct_principal(
-            &python,
-            &script,
-            sandbox,
-            brops_core::governed_sidecar::SidecarTrust::RelayFramesOnly,
-            principal,
-        ))
+    /// Cockpit read R3-1212. The door test below drove a `#[cfg(test)]` COPY of the three wiring
+    /// lines, so what it proved was a property of the copy: `build_governed_executor` could have
+    /// handed the spawn a different trust or a different principal and only a text scan would
+    /// have noticed. There is one wiring now, `broker_sidecar_wiring`, outside `mod linux`; the
+    /// door test calls it, and this holds the other end — that the Linux function builds its
+    /// transport through that same function and names neither constructor nor a trust itself.
+    #[test]
+    fn the_transport_the_broker_serves_is_built_by_the_wiring_the_door_test_drives() {
+        let code = broker_code();
+        assert_eq!(
+            code.matches("fn broker_sidecar_wiring(").count(),
+            1,
+            "the wiring is defined once in the broker's code, not once more for its tests"
+        );
+        let build = code
+            .split("    fn build_governed_executor(")
+            .nth(1)
+            .expect("build_governed_executor is gone");
+        let body = &build[..build.find("\n    }\n").expect("the function's closing brace")];
+        let at = body
+            .find("match broker_sidecar_wiring(cfg.get(\"sidecar\"), &python, &script, sandbox) {")
+            .expect("build_governed_executor does not build its transport through broker_sidecar_wiring");
+        // The config's `sidecar` block is what it is handed, and a refusal is a refusal.
+        let arm = &body[at..];
+        let ok = arm.find("Ok(transport) => transport,").expect("the transport is not the wiring's");
+        let err = arm.find("Err(why) => {").expect("the refusal arm is gone");
+        let closed = arm.find("return fail_closed();").expect("the refusal does not fail closed");
+        let chain = arm.find("LadderChain::new(").expect("no chain is built after it");
+        assert!(ok < err && err < closed && closed < chain, "the refusal must return before a chain is built");
+        for own in ["as_distinct_principal", "as_calling_principal", "SidecarPrincipal::from_config", "SidecarTrust::"] {
+            assert!(!body.contains(own), "build_governed_executor names `{own}` itself, beside the wiring");
+        }
     }
 
-    /// Names [`broker_sidecar_wiring`] so it is compiled rather than dead — the compile IS the test.
-    /// The resolver half is then exercised for real, on the same `cfg.get("sidecar")` expression the
-    /// Linux function uses: a config with no `sidecar` block refuses, and the reference shape does not.
+    /// The wiring, CALLED — it used to be a copy of the Linux function's three lines, written out
+    /// here so that some host other than Linux would at least type-check them, with a function
+    /// pointer coercion standing in for a call. `broker_sidecar_wiring` is the broker's own
+    /// function now and compiles on every host, so the refusal is exercised on it: a config with
+    /// no `sidecar` block builds no transport. The resolver is then asked directly, on the same
+    /// `cfg.get("sidecar")` expression the Linux function passes: the reference shape resolves.
     #[test]
-    fn the_linux_sidecar_wiring_typechecks_and_its_resolver_refuses_a_config_without_a_sidecar_block() {
-        let _typechecked: fn(
-            &serde_json::Value,
-            String,
-            String,
-            std::path::PathBuf,
-        ) -> Result<brops_core::governed_sidecar::GovernedSidecar, String> = broker_sidecar_wiring;
-
+    fn the_brokers_wiring_refuses_a_config_without_a_sidecar_block() {
         use brops_core::governed_sidecar::SidecarPrincipal;
         let empty = serde_json::json!({ "trust": { "manifest_path": "/x" } });
+        let refused = broker_sidecar_wiring(
+            empty.get("sidecar"),
+            "/usr/bin/python3",
+            "/opt/brops-live/bridge/engine_sidecar.py",
+            std::env::temp_dir(),
+        );
+        assert_eq!(
+            refused.err(),
+            SidecarPrincipal::from_config(empty.get("sidecar")).err(),
+            "a config with no `sidecar` block built a transport, or was refused in other words \
+             than the resolver's"
+        );
         assert!(
             SidecarPrincipal::from_config(empty.get("sidecar")).is_err(),
             "a config with no `sidecar` block resolved a principal"
@@ -1111,8 +1180,11 @@ mod tests {
 
     /// The broker names the RELAY arm, and does not reach for a trust environment it cannot have.
     ///
-    /// Textual for the same reason the two guards above are: `build_governed_executor` lives inside
-    /// `#[cfg(target_os = "linux")] mod linux` and is never type-checked on this host. Both halves
+    /// Textual for the same reason the guards above are: `build_governed_executor` lives inside
+    /// `#[cfg(target_os = "linux")] mod linux`, is not type-checked on any other host, and cannot be
+    /// called from a test on this one without a whole deployment. (This said "never type-checked on
+    /// this host", written on the Windows box; the checkout is a Debian one now and the function
+    /// compiles here.) Both halves
     /// are asserted, because either one alone is satisfiable by the wrong edit — naming
     /// `RelayFramesOnly` while still calling `engine_trust::apply` would leave the permanent refusal
     /// in place, and dropping `apply` without naming the arm would not compile there but would look
@@ -1132,7 +1204,8 @@ mod tests {
         );
     }
 
-    /// The door, exercised through the SAME wiring the Linux function uses. This is the mutant the
+    /// The door, exercised through the SAME wiring the Linux function uses — the same FUNCTION,
+    /// `broker_sidecar_wiring`, since cockpit read R3-1212; it was a test-only copy. This is the mutant the
     /// design has to survive: a `bridge.task-request` driven through the broker's trust-free
     /// transport must be refused, and refused before a child exists — because that request lands on
     /// `_real_callables` and, through it, on `bro_signature.load_trusted_keys`, which without
@@ -1150,9 +1223,9 @@ mod tests {
             }
         });
         let seam = broker_sidecar_wiring(
-            &cfg,
-            "brops-no-such-interpreter-does-not-exist".to_string(),
-            "/opt/brops-live/bridge/engine_sidecar.py".to_string(),
+            cfg.get("sidecar"),
+            "brops-no-such-interpreter-does-not-exist",
+            "/opt/brops-live/bridge/engine_sidecar.py",
             std::env::temp_dir(),
         )
         .expect("the reference sidecar block resolves");
@@ -1279,10 +1352,11 @@ mod tests {
     }
 
     #[test]
-    fn production_executor_fails_closed_with_upstream_blocked() {
+    fn the_fail_closed_fallback_executor_blocks_with_upstream_blocked() {
         let conn = Connection::open_in_memory().unwrap();
         init_broker_schema(&conn).unwrap();
-        // The interim production executor refuses every turn closed — no fabricated accepted output.
+        // The fail-closed fallback executor — the default, not an interim; see the banner above
+        // `UpstreamBlockedExecutor` — refuses every turn closed: no fabricated accepted output.
         let r = run_governed_turn(
             &conn,
             &raw("conv-1", CRID),

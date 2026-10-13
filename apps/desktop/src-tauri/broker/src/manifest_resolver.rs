@@ -215,10 +215,6 @@ impl ProductionResolver {
         self
     }
 
-    pub fn is_provisioned(&self) -> bool {
-        self.inner.is_some()
-    }
-
     /// A custody resolver bound to this resolver's per-turn observation, or `None` when nothing is
     /// provisioned — in which case the executor keeps refusing the commit exactly as before.
     pub fn custody(&self) -> Option<BrokerCustody> {
@@ -471,6 +467,13 @@ impl crate::chain_executor::CustodyResolver for BrokerCustody {
 
 /// The DIRECT-path resolver, expressed as [`KeyResolver`] plus the deployment-static facts.
 ///
+/// **No binary builds a chain over this impl.** `brops-broker` hands a `ProductionResolver` to
+/// `LadderChain` as a [`KeyResolver`] and never as a `TurnResolver`; the one direct chain a binary
+/// does build (`proof/src/bin/live_turn.rs`) uses a `FixedResolver` of its own, and `win-live` has
+/// its `ManifestResolver`. The only callers of `resolve` on this type are this file's tests. It is
+/// kept as the statement of what the direct path would be handed, and it is the one place the
+/// seven deployment-static [`ResolvedFacts`] fields are read at all.
+///
 /// There is exactly ONE manifest verification / anti-rollback / key-resolution implementation and it is
 /// [`KeyResolver::resolve_keys`] above; this only pairs its output with `ResolvedFacts`. Written this way
 /// on purpose: the two paths must not be able to drift on WHICH manifest they trusted, and a second copy
@@ -537,6 +540,55 @@ mod tests {
     const DEMO_ROOT_SEED_HEX: &str =
         "0011223344556677001122334455667700112233445566770011223344556677"; // gitleaks:allow (demo test key)
 
+    /// The fixture every resolver test here is built from: the `signer-1` / `sup-1` key manifest
+    /// at one epoch under one root id, signed by the demonstration root.
+    ///
+    /// It was written out three times — in `resolver_via`, in
+    /// `provisioned_resolver_resolves_a_root_signed_manifest` and in
+    /// `resolver_at_epoch_persisting_to` — with the demonstration seed typed a second time beside
+    /// the constant that already held it (cockpit read R3-0658).
+    struct SignedFixture {
+        manifest: KeyManifest,
+        /// The detached root signature over `manifest`, base64, by [`DEMO_ROOT_SEED_HEX`]'s key.
+        root_sig: String,
+        signer_pub: String,
+        sup_pub: String,
+    }
+
+    fn signed_fixture(epoch: u64, root_key_id: &str) -> SignedFixture {
+        let root = SigningKey::from_bytes(&seed32(DEMO_ROOT_SEED_HEX));
+        let signer = SigningKey::from_bytes(&seed32(&"11".repeat(32)));
+        let sup = SigningKey::from_bytes(&seed32(&"22".repeat(32)));
+        let signer_pub = hex(signer.verifying_key().as_bytes());
+        let sup_pub = hex(sup.verifying_key().as_bytes());
+        let manifest: KeyManifest = serde_json::from_value(json!({
+            "manifest_epoch": epoch,
+            "root_key_id": root_key_id,
+            "keys": [
+                { "key_id": "signer-1", "public_key_hex": signer_pub, "trust_class": "production",
+                  "valid_from_ms": 1, "valid_to_ms": 9999999999999i64, "key_epoch": 2u64,
+                  "revoked": false, "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] },
+                { "key_id": "sup-1", "public_key_hex": sup_pub, "trust_class": "production",
+                  "valid_from_ms": 1, "valid_to_ms": 9999999999999i64, "key_epoch": 2u64,
+                  "revoked": false, "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] }
+            ]
+        })).unwrap();
+        let root_sig = base64::engine::general_purpose::STANDARD
+            .encode(root.sign(&manifest.canonical_bytes()).to_bytes());
+        SignedFixture { manifest, root_sig, signer_pub, sup_pub }
+    }
+
+    /// The deployment-static facts every fixture resolver is handed.
+    fn fixture_facts() -> ResolvedFacts {
+        ResolvedFacts {
+            workspace_id: "ws".into(), install_id: "inst".into(),
+            system_sha256: "a".repeat(64), history_sha256: "b".repeat(64),
+            generation_config_sha256: "c".repeat(64), requested_at: "1900000000000".into(),
+            run_id: "run".into(), task_id: "task".into(), requested_at_ms: 1_900_000_000_000,
+            author: "Bro".into(),
+        }
+    }
+
     // ---- custody (T-088, the Owner's decision of 2026-09-19) --------------------------------
 
     /// How a test hands the resolver its anchor.
@@ -559,37 +611,10 @@ mod tests {
             Via::Pin => tcb::DEMO_ROOT_KEY_ID,
             Via::Anchor(id, _) => *id,
         };
-        let root = SigningKey::from_bytes(&seed32(DEMO_ROOT_SEED_HEX));
-        let signer = SigningKey::from_bytes(&seed32(&"11".repeat(32)));
-        let sup = SigningKey::from_bytes(&seed32(&"22".repeat(32)));
-        let signer_pub = hex(signer.verifying_key().as_bytes());
-        let sup_pub = hex(sup.verifying_key().as_bytes());
-        let manifest: KeyManifest = serde_json::from_value(json!({
-            "manifest_epoch": 2u64,
-            "root_key_id": root_key_id,
-            "keys": [
-                { "key_id": "signer-1", "public_key_hex": signer_pub, "trust_class": "production",
-                  "valid_from_ms": 1, "valid_to_ms": 9999999999999i64, "key_epoch": 2u64,
-                  "revoked": false, "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] },
-                { "key_id": "sup-1", "public_key_hex": sup_pub, "trust_class": "production",
-                  "valid_from_ms": 1, "valid_to_ms": 9999999999999i64, "key_epoch": 2u64,
-                  "revoked": false, "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] }
-            ]
-        })).unwrap();
-        let sig = if valid_signature {
-            base64::engine::general_purpose::STANDARD
-                .encode(root.sign(&manifest.canonical_bytes()).to_bytes())
-        } else {
-            "bogus".to_string()
-        };
+        let SignedFixture { manifest, root_sig, signer_pub, .. } = signed_fixture(2, root_key_id);
+        let sig = if valid_signature { root_sig } else { "bogus".to_string() };
         let floor = AntiRollbackFloor { highest_epoch: 2, highest_hash: manifest.content_hash() };
-        let facts = ResolvedFacts {
-            workspace_id: "ws".into(), install_id: "inst".into(),
-            system_sha256: "a".repeat(64), history_sha256: "b".repeat(64),
-            generation_config_sha256: "c".repeat(64), requested_at: "1900000000000".into(),
-            run_id: "run".into(), task_id: "task".into(), requested_at_ms: 1_900_000_000_000,
-            author: "Bro".into(),
-        };
+        let facts = fixture_facts();
         let r = match via {
             Via::Pin => ProductionResolver::provisioned_with_pin(
                 demo_pin(), manifest, sig, floor, dir.join("floor.json"),
@@ -841,7 +866,8 @@ mod tests {
     fn fail_closed_resolver_blocks_every_turn() {
         // No manifest provisioned => every turn is UpstreamBlocked (shipped default; unchanged behaviour).
         let r = ProductionResolver::fail_closed();
-        assert!(!r.is_provisioned());
+        assert!(r.custody().is_none());
+        assert!(matches!(r.resolve_keys(), Err(TurnReason::UpstreamBlocked)));
         assert!(matches!(r.resolve(&req(), "bt", "nonce"), Err(TurnReason::UpstreamBlocked)));
     }
 
@@ -857,40 +883,14 @@ mod tests {
 
     #[test]
     fn provisioned_resolver_resolves_a_root_signed_manifest() {
-        // The DEMONSTRATION root private that matches the compiled-in tcb::DEMO_ROOT_PUBLIC_KEY_HEX (59cfbe...).
-        let root = SigningKey::from_bytes(&seed32(
-            "0011223344556677001122334455667700112233445566770011223344556677", // gitleaks:allow (demo test key)
-        ));
+        // The DEMONSTRATION root private matches the compiled-in tcb::DEMO_ROOT_PUBLIC_KEY_HEX (59cfbe...).
+        let root = SigningKey::from_bytes(&seed32(DEMO_ROOT_SEED_HEX));
         assert_eq!(hex(root.verifying_key().as_bytes()), tcb::DEMO_ROOT_PUBLIC_KEY_HEX);
-        // Two production keys (signer + supervisor-attestation).
-        let signer = SigningKey::from_bytes(&seed32(
-            "1111111111111111111111111111111111111111111111111111111111111111", // gitleaks:allow (test key)
-        ));
-        let sup = SigningKey::from_bytes(&seed32(
-            "2222222222222222222222222222222222222222222222222222222222222222", // gitleaks:allow (test key)
-        ));
-        let signer_pub = hex(signer.verifying_key().as_bytes());
-        let sup_pub = hex(sup.verifying_key().as_bytes());
-        let manifest: KeyManifest = serde_json::from_value(json!({
-            "manifest_epoch": 2u64,
-            "root_key_id": tcb::DEMO_ROOT_KEY_ID,
-            "keys": [
-                { "key_id": "signer-1", "public_key_hex": signer_pub, "trust_class": "production",
-                  "valid_from_ms": 1, "valid_to_ms": 9999999999999i64, "key_epoch": 2u64, "revoked": false,
-                  "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] },
-                { "key_id": "sup-1", "public_key_hex": sup_pub, "trust_class": "production",
-                  "valid_from_ms": 1, "valid_to_ms": 9999999999999i64, "key_epoch": 2u64, "revoked": false,
-                  "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] }
-            ]
-        })).unwrap();
-        let root_sig = base64::engine::general_purpose::STANDARD.encode(root.sign(&manifest.canonical_bytes()).to_bytes());
+        // Two production keys (signer + supervisor-attestation), under that root.
+        let SignedFixture { manifest, root_sig, signer_pub, sup_pub } =
+            signed_fixture(2, tcb::DEMO_ROOT_KEY_ID);
         let floor = AntiRollbackFloor { highest_epoch: 2, highest_hash: manifest.content_hash() };
-        let facts = ResolvedFacts {
-            workspace_id: "ws".into(), install_id: "inst".into(),
-            system_sha256: "a".repeat(64), history_sha256: "b".repeat(64),
-            generation_config_sha256: "c".repeat(64), requested_at: "1900000000000".into(),
-            run_id: "run".into(), task_id: "task".into(), requested_at_ms: 1_900_000_000_000, author: "Bro".into(),
-        };
+        let facts = fixture_facts();
         let dir = tempfile::tempdir().unwrap();
         let floor_path = dir.path().join("floor.json");
         let r = ProductionResolver::provisioned_with_pin(
@@ -910,12 +910,7 @@ mod tests {
             AntiRollbackFloor { highest_epoch: 2, highest_hash: "x".into() },
             dir.path().join("floor2.json"),
             "signer-1".into(), "sup-1".into(),
-            ResolvedFacts {
-                workspace_id: "ws".into(), install_id: "inst".into(),
-                system_sha256: "a".repeat(64), history_sha256: "b".repeat(64),
-                generation_config_sha256: "c".repeat(64), requested_at: "1".into(),
-                run_id: "r".into(), task_id: "t".into(), requested_at_ms: 1, author: "Bro".into(),
-            },
+            fixture_facts(),
         );
         assert!(matches!(r2.resolve(&req(), "bt", "nonce"), Err(TurnReason::UpstreamBlocked)));
     }
@@ -934,35 +929,10 @@ mod tests {
         floor_path: &std::path::Path,
         persist_to: &std::path::Path,
     ) -> (ProductionResolver, KeyManifest) {
-        let root = SigningKey::from_bytes(&seed32(DEMO_ROOT_SEED_HEX));
-        let signer = SigningKey::from_bytes(&seed32(
-            "1111111111111111111111111111111111111111111111111111111111111111", // gitleaks:allow (test key)
-        ));
-        let sup = SigningKey::from_bytes(&seed32(
-            "2222222222222222222222222222222222222222222222222222222222222222", // gitleaks:allow (test key)
-        ));
-        let manifest: KeyManifest = serde_json::from_value(json!({
-            "manifest_epoch": epoch,
-            "root_key_id": tcb::DEMO_ROOT_KEY_ID,
-            "keys": [
-                { "key_id": "signer-1", "public_key_hex": hex(signer.verifying_key().as_bytes()),
-                  "trust_class": "production", "valid_from_ms": 1, "valid_to_ms": 9999999999999i64,
-                  "key_epoch": 2u64, "revoked": false, "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] },
-                { "key_id": "sup-1", "public_key_hex": hex(sup.verifying_key().as_bytes()),
-                  "trust_class": "production", "valid_from_ms": 1, "valid_to_ms": 9999999999999i64,
-                  "key_epoch": 2u64, "revoked": false, "allowed_protocols": [RECEIPT_ENVELOPE_ARTIFACT_TYPE] }
-            ]
-        })).unwrap();
-        let root_sig = base64::engine::general_purpose::STANDARD
-            .encode(root.sign(&manifest.canonical_bytes()).to_bytes());
+        let SignedFixture { manifest, root_sig, .. } = signed_fixture(epoch, tcb::DEMO_ROOT_KEY_ID);
         let floor = brops_core::key_manifest::parse_floor_json(&std::fs::read(floor_path).unwrap())
             .expect("the provisioned floor must parse");
-        let facts = ResolvedFacts {
-            workspace_id: "ws".into(), install_id: "inst".into(),
-            system_sha256: "a".repeat(64), history_sha256: "b".repeat(64),
-            generation_config_sha256: "c".repeat(64), requested_at: "1900000000000".into(),
-            run_id: "run".into(), task_id: "task".into(), requested_at_ms: 1_900_000_000_000, author: "Bro".into(),
-        };
+        let facts = fixture_facts();
         let r = ProductionResolver::provisioned_with_pin(
             demo_pin(), manifest.clone(), root_sig, floor, persist_to.to_path_buf(),
             "signer-1".into(), "sup-1".into(), facts,
@@ -978,13 +948,28 @@ mod tests {
     fn a_rollback_is_refused_by_a_broker_that_restarted() {
         let dir = tempfile::tempdir().unwrap();
         let floor_path = dir.path().join("floor.json");
-        // Provisioned at epoch 2, exactly as `win_provision` / `provision_keys.py` write it.
-        let (_, m2) = {
-            std::fs::write(&floor_path, brops_core::key_manifest::floor_json_bytes(
-                &AntiRollbackFloor { highest_epoch: 0, highest_hash: String::new() },
-            )).unwrap();
-            resolver_at_epoch(2, &floor_path)
-        };
+        // Provisioned at epoch 2 with that manifest's hash, which is what `provision_keys.py`
+        // writes (`highest_epoch: MANIFEST_EPOCH`). This comment said so while the floor written
+        // below it was epoch 0 with an empty hash, and the epoch-2 resolver built beside it was
+        // thrown away unresolved (cockpit read R3-1213).
+        std::fs::write(&floor_path, brops_core::key_manifest::floor_json_bytes(
+            &AntiRollbackFloor {
+                highest_epoch: 2,
+                highest_hash: signed_fixture(2, tcb::DEMO_ROOT_KEY_ID).manifest.content_hash(),
+            },
+        )).unwrap();
+
+        // --- THE CONTROL, broker process 0: the epoch-2 manifest is one this deployment ACCEPTS ---
+        //
+        // Without it the refusal at the end proves nothing about a restart: a deployment whose
+        // floor had been at 3 from the start refuses epoch 2 as well, and the test was green on
+        // exactly that. What makes the last refusal a ROLLBACK refusal is that the same manifest
+        // resolved here, before process 1 moved the floor.
+        let (r2_before, _) = resolver_at_epoch(2, &floor_path);
+        r2_before
+            .resolve(&req(), "bt", "nonce")
+            .expect("the epoch-2 manifest resolves while the floor is still at 2");
+        drop(r2_before);
 
         // --- broker process 1: serve a turn under epoch 3 ---
         let (r3, _) = resolver_at_epoch(3, &floor_path);
@@ -997,7 +982,6 @@ mod tests {
             matches!(r2.resolve(&req(), "bt", "nonce"), Err(TurnReason::UpstreamBlocked)),
             "a manifest below the floor a PREVIOUS broker process accepted must be refused"
         );
-        assert_eq!(m2.manifest_epoch, 2);
         // And the durable floor really is at 3.
         let on_disk = brops_core::key_manifest::parse_floor_json(&std::fs::read(&floor_path).unwrap()).unwrap();
         assert_eq!(on_disk.highest_epoch, 3);

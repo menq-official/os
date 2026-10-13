@@ -43,7 +43,9 @@ pub const DEMO_ROOT_PUBLIC_KEY_HEX: &str =
 /// `resolve_trust_state` renders `Production` for any `External` anchor whose signature verifies. So the
 /// word `external` in a file was the whole production claim: a kit that minted a throwaway root, signed
 /// its manifest and wrote `"provenance": "external"` beside it — which is exactly what exporting the five
-/// `BROPS_*` anchor variables makes `provision_keys.py` write — would get `production_verified=true` from a
+/// `BROPS_*` anchor variables USED to make `provision_keys.py` write, until T-130 removed that override:
+/// the script now reads no environment and writes only `kit_generated` — would get
+/// `production_verified=true` from a
 /// root whose private half it had just generated itself. Provenance cannot be taken on the file's word;
 /// only a root this binary already pins may carry it. A kit-generated or demonstration anchor is not
 /// checked here: it can only LOWER the claim, never raise it.

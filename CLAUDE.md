@@ -81,7 +81,7 @@ Phase status is in `PROJECT_STATE.md` and the roadmap; this file does not carry 
 
 ```bash
 cd engine && BRO_ENV=ci python3 -m unittest discover -s tests    # 2741 OK; skips are per-env
-cd apps/desktop/src-tauri && cargo test --workspace              # 1629 passed
+cd apps/desktop/src-tauri && cargo test --workspace              # 1632 passed
 cd apps/desktop && npm ci && npm run typecheck && npm test       # 1250 tests / 88 files
 # + npm run test:a11y · test:browser
 python3 tools/check_canon_budget.py                              # the read set fits
