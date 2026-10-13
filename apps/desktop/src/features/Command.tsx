@@ -317,7 +317,7 @@ function RunConsole({ run, onChanged }: { run: Run; onChanged: () => void }) {
           {execError && (
             <p className={`cmd-live cmd-outcome${dispatchBlocked ? ' cmd-outcome--blocked' : ''}`}
                role="alert" style={{ marginTop: 8 }}>
-              <span className={`pill ${dispatchBlocked ? 'warn' : 'danger'}`}>
+              <span className={`pill ${dispatchBlocked ? 'warn' : 'bad'}`}>
                 {dispatchBlocked ? `⛒ ${L('dispatchBlocked')}` : `⚠ ${L('dispatchFailed')}`}
               </span>
               {dispatchBlocked && <span className="micro muted">{L('dispatchBlockedNote')}</span>}

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
@@ -129,6 +131,20 @@ describe('Command — what the backend sends down the channel', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.className).not.toContain('cmd-outcome--blocked');
     expect(alert.textContent).toContain('connection reset by peer');
+  });
+
+  it('the failure pill carries a tone the stylesheet actually has', async () => {
+    // R3-0288: it was `pill danger`, and there is no `.pill.danger` rule — so a failed dispatch
+    // was drawn as an untoned pill. A class name alone proves nothing (that is how it went
+    // unseen), so the class is held to the stylesheet: some rule must select it.
+    await dispatchEmitting([{ type: 'error', message: 'connection reset by peer' }]);
+    const pill = (await screen.findByRole('alert')).querySelector('.pill') as HTMLElement;
+    const tone = [...pill.classList].find((c) => c !== 'pill');
+    expect(tone, 'the failure pill has no tone class at all').toBeDefined();
+    const css = readFileSync(resolve(process.cwd(), 'src/theme/aios.css'), 'utf8');
+    expect(css.includes(`.pill.${tone}{`) || css.includes(`.pill.${tone} {`), `no rule selects .pill.${tone}`).toBe(true);
+    // And it is the danger tone, not the amber of a refusal.
+    expect(tone).toBe('bad');
   });
 
   it('an approval-gated step halts and routes to Approvals, and is not an error', async () => {

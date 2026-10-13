@@ -42,7 +42,7 @@ import { Activity } from './Activity';
 import { Agents } from './Agents';
 import { Analytics } from './Analytics';
 import { Automations } from './Automations';
-import { BridgePanel } from './Bridge';
+import { BridgePage } from './Bridge';
 import { Calendar } from './Calendar';
 import { Chat } from './Chat';
 import { Command } from './Command';
@@ -390,7 +390,7 @@ export const PAGES: Array<[string, () => React.ReactElement]> = [
   ['agents', () => <Agents />],
   ['analytics', () => <Analytics />],
   ['automations', () => <Automations />],
-  ['bridge', () => <BridgePanel />],
+  ['bridge', () => <BridgePage />],
   ['calendar', () => <Calendar />],
   ['chat', () => <Chat />],
   ['command', () => <Command />],

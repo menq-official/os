@@ -278,3 +278,83 @@ describe('populated — every page renders real rows without crashing', () => {
     expect(dead, 'these fixtures are keyed to commands no page invokes').toEqual([]);
   });
 });
+
+// Two leaks of one stylesheet's rule onto another page's element, measured where they render.
+// Both were visible on screen and invisible to every class-name assertion in the unit suite.
+describe('computed style — a stale global rule does not reach an element it was not written for', () => {
+  const page = (name: string) => PAGES.find(([n]) => n === name)![1];
+
+  it('the Approvals scope dot is the 7px dot its own rule draws, not the old topbar badge', async () => {
+    // R3-0210: `layout.css` still had `.dot { position: absolute; min-width: 15px; padding: 0 3px;
+    // … }` for a topbar badge nothing renders any more, and the only element with class `dot` is
+    // this one.
+    arrange('populated');
+    const { container } = await mount(page('approvals')());
+    await waitFor(() => expect(container.querySelector('.im-scope .dot')).not.toBeNull());
+    const cs = getComputedStyle(container.querySelector('.im-scope .dot') as Element);
+    expect(cs.position).toBe('static');
+    expect(cs.width).toBe('7px');
+    expect(cs.paddingLeft).toBe('0px');
+  });
+
+  it('the Calendar month section is not typeset as the old month LABEL', async () => {
+    // R3-0211: `ui.css` kept `.cal-month { font-size: 16px; font-weight: 700; text-transform:
+    // capitalize }` from when `.cal-month` was a heading; it is the whole month section now, so
+    // every word inside it inherited capitalisation and bold.
+    arrange('populated');
+    const { container } = await mount(page('calendar')());
+    await waitFor(() => expect(container.querySelector('section.cal-month')).not.toBeNull());
+    const cs = getComputedStyle(container.querySelector('section.cal-month') as Element);
+    expect(cs.textTransform).toBe('none');
+    expect(cs.fontWeight).not.toBe('700');
+    // The month NAME keeps its capital — on the label, where it was always meant to be.
+    expect(getComputedStyle(container.querySelector('.cm-title') as Element).textTransform).toBe('capitalize');
+  });
+});
+
+// R3-0231 found the bridge page had no <h1>; R3-0271 found Tasks had two. Both are one rule,
+// and a rule checked page by page is found page by page — so it is asked of every routed page.
+describe('structure — every routed page has exactly one top-level heading', () => {
+  for (const [name, page] of PAGES) {
+    for (const state of ['settled', 'populated'] as State[]) {
+      it(`${name} · ${state} has one <h1>`, async () => {
+        arrange(state);
+        const { container } = await mount(page());
+        // The count is polled: a page that draws its heading after its first read has settled
+        // is still a page with a heading.
+        await waitFor(() => expect(container.querySelectorAll('h1').length).toBeGreaterThan(0), { timeout: 3000 })
+          .catch(() => {});
+        expect(container.querySelectorAll('h1').length, `${name} · ${state}`).toBe(1);
+      });
+    }
+  }
+});
+
+describe('structure — the bridge title looks the same as a page heading and as a panel heading', () => {
+  it('h1 on the routed page, h2 when embedded, one size', async () => {
+    const { BridgePanel, BridgePage } = await import('./Bridge');
+    arrange('settled');
+    const asPage = await mount(<BridgePage />);
+    const h1 = asPage.container.querySelector('h1.br-title') as Element;
+    expect(h1).not.toBeNull();
+    const pageSize = getComputedStyle(h1).fontSize;
+    const pageWeight = getComputedStyle(h1).fontWeight;
+    // The sections sit one level under the title: <h2> here, <h3> when embedded. An <h3>
+    // straight under the <h1> skips a level, which is what the first version of this did.
+    const pageSections = [...asPage.container.querySelectorAll('.br-sec-title')];
+    expect(pageSections.length).toBeGreaterThan(0);
+    expect(pageSections.every((el) => el.tagName === 'H2')).toBe(true);
+    const sectionSize = getComputedStyle(pageSections[0]).fontSize;
+    asPage.unmount();
+
+    arrange('settled');
+    const embedded = await mount(<BridgePanel />);
+    expect(embedded.container.querySelector('h1')).toBeNull();
+    const h2 = embedded.container.querySelector('h2.br-title') as Element;
+    expect(getComputedStyle(h2).fontSize).toBe(pageSize);
+    expect(getComputedStyle(h2).fontWeight).toBe(pageWeight);
+    const embeddedSections = [...embedded.container.querySelectorAll('.br-sec-title')];
+    expect(embeddedSections.every((el) => el.tagName === 'H3')).toBe(true);
+    expect(getComputedStyle(embeddedSections[0]).fontSize).toBe(sectionSize);
+  });
+});

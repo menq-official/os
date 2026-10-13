@@ -1831,7 +1831,10 @@ body.ignited .shimmer{opacity:1}
 .v-calendar .cal-month-head{display:flex;align-items:center;justify-content:space-between;
   gap:var(--s4);margin-bottom:var(--s4)}
 .v-calendar .cmh-l{display:flex;align-items:center;gap:12px}
-.v-calendar .cm-title{font-family:var(--f-display);font-weight:800;font-size:19px;letter-spacing:-.01em}
+/* The month NAME is capitalised here, on the label. It used to be capitalised by a stale
+   `.cal-month` rule in ui.css that had come to match the whole section (R3-0211); `Intl` gives
+   Armenian and Russian month names in lower case. */
+.v-calendar .cm-title{font-family:var(--f-display);font-weight:800;font-size:19px;letter-spacing:-.01em;text-transform:capitalize}
 .v-calendar .cmh-r{color:var(--ink-muted)}
 
 .v-calendar .cal-wds{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:8px}

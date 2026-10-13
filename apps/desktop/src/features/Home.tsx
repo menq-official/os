@@ -226,7 +226,7 @@ export function Home() {
         <span className="bracket br" aria-hidden="true" />
 
         <div className="brief-top">
-          <span className="eyebrow">{t('home.subtitle')}</span>
+          <span className="eyebrow">{L('briefingEyebrow')}</span>
         </div>
 
         <div className="brief-hd">
@@ -298,8 +298,10 @@ export function Home() {
         {/* At-a-glance overview — the four workspace counts as keyboard-operable
             StatTiles (roving arrows inside the group); each opens its full screen. */}
         <div className="ledger-wrap">
-          <span className="micro since">{t('home.subtitle')}</span>
-          <TileGroup label={t('home.subtitle')}>
+          {/* The caption and the group's name say what the four counts ARE. Both used to
+              repeat the page subtitle, which is said once, under the heading. */}
+          <span className="micro since">{L('atAGlance')}</span>
+          <TileGroup label={L('atAGlance')}>
             <StatTile glyph="◆" {...tile(activeR, L)} label={t('home.priorities')} onActivate={() => setRoute('tasks')} />
             <StatTile glyph="⚑" {...tile(approvalsR, L)} label={t('home.approvals')} onActivate={() => setRoute('approvals')} />
             <StatTile glyph="⬡" {...tile(agentsR, L)} label={t('home.agents')} onActivate={() => setRoute('agents')} />

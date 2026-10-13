@@ -179,11 +179,13 @@ export const STR = {
     hy: 'Տեղային որոշումների աղյուսակը չհաջողվեց կարդալ։',
     ru: 'Не удалось прочитать локальную таблицу решений.',
   },
-  selectDecision: { en: 'Select a decision', hy: 'Ընտրիր որոշում', ru: 'Выберите решение' },
-  selectDecisionHint: {
-    en: 'Arrow-navigate the ledger; press Enter to open its evidence.',
-    hy: 'Սլաքներով շրջիր մատյանում, Enter-ով բացիր ապացույցները։',
-    ru: 'Перемещайтесь по журналу стрелками; нажмите Enter, чтобы открыть доказательства.',
+  // The chamber with nothing to open. It used to be "Select a decision" + "arrow-navigate the
+  // ledger", which could only ever be drawn over an EMPTY ledger.
+  chamberEmpty: { en: 'Nothing to open', hy: 'Բացելու բան չկա', ru: 'Открывать нечего' },
+  chamberEmptyHint: {
+    en: 'The chamber opens a decision from the ledger, and the ledger is empty.',
+    hy: 'Պալատը բացում է մատյանի որոշումը, իսկ մատյանը դատարկ է։',
+    ru: 'Палата открывает решение из журнала, а журнал пуст.',
   },
   // The list on this page is `list_decisions` — the desktop's own SQLite table. It was labelled
   // "ENGINE LEDGER" here and "Read-only mirror" in the header; the engine's decision ledger is a

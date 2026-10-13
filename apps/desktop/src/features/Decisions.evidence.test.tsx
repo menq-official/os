@@ -215,3 +215,29 @@ describe('the ledger count is not called active', () => {
     expect(DEC_STR.activeDecisions[lang]).not.toMatch(/active|ակտիվ|активн/);
   });
 });
+
+// R3-0241: the chamber's "Select a decision — arrow-navigate the ledger" was drawn only when
+// there was no selection, and there is no selection only when the ledger is EMPTY (the first row
+// is selected by default). So the one time it appeared, it told the owner to navigate nothing.
+describe('Decisions — an empty ledger does not ask the owner to select from it', () => {
+  it('the chamber says there is nothing to open, and names no navigation', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'list_decisions') return Promise.resolve([]);
+      if (cmd === 'read_evidence_chain') return Promise.resolve({ state: 'blocked', surface: 'evidenceChain', reason: 'engine_refused', authenticated: false });
+      return Promise.resolve(null);
+    });
+    render(<AppProvider><Decisions /></AppProvider>);
+    await waitFor(() => expect(screen.getAllByText(DEC_STR.noDecisions.en).length).toBeGreaterThan(0));
+    const chamber = document.querySelector('section.chamber') as HTMLElement;
+    expect(chamber).not.toBeNull();
+    expect(chamber).toHaveTextContent(DEC_STR.chamberEmpty.en);
+    expect(document.body.textContent).not.toMatch(/Select a decision|Arrow-navigate/);
+  });
+
+  it('with a decision in the ledger the chamber shows it, not an instruction', async () => {
+    mountWithChain({ state: 'blocked', surface: 'evidenceChain', reason: 'engine_refused', authenticated: false });
+    await waitFor(() => expect(screen.getAllByText('Ship the mirror').length).toBeGreaterThan(0));
+    expect(document.body.textContent).not.toMatch(/Select a decision/);
+    expect(document.body.textContent).not.toContain(DEC_STR.chamberEmpty.en);
+  });
+});

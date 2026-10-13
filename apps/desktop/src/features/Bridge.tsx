@@ -31,11 +31,13 @@ import type { Conversation } from '../domain/entities';
 import { STR } from './Bridge.strings';
 
 const styles = `
+/* One size for the title in both forms: as the page's h1 and as the embedded h2. */
+.v-bridge .br-title{font-size:1.5em}
 .v-bridge { margin-top: 26px; }
 .v-bridge .br-panel { padding: var(--s5, 18px); border-radius: var(--r); }
 .v-bridge .br-intro { color: var(--ink-muted); max-width: 72ch; }
 .v-bridge .br-sec { margin-top: var(--s5, 18px); }
-.v-bridge .br-sec > h3 { font-size: var(--t-small, 13px); letter-spacing: .1em; text-transform: uppercase; color: var(--cyan-soft); margin: 0 0 10px; }
+.v-bridge .br-sec > .br-sec-title { font-size: var(--t-small, 13px); letter-spacing: .1em; text-transform: uppercase; color: var(--cyan-soft); margin: 0 0 10px; }
 .v-bridge .br-row { padding: 12px 0; border-top: 1px solid var(--line); }
 .v-bridge .br-row:first-of-type { border-top: none; }
 .v-bridge .br-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -183,7 +185,20 @@ function TurnOutcome({ attempt, L }: { attempt: GovernedTurnAttempt; L: Localize
  * The bridge panel. `taskId` scopes the verifier-verdicts mirror to one decision; without it the mirror
  * is read unfiltered and the row says so, rather than implying the verdicts belong to something.
  */
-export function BridgePanel({ taskId }: { taskId?: string } = {}) {
+/**
+ * The bridge as a ROUTED page. The panel's title is then the page's name, so it is the page's
+ * `<h1>` — the routed bridge had no top-level heading at all, the one page of twenty-three
+ * without one. Embedded under Decisions it stays an `<h2>` beneath that page's own `<h1>`.
+ */
+export function BridgePage() {
+  return <BridgePanel asPage />;
+}
+
+export function BridgePanel({ taskId, asPage = false }: { taskId?: string; asPage?: boolean } = {}) {
+  const Title = asPage ? 'h1' : 'h2';
+  // One level below the title in either form: a section under an <h1> is an <h2>, and an
+  // <h3> there skips a level (axe `heading-order`, which the first version of this change broke).
+  const SectionTitle = asPage ? 'h2' : 'h3';
   const { lang } = useApp();
   const L: Localize = (k) => STR[k][lang] ?? STR[k].en;
 
@@ -225,14 +240,14 @@ export function BridgePanel({ taskId }: { taskId?: string } = {}) {
         <header className="br-row-head">
           <div>
             <span className="eyebrow">{L('panelEyebrow')}</span>
-            <h2>{L('panelTitle')}</h2>
+            <Title className="br-title">{L('panelTitle')}</Title>
           </div>
           <span className="pill info">{L('rendererCannotVerify')}</span>
         </header>
         <p className="micro br-intro">{L('panelIntro')}</p>
 
         <div className="br-sec">
-          <h3>{L('mirrorsTitle')}</h3>
+          <SectionTitle className="br-sec-title">{L('mirrorsTitle')}</SectionTitle>
           <MirrorRow
             name={L('surfaceLedger')}
             note={L('surfaceLedgerNote')}
@@ -250,7 +265,7 @@ export function BridgePanel({ taskId }: { taskId?: string } = {}) {
         </div>
 
         <div className="br-sec">
-          <h3>{L('turnTitle')}</h3>
+          <SectionTitle className="br-sec-title">{L('turnTitle')}</SectionTitle>
           <p className="micro br-intro">{L('turnIntro')}</p>
 
           {convos.loading && convos.data === null ? (

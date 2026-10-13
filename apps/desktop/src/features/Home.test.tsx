@@ -13,6 +13,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Home } from './Home';
+import { STR as HOME_STR } from './Home.strings';
 import { activitySummary } from './Home.strings';
 
 const TASK = {
@@ -144,5 +145,21 @@ describe('Home — the seeded count is taken over the rows that are plotted', ()
     await waitFor(() =>
       expect(screen.getByText(/2 of them are seeded demo data/)).toBeTruthy());
     expect(screen.queryByText(/3 of them are seeded demo data/)).toBeNull();
+  });
+});
+
+// R3-0246: one sentence — the page subtitle — was printed four times in the hero: as the
+// eyebrow, as the subtitle, as the caption over the counts, and as the counts group's name.
+describe('Home — the subtitle is said once', () => {
+  it('appears once in the hero, and the counts are named for what they are', async () => {
+    setup();
+    await waitFor(() => expect(document.querySelector('.briefing')).not.toBeNull());
+    const hero = document.querySelector('.briefing') as HTMLElement;
+    const subtitle = 'What matters now';
+    expect(hero.textContent!.split(subtitle).length - 1).toBe(1);
+    expect(hero.querySelector('.sub')).toHaveTextContent(subtitle);
+    // The group of counts has its own name — it is not called by the page's subtitle.
+    expect(screen.getByRole('group', { name: HOME_STR.atAGlance.en })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: subtitle })).toBeNull();
   });
 });

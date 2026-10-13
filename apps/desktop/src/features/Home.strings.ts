@@ -5,6 +5,10 @@ import type { Lang } from '../domain/enums';
 // silently falling back to English. `t()` still serves every existing dict key;
 // only these page-local labels live here. Fixed strings — they carry no data.
 export const STR = {
+  // The hero's two labels that used to repeat the page subtitle verbatim.
+  briefingEyebrow: { en: 'Briefing', hy: 'Ամփոփում', ru: 'Сводка' },
+  atAGlance: { en: 'At a glance', hy: 'Մի հայացքով', ru: 'Коротко' },
+
   derivedRatios: { en: 'Derived ratios', hy: 'Ածանցյալ հարաբերակցություններ', ru: 'Производные показатели' },
   agentsBusy: { en: 'agents busy', hy: 'զբաղված գործակալ', ru: 'агентов занято' },
   tasksBlocked: { en: 'tasks blocked', hy: 'արգելափակ առաջադրանք', ru: 'задач заблокировано' },

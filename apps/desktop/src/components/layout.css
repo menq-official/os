@@ -29,8 +29,6 @@
 .icon-btn { width: 34px; height: 34px; border-radius: var(--menq-radius-md); border: 1px solid var(--brops-border);
   background: var(--brops-surface); display: grid; place-items: center; position: relative; }
 .icon-btn:hover { background: var(--menq-color-hover); }
-.dot { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
-  background: var(--menq-color-danger); color: #fff; font-size: 10px; display: grid; place-items: center; font-weight: 700; }
 .lang-select, .content select { background: var(--brops-surface); color: var(--brops-text);
   border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md); padding: 7px 9px; }
 

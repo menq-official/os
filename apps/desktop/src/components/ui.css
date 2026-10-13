@@ -211,7 +211,6 @@
 
 /* calendar — month grid + agenda */
 .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--menq-space-3); flex-wrap: wrap; }
-.cal-month { font-size: 16px; font-weight: 700; text-transform: capitalize; }
 .cal-grid-wrap { overflow-x: auto; }
 .cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(78px, 1fr)); min-width: 560px; }
 .cal-weekdays { gap: 0; margin-bottom: 6px; }

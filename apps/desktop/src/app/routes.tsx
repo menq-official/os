@@ -46,7 +46,7 @@ const SCREENS: Record<RouteId, React.FC> = {
   decisions: lazy(() => import('../features/Decisions'), 'Decisions'),
   // The governed bridge. Previously reachable only as a panel inside Decisions; it is
   // its own surface, and the unfiltered read (no decision selected) exists only here.
-  bridge: lazy(() => import('../features/Bridge'), 'BridgePanel'),
+  bridge: lazy(() => import('../features/Bridge'), 'BridgePage'),
   research: lazy(() => import('../features/Research'), 'Research'),
   library: lazy(() => import('../features/Library'), 'Library'),
   calendar: lazy(() => import('../features/Calendar'), 'Calendar'),

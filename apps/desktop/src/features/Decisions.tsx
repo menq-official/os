@@ -462,8 +462,10 @@ export function Decisions() {
           <span className="bracket bl" aria-hidden="true" /><span className="bracket br" aria-hidden="true" />
           <EmptyState
             glyph="⚖"
-            title={L('selectDecision')}
-            hint={L('selectDecisionHint')}
+            // No selection means an EMPTY ledger — the first row is selected by default — so
+            // this is the empty chamber, not an invitation to select.
+            title={L('chamberEmpty')}
+            hint={L('chamberEmptyHint')}
           />
         </section>
       );

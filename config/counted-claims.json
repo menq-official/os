@@ -276,15 +276,15 @@
       ]
     },
     "frontend_tests": {
-      "value": 1224,
+      "value": 1228,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-13",
-        "head": "c594f51",
+        "head": "cc4ee8b",
         "environments": {
-          "Debian 13 (trixie) native @ c594f51 + nine more low findings of the cockpit read: the status vocabulary, event kind tones, the form row that pressed a button": {
-            "ran": 1224,
+          "Debian 13 (trixie) native @ cc4ee8b + six more low findings of the cockpit read: two stale style rules, the bridge heading, the empty chamber, the failure pill, the Home subtitle": {
+            "ran": 1228,
             "skipped": 0
           },
           "Debian 13 (trixie) native @ b6f70b7 + the default selection never replaces one the user made": {
