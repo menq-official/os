@@ -1,10 +1,11 @@
 // Bridge panel strings (EN + HY + RU), per-feature — the pattern used by every other
 // view here. Nothing is added to `i18n/en.ts` / `hy.ts` / `ru.ts`.
 //
-// HONESTY RULE for every string in this file: none of them may assert that anything was
-// verified, mirrored, connected, or refused. Each one names exactly one state the panel
-// can actually establish from a real reply, and the "we do not know" states are written
-// as absences, not as reassurances.
+// HONESTY RULE for every string in this file: one may say that something was verified,
+// mirrored, connected or refused ONLY as the name of a state a real reply establishes —
+// several do (`outcomeVerified`, `stateBlocked`, `outcomeBlocked`, `nd_broker_transport_failed`).
+// Each one names exactly one state the panel can actually establish from a real reply, and
+// the "we do not know" states are written as absences, not as reassurances.
 export const STR = {
   // --- Panel head ---
   panelEyebrow: {

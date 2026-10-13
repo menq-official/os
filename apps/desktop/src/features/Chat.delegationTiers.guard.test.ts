@@ -1,4 +1,9 @@
-// Drift guard: the tier table the chat renders vs the agent definitions the CLI obeys.
+// Drift guard: the tier table the chat renders vs the generated tier definition files.
+//
+// The files are the generator's output, not what the CLI obeys on the desktop route: there the
+// app passes its own tier definitions inline (`--agents`, built from `BRO_TIERS` in `ai.rs`) with
+// `--setting-sources ""`, which keeps the project's `.claude/agents/` from loading at all. That
+// the inline definitions match these files is held by a Rust test in `ai.rs`, not here.
 //
 // `TIER_TOOLS` — defined once in `services/agentsDispatch.ts` and re-exported by `delegation.ts`,
 // so the table the chat renders and the one the Tasks page renders are the same object — is a
@@ -34,10 +39,14 @@ function toolsOf(file: string): string[] | null {
 }
 
 const TIERS: CapabilityTier[] = ['reader', 'runner', 'builder'];
-const present = TIERS.every((t) => existsSync(resolve(AGENTS_DIR, `${t}.md`)));
+// Skipped only where the repository root is genuinely not beside the app — a checkout of the app
+// alone, off CI, which has no `.claude/` at all. It used to skip whenever any of the three files
+// was absent, so deleting or renaming a tier definition switched the guard off with a green run.
+// With `.claude/` there, or under CI, a definition that cannot be read fails.
+const appAlone = !process.env.CI && !existsSync(resolve(AGENTS_DIR, '..'));
 
 describe('TIER_TOOLS mirrors the real .claude/agents tier definitions', () => {
-  it.skipIf(!present)('matches every tier, tool for tool and in order', () => {
+  it.skipIf(appAlone)('matches every tier, tool for tool and in order', () => {
     for (const tier of TIERS) {
       const real = toolsOf(resolve(AGENTS_DIR, `${tier}.md`));
       expect(real, `${tier}.md has no \`tools:\` frontmatter`).not.toBeNull();
@@ -46,7 +55,7 @@ describe('TIER_TOOLS mirrors the real .claude/agents tier definitions', () => {
     }
   });
 
-  it.skipIf(!present)('no tier quietly grants Task — a specialist does not delegate further', () => {
+  it.skipIf(appAlone)('no tier quietly grants Task — a specialist does not delegate further', () => {
     // Every tier body says "You return your result to Bro. You do not delegate further." If a
     // definition ever gained `Task`, the card would show a specialist that can spawn its own
     // agents, and the conductor model would be a description rather than a boundary.
@@ -58,8 +67,7 @@ describe('TIER_TOOLS mirrors the real .claude/agents tier definitions', () => {
 
   it('keeps the tiers strictly nested, narrowest first', () => {
     // This is the property the card's "grant the narrowest tier" story depends on, and it holds
-    // without touching the filesystem — so it is checked even where the repo root is not
-    // reachable from the app checkout.
+    // without touching the filesystem — so it is checked even in a checkout of the app alone.
     expect(TIER_TOOLS.reader.every((t) => TIER_TOOLS.runner.includes(t))).toBe(true);
     expect(TIER_TOOLS.runner.every((t) => TIER_TOOLS.builder.includes(t))).toBe(true);
     expect(TIER_TOOLS.reader).not.toContain('Bash');

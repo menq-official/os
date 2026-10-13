@@ -78,10 +78,10 @@ describe('Command — real run ledger + step chain (never fabricated)', () => {
 
 // §D `blocked`: "dispatch denied by wall → reason".
 //
-// A governed REFUSAL and a network failure used to render identically: one warn pill with the
-// raw string, announced to nobody. They are opposite events — a refusal is the wall doing its
-// job and nothing ran, a failure is something broken — and showing them the same way teaches
-// the owner to read the wall as a bug.
+// A REFUSAL and a network failure used to render identically: one warn pill with the raw string,
+// announced to nobody. They are different events — something said no, or something broke — and
+// showing them the same way teaches the owner to read a refusal as a bug. The page tells them
+// apart by the error's wording only: it cannot say WHO refused, nor that nothing ran before.
 async function dispatchFailingWith(message: string) {
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'list_runs') return Promise.resolve([RUN]);
@@ -162,15 +162,18 @@ describe('Command — what the backend sends down the channel', () => {
   });
 });
 
-describe('Command — a refusal at the wall is not a failure', () => {
-  it('renders a governed refusal as a refusal, with the engine reason verbatim', async () => {
+// The page classifies an error as a refusal BY ITS WORDING. It does not know who refused — the
+// titles here said "at the wall" and "the engine reason", which is the attribution the test
+// further down forbids the page to make.
+describe('Command — a refusal, by its wording, is not a failure', () => {
+  it('renders an error worded as a refusal as a refusal, with the returned reason verbatim', async () => {
     const alert = await dispatchFailingWith('permission denied: lease not granted for path /etc');
     expect(alert.className).toContain('cmd-outcome--blocked');
-    // The engine's own words, never paraphrased — the reason IS the finding.
+    // The words that came back, never paraphrased — the reason IS the finding.
     expect(alert.textContent).toContain('lease not granted for path /etc');
   });
 
-  it('renders a real failure as a failure, not as a governed refusal', async () => {
+  it('renders a real failure as a failure, not as a refusal', async () => {
     const alert = await dispatchFailingWith('connection reset by peer');
     expect(alert.className).not.toContain('cmd-outcome--blocked');
     expect(alert.textContent).toContain('connection reset by peer');
@@ -202,7 +205,7 @@ describe('Command — a refusal at the wall is not a failure', () => {
   });
 
   it('an unrecognised error falls through to FAILED, not to blocked', async () => {
-    // The fail-open direction would be calling an unknown error a governed refusal — that
+    // The fail-open direction would be calling an unknown error a refusal — that
     // claims the system is fine when nothing established it.
     const alert = await dispatchFailingWith('E_SOMETHING_NEW');
     expect(alert.className).not.toContain('cmd-outcome--blocked');

@@ -232,8 +232,11 @@ describe('BridgePanel — the governed turn, previously called by nothing', () =
   });
 
   it('a genuine broker committed frame IS shown as verified (the mapping the gate protects)', async () => {
-    // Not reachable on this build — the platform gate is false and the broker keeps the fail-closed
-    // executor. This locks the mapping so the ONLY thing that can light "Verified" is a real frame.
+    // Not reachable on this build. No "platform gate" decides it: `connect_broker` connects on
+    // Linux and refuses elsewhere, and the broker serves `UpstreamBlockedExecutor` unless
+    // `$BROPS_BROKER_CONFIG` names a deployment that verifies — nothing shipped sets it — and then
+    // commits only `demonstration_custody` while `INSTALL_MINTED_CUSTODY_ACCEPTED` is `false`.
+    // This locks the mapping so the ONLY thing that can light "Verified" is a real frame.
     mount({
       list_conversations: [CONVERSATION],
       governed_turn_execute: {

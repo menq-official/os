@@ -3,9 +3,12 @@
 // Everything below drives the REAL path — `Chat` → `Conversations` → `MessageThread` →
 // `desktop.streamReply` → the `tauri::ipc::Channel` — and pushes frames shaped EXACTLY as
 // `apps/desktop/src-tauri/src/commands.rs::delegation_frame` builds them, cross-checked against
-// the live capture in `docs/BRO_DELEGATION_EVIDENCE.md`. The three shapes a hand-written fixture
+// the live capture in `docs/BRO_DELEGATION_EVIDENCE.md`. The shapes a hand-written fixture
 // always gets wrong are pinned here:
 //
+//   * `agentOrigin` is on EVERY spawn — the backend inserts it unconditionally, so a fixture
+//     without it is a frame no build of this app sends (these fixtures were that, and were
+//     labelled verbatim);
 //   * `tools` / `toolsSource` are OMITTED (not `null`) when capability could not be established;
 //   * `grant` is `null` when the task stated no scope;
 //   * `conversationId` is `null` for a one-shot ask — and must NOT then be adopted by whichever
@@ -44,7 +47,7 @@ const ROOM = {
   lastMessageAt: '1700000000000', createdAt: '1700000000000', updatedAt: '1700000000000',
 };
 
-/** Verbatim `delegation_frame(AgentEvent::Spawned(..), "c-1")` for a TIER spawn. */
+/** `delegation_frame(AgentEvent::Spawned(..), "c-1", "Bro")` for a TIER spawn, field for field. */
 const SPAWNED: Frame = {
   type: 'delegationSpawned',
   delegation: {
@@ -55,6 +58,7 @@ const SPAWNED: Frame = {
     startedAt: '2026-08-07T14:43:26.767Z',
     description: 'Count files in tools/',
     prompt: 'Objective: count the files.\n\nscope: tools\nprohibited_scope: .claude\n',
+    agentOrigin: 'app_tier',
     tools: ['Read', 'Grep', 'Glob'],
     toolsSource: 'agent_definition',
     grant: {
@@ -66,7 +70,7 @@ const SPAWNED: Frame = {
   },
 };
 
-/** Verbatim `delegation_frame(AgentEvent::Settled(..))`. */
+/** `delegation_frame(AgentEvent::Settled(..), "c-1", "Bro")`, field for field. */
 const SETTLED: Frame = {
   type: 'delegationSettled',
   id: 'toolu_018eiZUCt21zUYTGZ5C8Esau',
@@ -239,16 +243,19 @@ describe('a delegation reported on the live stream reaches the chat screen', () 
       delegation: {
         id: 'toolu_builtin', subagentType: 'general-purpose', conversationId: 'c-1',
         parent: 'Bro', startedAt: '2026-08-07T14:43:26.767Z',
-        description: 'Look into it', grant: null,
+        description: 'Look into it', agentOrigin: 'cli_builtin', grant: null,
       },
     });
 
     await screen.findByText('general-purpose');
     expect(screen.getByText(STR.capabilityUnknown.en)).toBeInTheDocument();
     expect(screen.queryByText(STR.capabilityEnforced.en)).not.toBeInTheDocument();
-    // This frame states no origin, and this is a CLI built-in — the assertion here used to be
-    // that the card says PACK ROLE, which pinned the defect (R3-0276) rather than caught it.
-    expect(screen.getByText(SURFACE_STR.originUnstatedLabel.en)).toBeInTheDocument();
+    // The origin IS stated — the backend states it on every spawn — and it says this app did not
+    // define the agent. The frame here used to carry no origin at all, so what it pinned was the
+    // card for an older build (`ORIGIN UNSTATED`), never the warning a real built-in spawn draws.
+    expect(screen.getByText(SURFACE_STR.originOutsideLabel.en)).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(SURFACE_STR.originOutsideModel.en);
+    expect(screen.queryByText(SURFACE_STR.originUnstatedLabel.en)).not.toBeInTheDocument();
     expect(screen.queryByText(STR.packRoleLabel.en)).not.toBeInTheDocument();
     // `grant: null` is a fact the backend stated, not a missing field to paper over.
     expect(screen.getByText(STR.grantNotStated.en)).toBeInTheDocument();
@@ -267,12 +274,13 @@ describe('a delegation reported on the live stream reaches the chat screen', () 
       type: 'delegationSpawned',
       delegation: {
         id: 'toolu_pack', subagentType: 'audit--verifier', conversationId: 'c-1',
-        parent: 'Bro', startedAt: '2026-08-07T14:43:26.767Z',
+        parent: 'Bro', startedAt: '2026-08-07T14:43:26.767Z', agentOrigin: 'pack_role_file',
         tools: ['Read', 'Grep', 'Bash'], toolsSource: 'pack_role_file', grant: null,
       },
     });
 
     await screen.findByText('audit--verifier');
+    expect(screen.getByText(STR.packRoleLabel.en)).toBeInTheDocument();
     expect(screen.getByText('Bash')).toBeInTheDocument();
     expect(screen.getByText(SURFACE_STR.capabilityFromRoleFile.en)).toBeInTheDocument();
     expect(screen.queryByText(STR.capabilityEnforced.en)).not.toBeInTheDocument();

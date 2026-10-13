@@ -251,11 +251,6 @@ export const STR = {
   },
   ledgerAttributed: { en: 'attributed', hy: 'վերագրված', ru: 'атрибутировано' },
   ledgerUnattributed: { en: 'unattributed', hy: 'չվերագրված', ru: 'без атрибуции' },
-  neverRunNote: {
-    en: 'No run has been recorded for this conduit.',
-    hy: 'Այս խողովակի համար գործարկում գրանցված չէ։',
-    ru: 'Для этого канала не записано ни одного запуска.',
-  },
 
   // ── authoring-time gate ──────────────────────────────────────────────────────
   authoringRefused: {
@@ -328,7 +323,11 @@ export const STR = {
     hy: 'Ավտոմատացման հոսքի սխեմա — ոլորվող',
     ru: 'Схема потока автоматизации — прокручиваемая',
   },
-  governed: { en: 'Governed', hy: 'Կառավարվող', ru: 'Управляемо' },
+  // The middle node of the schematic. It read "Governed": what stands there is THIS PAGE's run
+  // contract (`assessRun`), which `contractNote` says is enforced here and nowhere else — no
+  // automation run is a governed dispatch. The same word is gone from `runTelemetry` and
+  // `valveGate` for the same reason.
+  contractCheck: { en: 'Contract check', hy: 'Պայմանագրի ստուգում', ru: 'Проверка контракта' },
   guard: { en: 'guard', hy: 'պահապան', ru: 'страж' },
   action: { en: 'action', hy: 'գործողություն', ru: 'действие' },
   outlet: { en: 'Outlet', hy: 'Ելք', ru: 'Выход' },
@@ -339,7 +338,7 @@ export const STR = {
   createdFact: { en: 'Created', hy: 'ՍՏԵՂԾՎԱԾ', ru: 'Создано' },
   updatedFact: { en: 'Updated', hy: 'ԹԱՐՄԱՑՎԱԾ', ru: 'Обновлено' },
   ownerFact: { en: 'Owner', hy: 'ՏԵՐ', ru: 'Владелец' },
-  governedTelemetry: { en: 'Governed telemetry', hy: 'ԿԱՌԱՎԱՐՎՈՂ ՀԵՌԱՉԱՓ', ru: 'Управляемая телеметрия' },
+  runTelemetry: { en: 'Run telemetry', hy: 'ԳՈՐԾԱՐԿՈՒՄՆԵՐԻ ՀԵՌԱՉԱՓ', ru: 'Телеметрия запусков' },
   recentFires: { en: 'Recent fires', hy: 'Վերջին բռնկումներ', ru: 'Недавние срабатывания' },
 
   // ── index row ────────────────────────────────────────────────────────────────
@@ -369,9 +368,9 @@ export const STR = {
   automationManifold: { en: 'Automation manifold', hy: 'Ավտոմատների մանիֆոլդ', ru: 'Коллектор автоматизаций' },
   noConduitInState: { en: 'No conduit in this state.', hy: 'Այս վիճակում խողովակ չկա։', ru: 'Нет каналов в этом состоянии.' },
   valveGate: {
-    en: 'valve = trigger · gate = governed step',
-    hy: 'փական = բռնկիչ · դարպաս = կառավարվող քայլ',
-    ru: 'клапан = триггер · ворота = управляемый шаг',
+    en: 'valve = trigger · gate = contract check',
+    hy: 'փական = բռնկիչ · դարպաս = պայմանագրի ստուգում',
+    ru: 'клапан = триггер · ворота = проверка контракта',
   },
 
   // ── index section + census ───────────────────────────────────────────────────

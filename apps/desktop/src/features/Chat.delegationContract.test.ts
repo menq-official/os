@@ -53,8 +53,13 @@ describe('path grammar — the same language the engine enforces', () => {
   // The desktop copy of a security-relevant grammar is only safe while it IS a copy. If the
   // engine tightens `workPath` and this file does not follow, the surface starts drawing scopes
   // as validated grants that the engine would refuse.
-  const schemaPresent = existsSync(SCHEMA);
-  it.skipIf(!schemaPresent)('is copied character-for-character from task-contract.schema.json', () => {
+  //
+  // Skipped only where the engine tree is genuinely not beside the app — a checkout of the app
+  // alone, off CI. It used to skip whenever the schema FILE was absent, so a moved or renamed
+  // schema ended the parity check with a green run. With `engine/` there, or under CI, a schema
+  // that cannot be read fails here.
+  const appAlone = !process.env.CI && !existsSync(resolve(REPO_ROOT, 'engine'));
+  it.skipIf(appAlone)('is copied character-for-character from task-contract.schema.json', () => {
     const schema = JSON.parse(readFileSync(SCHEMA, 'utf8')) as {
       $defs: { repoPath: { pattern: string }; absolutePath: { pattern: string } };
     };
@@ -137,7 +142,8 @@ describe('capability — widen on disagreement, never narrow', () => {
   });
 
   it('ignores a tool list whose source is not the agent definition', () => {
-    // A list the backend did not read out of `.claude/agents/*.md` is a claim, not a grant.
+    // A list not taken from the `--agents` definition this app passed to the CLI is a claim, not
+    // a grant. (A `.claude/agents/*.md` `tools:` line is `pack_role_file`: it bounds nothing.)
     const r = resolveTools('builder', ['Read'], 'the_model_said_so');
     expect(r.toolsSource).toBe('tier_table');
     expect(r.tools).toEqual([...TIER_TOOLS.builder]);

@@ -13,24 +13,12 @@ import { STR } from './Calendar.strings';
 import { parseTimestamp } from './timestamps';
 
 // `startsAt` is free text: seed events store a millisecond-epoch string, while
-// the old form let the user type anything. Parse defensively and treat an
-// unparseable value as "undated".
-function parseEventDate(startsAt: string): Date | null {
-  const raw = startsAt.trim();
-  if (!raw) return null;
-  const d = new Date(isNaN(Number(raw)) ? raw : Number(raw));
-  return isNaN(d.getTime()) ? null : d;
-}
+// the old form let the user type anything. `parseTimestamp` reads both, and an
+// unparseable value is treated as "undated".
 
 // Local `YYYY-MM-DD` key used to bucket events into day cells.
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-// Value string an <input type="datetime-local"> expects (local time, no zone).
-function toLocalInputValue(d: Date): string {
-  const pad2 = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 // Fractional hour-of-day (0–24) used to place an event on the day timeline.
@@ -70,15 +58,12 @@ const viewStyles = `
 .v-calendar .ag-side .btn{white-space:nowrap}
 `;
 
-function NewEventForm(
-  { initialWhen, onClose, onCreated }:
-  { initialWhen: string; onClose: () => void; onCreated: () => void },
-) {
+function NewEventForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { t } = useApp();
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('event');
   const [location, setLocation] = useState('');
-  const [when, setWhen] = useState(initialWhen);
+  const [when, setWhen] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -232,8 +217,7 @@ export function Calendar() {
   const L = (k: keyof typeof STR) => STR[k][lang] ?? STR[k].en;
   // BCP47 locale for month/day/weekday names so they localize in all three langs.
   const locale = lang === 'hy' ? 'hy-AM' : lang === 'ru' ? 'ru-RU' : 'en-US';
-  // `creating` holds the datetime-local prefill (empty string = no prefill).
-  const [creating, setCreating] = useState<{ when: string } | null>(null);
+  const [creating, setCreating] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -281,7 +265,7 @@ export function Calendar() {
     const undated: CalendarEvent[] = [];
     const byDay = new Map<string, CalendarEvent[]>();
     for (const e of events) {
-      const d = parseEventDate(e.startsAt);
+      const d = parseTimestamp(e.startsAt);
       if (d) {
         dated.push({ e, d });
         const key = dayKey(d);
@@ -329,7 +313,7 @@ export function Calendar() {
     if (dayEvents.length === 0) return { startH: 6, endH: 20 };
     const starts = dayEvents.map(({ d }) => hourOf(d));
     const ends = dayEvents.map(({ e, d }) => {
-      const end = e.endsAt ? parseEventDate(e.endsAt) : null;
+      const end = e.endsAt ? parseTimestamp(e.endsAt) : null;
       return end ? hourOf(end) : hourOf(d);
     });
     let startH = Math.floor(Math.min(...starts));
@@ -346,12 +330,12 @@ export function Calendar() {
   for (let h = dayWindow.startH; h <= dayWindow.endH; h += 2) ticks.push(h);
 
   const eventTime = (d: Date, endsAt: string | null): string => {
-    const end = endsAt ? parseEventDate(endsAt) : null;
+    const end = endsAt ? parseTimestamp(endsAt) : null;
     return timeFmt.format(d) + (end ? `–${timeFmt.format(end)}` : '');
   };
 
   const agendaNode = (e: CalendarEvent, d: Date | null) => {
-    const end = d && e.endsAt ? parseEventDate(e.endsAt) : null;
+    const end = d && e.endsAt ? parseTimestamp(e.endsAt) : null;
     return (
       <div key={e.id} className="ag-node node" style={v({ '--st': toneVar(e.kind) })}>
         <span className="ag-time mono">
@@ -391,13 +375,12 @@ export function Calendar() {
       <PageHeader
         title={t('nav.calendar')}
         subtitle={t('calendar.subtitle')}
-        actions={<Button variant="primary" onClick={() => setCreating({ when: '' })}>{t('action.new')}</Button>}
+        actions={<Button variant="primary" onClick={() => setCreating(true)}>{t('action.new')}</Button>}
       />
 
       {creating && (
         <NewEventForm
-          initialWhen={creating.when}
-          onClose={() => setCreating(null)}
+          onClose={() => setCreating(false)}
           onCreated={() => s.reload()}
         />
       )}
@@ -439,7 +422,7 @@ export function Calendar() {
                   </div>
                   <div className="lane-track" role="list" aria-label={selectedLabel}>
                     {dayEvents.map(({ e, d }) => {
-                      const end = e.endsAt ? parseEventDate(e.endsAt) : null;
+                      const end = e.endsAt ? parseTimestamp(e.endsAt) : null;
                       const l = pct(hourOf(d));
                       const w = end ? Math.max(0, pct(hourOf(end)) - l) : 0;
                       const time = eventTime(d, e.endsAt);
@@ -473,7 +456,7 @@ export function Calendar() {
                 </div>
                 <div className="dg-stat">
                   <b className="mono">{undated.length}</b>
-                  <span className="micro">{L('undated')}</span>
+                  <span className="micro">{t('calendar.undated')}</span>
                 </div>
               </div>
             </div>
@@ -546,7 +529,7 @@ export function Calendar() {
 
             <aside className="agenda surface soft" aria-label={`${t('calendar.agenda')} · ${selectedLabel}`}>
               <div className="ag-head">
-                <span className="eyebrow">{L('agenda')} · {isToday ? L('today') : L('plan')}</span>
+                <span className="eyebrow">{t('calendar.agenda')} · {isToday ? t('calendar.today') : L('plan')}</span>
                 <b className="ag-date">{selectedLabel}</b>
                 <span className="micro ag-ct">{dayEvents.length}&nbsp;{L('operations')}</span>
               </div>

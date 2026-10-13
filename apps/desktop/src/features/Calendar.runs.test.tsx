@@ -36,11 +36,17 @@ const RUNS = [
   { id: 'run-1', automationId: 'au-1', ranAt: '1700000100000', outcome: 'failed', detail: 'disk' },
 ];
 
-function mount(over: { runs?: unknown[]; automations?: unknown[] } = {}) {
-  invokeMock.mockImplementation((cmd: string) => {
+/** `runsById` answers each automation with its own runs; `runs` answers every automation alike. */
+function mount(
+  over: { runs?: unknown[]; automations?: unknown[]; runsById?: Record<string, unknown[]> } = {},
+) {
+  invokeMock.mockImplementation((cmd: string, args?: { id?: string }) => {
     if (cmd === 'list_events') return Promise.resolve([]);
     if (cmd === 'list_automations') return Promise.resolve(over.automations ?? AUTOMATIONS);
-    if (cmd === 'list_automation_runs') return Promise.resolve(over.runs ?? RUNS);
+    if (cmd === 'list_automation_runs') {
+      if (over.runsById) return Promise.resolve(over.runsById[args?.id ?? ''] ?? []);
+      return Promise.resolve(over.runs ?? RUNS);
+    }
     return Promise.resolve([]);
   });
   return render(<AppProvider><ToastProvider><Calendar /></ToastProvider></AppProvider>);
@@ -60,13 +66,34 @@ beforeEach(() => invokeMock.mockReset());
 
 describe('Calendar — run history, and the receipt this build cannot produce', () => {
   it('shows what actually ran, newest first', async () => {
-    mount();
-    await historyWithRuns(2);
+    // Two automations, each read answered OLDEST first, and the newest run of all belonging to
+    // the automation read first. The fixture used to be one automation whose runs arrived
+    // already newest-first, so the order asserted here was the order of the mock: the page's
+    // sort could be deleted and this stayed green.
+    mount({
+      automations: [
+        AUTOMATIONS[0],
+        { ...AUTOMATIONS[0], id: 'au-2', name: 'Morning digest' },
+      ],
+      runsById: {
+        'au-1': [
+          { id: 'run-1', automationId: 'au-1', ranAt: '1700000100000', outcome: 'failed', detail: 'disk' },
+          { id: 'run-3', automationId: 'au-1', ranAt: '1700000300000', outcome: 'ok', detail: '' },
+        ],
+        'au-2': [
+          { id: 'run-2', automationId: 'au-2', ranAt: '1700000200000', outcome: 'ok', detail: '' },
+        ],
+      },
+    });
+    await historyWithRuns(3);
     const items = within(history()).getAllByRole('listitem');
     // Newest first: a history that reads oldest-first buries the thing the owner came for.
-    expect(items[0].textContent).toContain('ok');
-    expect(items[1].textContent).toContain('failed');
-    expect(items[0].textContent).toContain('Nightly backup');
+    expect(items.map((li) => li.querySelector('.cal-run-name')?.textContent)).toEqual(
+      ['Nightly backup', 'Morning digest', 'Nightly backup'],
+    );
+    expect(items.map((li) => li.querySelector('.cal-run-outcome')?.textContent)).toEqual(
+      ['ok', 'ok', 'failed'],
+    );
   });
 
   it('states that no engine receipt exists — once, not as an empty column', async () => {

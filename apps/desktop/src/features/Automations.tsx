@@ -3,7 +3,7 @@ import {
   type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react';
 import { useApp } from '../app/store';
-import { Modal, FormRow, Input, Button } from '../components/ui';
+import { Modal, FormRow, Input, Button, usePrefersReducedMotion } from '../components/ui';
 import { desktop, hasBackend } from '../services/desktop';
 import { useAsync } from '../hooks/useAsync';
 import { Mark } from '../components/Ambient';
@@ -44,7 +44,8 @@ import {
 // is ARMED & enabled (the `au-live` class), never by a fabricated run rate. It reads
 // as "this conduit is energised and ready", the honest counterpart of `enabled`;
 // disabled and sealed conduits are still. Readouts stay "—" throughout. The
-// SCHEDULER SWEEP likewise walks only armed intake valves. Reduced motion stills all.
+// SCHEDULER SWEEP is narrower: it walks only the armed intake valves the scheduler
+// polls — those whose trigger is an interval. Reduced motion stills all.
 //
 // GOVERNED RUN (Phase 8). A fire now carries a CONTRACT, and the history says what is
 // actually known about each one. `automationsGovernance.ts` holds the whole rule set; this
@@ -142,10 +143,6 @@ const STATE_MARK: Record<RuntimeState, string> = { idle: 'idle', off: 'idle', bl
  *  failure so the UI can render the spec's `blocked` state (reason + fix). */
 function isDenial(message: string): boolean {
   return /denied|not permitted|permission|guard|blocked|wall|ungoverned|lease|receipt/i.test(message);
-}
-
-function reduced(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 // Typed carrier for CSS custom properties (the packet stagger `--d`). One cast,
@@ -290,8 +287,9 @@ function NewRuleForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
   return (
     <Modal title={t('automations.newRule')} onClose={onClose}>
       {error && <div className="form-error">{error}</div>}
-      {/* Governance guarantee (honest): local actions run directly; any action reaching
-          the model/engine routes through the governed, fail-closed chain (see `govern`). */}
+      {/* Governance posture (see `govern`): the three local actions run under the stated
+          contract; an action that would reach the model/engine is REFUSED — here at authoring
+          and again before any run — because an automation has no governed path to route it. */}
       <div className="au-gov" role="note">
         <span aria-hidden="true">🛡</span>
         <span>{L('govern')}</span>
@@ -353,6 +351,7 @@ export function Automations() {
   const [actionError, setActionError] =
     useState<{ id: string; message: string; reason?: RefusalReason } | null>(null);
   const [announce, setAnnounce] = useState('');
+  const reducedMotion = usePrefersReducedMotion();
 
   // ── the governed-run session record ────────────────────────────────────────────────
   // `receipts` binds a returned run row to the contract this session enforced before the call —
@@ -392,6 +391,12 @@ export function Automations() {
     if (sealReason(a) !== null) return 'blocked';
     return a.enabled ? 'idle' : 'off';
   };
+
+  // Is this an intake the SCHEDULER polls? Only an armed conduit whose trigger parses as an
+  // interval: a manual rule, or one with a trigger the scheduler cannot read, is fired by
+  // nothing (see `describeTrigger`), so the sweep and its pill leave it out.
+  const isSwept = (a: Automation): boolean =>
+    runtimeState(a) === 'idle' && parseTrigger(a.trigger).kind === 'interval';
 
   // The backend's timestamps are epoch-milliseconds AS TEXT (`brops_core::now()`), not ISO. This
   // was `new Date(iso)`, Invalid Date for a digit string, so Created, Updated and every run time
@@ -606,19 +611,20 @@ export function Automations() {
   };
 
   // ── The one live instrument: the SCHEDULER SWEEP — Bro walking the intake
-  //    valves in turn. It only ever touches ARMED (enabled) conduits (`.au-live`),
-  //    since a disabled or sealed intake is not being polled — a purely visual
+  //    valves in turn. It only ever touches conduits the scheduler polls
+  //    (`.au-sched`: armed AND on an interval trigger), since a disabled, sealed,
+  //    manual or unreadable-trigger intake is not being polled — a purely visual
   //    attention marker over REAL conduits (it asserts no schedule data). Skipped
   //    entirely when motion is reduced. ─────────────────────────────────────────
   useEffect(() => {
-    if (reduced() || filtered.length === 0) return;
+    if (reducedMotion || filtered.length === 0) return;
     const root = manifoldRef.current;
     if (!root) return;
     let i = 0;
     let active: Element | null = null;
     const tick = () => {
       if (active) { active.classList.remove('checking'); active = null; }
-      const valves = root.querySelectorAll('.lane.au-live .ln-valve');
+      const valves = root.querySelectorAll('.lane.au-sched .ln-valve');
       if (!valves.length) return;
       const v = valves[i % valves.length];
       i += 1;
@@ -630,7 +636,7 @@ export function Automations() {
       window.clearInterval(timer);
       if (active) active.classList.remove('checking');
     };
-  }, [filtered.length, stateFilter]);
+  }, [filtered.length, stateFilter, reducedMotion]);
 
   // Page shortcuts: `n` opens the authoring form, `/` jumps to the state filter (§D: "`n` new,
   // `/` filter, arrow-nav, `Enter` open"). `/` was the one binding of the four that did not
@@ -694,7 +700,8 @@ export function Automations() {
         <p className="sub">{t('automations.subtitle')}</p>
       </div>
       <div className="right">
-        {items.length > 0 && (
+        {/* Shown only while the sweep has something to walk: an armed conduit on an interval. */}
+        {items.some(isSwept) && (
           <span className="pill info" id="auSched">{L('schedSweep')}</span>
         )}
         {/* Earned, not decorative: shown only when a real enabled row has an interval trigger,
@@ -738,7 +745,7 @@ export function Automations() {
         ref={(el) => { laneRefs.current[a.id] = el; }}
         aria-selected={isSel}
         tabIndex={isSel ? 0 : -1}
-        className={`lane ${STATE_CLASS[st]}${st === 'idle' ? ' au-live' : ''}${isSel ? ' sel' : ''}${off ? ' au-off' : ''}`}
+        className={`lane ${STATE_CLASS[st]}${st === 'idle' ? ' au-live' : ''}${isSwept(a) ? ' au-sched' : ''}${isSel ? ' sel' : ''}${off ? ' au-off' : ''}`}
         // An empty trigger is the MANUAL one (`parseTrigger`): the scheduler never fires it.
         // It was announced as "any event", the opposite claim.
         aria-label={`${a.name}, ${a.trigger.trim() || L('triggerManualOnly')}, ${stateLabel(st)}`}
@@ -868,7 +875,7 @@ export function Automations() {
         )}
 
         <div className="sc-grid">
-          {/* the diagram — trigger ▸ governed guard ▸ action ▸ outlet. No run data,
+          {/* the diagram — trigger ▸ contract check ▸ action ▸ outlet. No run data,
               so no node is ever marked done/now. The traveling pulse runs only while
               the conduit is armed/energised (`.au-live`) — a live-field marker, not an
               observed run; a sealed (blocked) or off conduit stays still. */}
@@ -887,7 +894,7 @@ export function Automations() {
               </span>
               <span className={`sc-node ${sealed ? 'is-sealed' : 'is-armed'}`}>
                 <span className="sc-g" aria-hidden="true">{sealed ? '⊘' : '◇'}</span>
-                <span className="sc-nl"><b>{L('governed')}</b><i className="micro">{L('guard')}</i></span>
+                <span className="sc-nl"><b>{L('contractCheck')}</b><i className="micro">{L('guard')}</i></span>
               </span>
               <span className="sc-node is-armed">
                 <span className="sc-g" aria-hidden="true">▸</span>
@@ -936,7 +943,7 @@ export function Automations() {
             </div>
 
             <div className="au-block">
-              <span className="micro">{L('governedTelemetry')}</span>
+              <span className="micro">{L('runTelemetry')}</span>
               <p className="au-note muted">{telemetryPending}</p>
             </div>
           </div>
@@ -1002,7 +1009,7 @@ export function Automations() {
         aria-label={`${a.name}, ${stateLabel(st)}`}
         onClick={() => {
           select(a);
-          heroRef.current?.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+          heroRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
         }}
       >
         <span className="ar-ix">
@@ -1233,8 +1240,9 @@ const CSS = `
 .v-automations .au-run.au-k-refused .au-run-detail{color:var(--ink-muted)}
 
 /* The run contract panel. Unscoped on purpose — like .au-gov it also renders inside the
-   authoring modal, which portals out of .v-automations, so the fact/blocked grammar it uses
-   is repeated here rather than inherited from the page-scoped rules above. */
+   authoring modal, which portals out of .v-automations, so the fact grammar it uses is
+   repeated here rather than inherited from the page-scoped rules above. .au-blocked is drawn
+   both on the page and in that modal, and is declared here once for both. */
 .au-contract{display:block}
 .au-contract .au-facts{display:grid;gap:12px}
 .au-contract .au-fact{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -1257,13 +1265,6 @@ const CSS = `
 .au-warn{color:var(--warning)}
 
 .v-automations .astat.au-danger b{color:var(--danger)}
-
-/* blocked (wall/guard denial) panel */
-.v-automations .au-blocked{border:1px solid rgb(var(--danger-rgb)/.4);background:rgb(var(--danger-rgb)/.09);
-  border-radius:12px;padding:var(--s4);margin:4px 0 12px}
-.v-automations .au-blocked-title{font-weight:700;color:var(--danger);display:flex;align-items:center;gap:8px}
-.v-automations .au-blocked-reason{margin-top:6px;word-break:break-word}
-.v-automations .au-blocked-fix{margin-top:8px;font-size:13px;color:var(--ink-muted);max-width:60ch}
 
 /* state branches: empty · error · skeleton */
 .v-automations .au-empty,.v-automations .au-pick{text-align:center;padding:var(--s7) var(--s5);display:grid;gap:8px;place-items:center}

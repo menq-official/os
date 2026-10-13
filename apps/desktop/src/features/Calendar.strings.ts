@@ -27,22 +27,9 @@ export const STR = {
     hy: 'ընդամենը',
     ru: 'всего',
   },
-  undated: {
-    en: 'undated',
-    hy: 'անթվակիր',
-    ru: 'без даты',
-  },
-  // Agenda eyebrow: "AGENDA · TODAY|PLAN".
-  agenda: {
-    en: 'Agenda',
-    hy: 'Օրակարգ',
-    ru: 'Повестка',
-  },
-  today: {
-    en: 'Today',
-    hy: 'Այսօր',
-    ru: 'Сегодня',
-  },
+  // Agenda eyebrow: "AGENDA · TODAY|PLAN". "Agenda", "Today" and the "Undated" caption are the
+  // central catalog's (`calendar.agenda`, `calendar.today`, `calendar.undated`); only "Plan" is
+  // local.
   plan: {
     en: 'Plan',
     hy: 'Պլան',

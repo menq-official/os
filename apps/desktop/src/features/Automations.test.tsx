@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 
 // Mock the Tauri IPC boundary. Automations mirrors the real list_automations store; it renders only
 // what the store returns and never fabricates an entry.
@@ -79,14 +79,155 @@ describe('Automations — `/` reaches the state filter', () => {
 
   it('`/` typed INTO a field is a slash, not a shortcut', async () => {
     // The guard that keeps a page shortcut from eating a character the user meant to type.
+    //
+    // The authoring form is NOT open here. This test used to press `n` first and type into the
+    // form's own field — but with the form open the handler returns on its first line, so the
+    // field guard it is named for was never reached, and deleting that guard left it green. A
+    // field that exists while the form is closed is the only thing that reaches it.
     setup();
     await waitFor(() => expect(screen.getAllByText('Nightly backup').length).toBeGreaterThan(0));
-    fireEvent.keyDown(window, { key: 'n' });                       // open the authoring form
-    const field = await screen.findByRole('textbox', { name: /name|անուն|назван/i })
-      .catch(() => screen.getAllByRole('textbox')[0]);
-    field.focus();
-    fireEvent.keyDown(field, { key: '/' });
-    expect(document.activeElement).toBe(field);
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    try {
+      field.focus();
+      // `fireEvent` returns false when a handler called preventDefault.
+      expect(fireEvent.keyDown(field, { key: '/' })).toBe(true);
+      expect(document.activeElement).toBe(field);
+      // The same guard holds `n`: typed into a field it opens nothing.
+      fireEvent.keyDown(field, { key: 'n' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    } finally {
+      field.remove();
+    }
+  });
+});
+
+const ROW_AT = { createdAt: '1700000000000', updatedAt: '1700000000000' };
+const BY_HAND = { id: 'au-m', name: 'By hand', trigger: 'manual', action: 'notify: a', enabled: true, ...ROW_AT };
+const UNREAD = { id: 'au-c', name: 'Cron-ish', trigger: 'cron', action: 'notify: b', enabled: true, ...ROW_AT };
+const TIMED = { id: 'au-i', name: 'Every five', trigger: 'every: 5m', action: 'notify: c', enabled: true, ...ROW_AT };
+
+function mountRows(rows: unknown[]) {
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === 'list_automations') return Promise.resolve(rows);
+    if (cmd === 'list_automation_runs') return Promise.resolve([]);
+    return Promise.resolve(null);
+  });
+  return render(
+    <AppProvider>
+      <ToastProvider>
+        <Automations />
+      </ToastProvider>
+    </AppProvider>,
+  );
+}
+
+// The "Scheduler · sweep" walked every armed conduit. The backend scheduler fires only a rule
+// whose trigger parses as an interval; a manual rule, or one with a trigger it cannot read, is
+// never polled by anything — and the sweep, under that pill, visited them all the same.
+describe('Automations — the scheduler sweep visits only what the scheduler polls', () => {
+  /** The sweep's own tick: the page registers it with `setInterval(tick, 1700)`. Calling it by
+   *  hand walks the sweep without waiting on a clock. It is registered in an effect, which can
+   *  run after the rows are already on screen — so the registration is waited for, not assumed. */
+  async function sweepTick(spy: { mock: { calls: unknown[][] } }): Promise<() => void> {
+    const ticks = () => spy.mock.calls.filter((c) => c[1] === 1700).map((c) => c[0] as () => void);
+    await waitFor(() => expect(ticks().length, 'the sweep registered its interval').toBeGreaterThan(0));
+    return ticks()[ticks().length - 1];
+  }
+  const checking = () => Array.from(document.querySelectorAll('.ln-valve.checking'))
+    .map((v) => v.closest('.lane')?.id);
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('walks the interval conduit and never a manual or unrecognised one', async () => {
+    const spy = vi.spyOn(window, 'setInterval');
+    mountRows([BY_HAND, UNREAD, TIMED]);
+    await waitFor(() => expect(screen.getAllByText('Every five').length).toBeGreaterThan(0));
+    const tick = await sweepTick(spy);
+    for (let i = 0; i < 4; i += 1) {
+      tick();
+      expect(checking(), `tick ${i + 1}`).toEqual(['au-lane-au-i']);
+    }
+  });
+
+  it('shows the sweep pill only when an armed conduit is on a schedule', async () => {
+    const first = mountRows([BY_HAND, UNREAD]);
+    await waitFor(() => expect(screen.getAllByText('By hand').length).toBeGreaterThan(0));
+    expect(screen.queryByText(STR.schedSweep.en)).not.toBeInTheDocument();
+    first.unmount();
+
+    mountRows([BY_HAND, TIMED]);
+    await waitFor(() => expect(screen.getAllByText('Every five').length).toBeGreaterThan(0));
+    expect(screen.getByText(STR.schedSweep.en)).toBeInTheDocument();
+  });
+
+  it('an interval conduit that is switched off is not swept and earns no pill', async () => {
+    const spy = vi.spyOn(window, 'setInterval');
+    mountRows([{ ...TIMED, enabled: false }, BY_HAND]);
+    await waitFor(() => expect(screen.getAllByText('Every five').length).toBeGreaterThan(0));
+    expect(screen.queryByText(STR.schedSweep.en)).not.toBeInTheDocument();
+    (await sweepTick(spy))();
+    expect(checking()).toEqual([]);
+  });
+});
+
+// The page read `prefers-reduced-motion` through a private one-line copy of a matchMedia call.
+// It reads the shared `usePrefersReducedMotion` now; these hold the two places that used the copy.
+describe('Automations — reduced motion, read through the shared hook', () => {
+  const realMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query, onchange: null,
+      addEventListener() {}, removeEventListener() {},
+      addListener() {}, removeListener() {}, dispatchEvent() { return false; },
+    })) as unknown as typeof window.matchMedia;
+  });
+  afterEach(() => { window.matchMedia = realMatchMedia; vi.restoreAllMocks(); });
+
+  it('the scheduler sweep never starts', async () => {
+    const spy = vi.spyOn(window, 'setInterval');
+    mountRows([TIMED]);
+    await waitFor(() => expect(screen.getAllByText('Every five').length).toBeGreaterThan(0));
+    // The sweep is registered in an effect; let every pending effect run before looking, or
+    // "nothing registered" could only mean "not yet".
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(spy.mock.calls.filter((c) => c[1] === 1700)).toEqual([]);
+  });
+
+  it('choosing a conduit from the index scrolls without animating', async () => {
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    mountRows([TIMED]);
+    fireEvent.click(await screen.findByRole('button', { name: `Every five, ${STR.armedState.en}` }));
+    expect(scroll).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+  });
+});
+
+// The schematic's middle node read "Governed", its side heading "Governed telemetry" and the
+// legend "gate = governed step" — on a page whose own contract note says the contract is enforced
+// here, by this page, and that no automation run is governed, signed or verified.
+describe('Automations — no label calls the page\'s own contract check "governed"', () => {
+  const GOVERNED = /governed|կառավարվող|управляем/i;
+
+  it('the node, the telemetry heading and the legend name what they are', async () => {
+    mountRows([BY_HAND]);
+    await waitFor(() => expect(screen.getAllByText('By hand').length).toBeGreaterThan(0));
+    const flow = screen.getByRole('group', { name: STR.flowAria.en });
+    expect(flow.textContent).not.toMatch(GOVERNED);
+    expect(within(flow).getByText(STR.contractCheck.en)).toBeInTheDocument();
+    expect(screen.queryByText(/Governed telemetry/i)).not.toBeInTheDocument();
+    expect(screen.getByText(STR.runTelemetry.en)).toBeInTheDocument();
+    expect(screen.getByText(STR.valveGate.en).textContent).not.toMatch(GOVERNED);
+  });
+
+  it('in all three languages', () => {
+    for (const key of ['contractCheck', 'runTelemetry', 'valveGate'] as const) {
+      for (const lang of ['en', 'hy', 'ru'] as const) {
+        expect(STR[key][lang], `${key}.${lang}`).not.toMatch(GOVERNED);
+        expect(STR[key][lang].length, `${key}.${lang}`).toBeGreaterThan(3);
+      }
+      expect(new Set(Object.values(STR[key])).size, `${key} is translated, not copied`).toBe(3);
+    }
   });
 });
 
