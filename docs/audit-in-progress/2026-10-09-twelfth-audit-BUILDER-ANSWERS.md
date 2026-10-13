@@ -6,16 +6,76 @@ Every entry is ◑ — the Builder's own claim, read by no independent reviewer 
 finding was reproduced before anything was changed.
 
 Twenty findings, `L-01`–`L-20`, are in `engine/runtime`. That is engine security code: a change
-there needs an Architect audit or an Owner waiver, and none has been made.
+there needs an Architect audit or an Owner waiver, and none has been made. All twenty are
+reproduced below; none is fixed.
 
 ## Reproduced, not fixed
 
-- **`L-17` (P1) — the supervisor attests a run whose output stream was never created.** With the
-  repository's own fixture (`CompleteRunDispatchTests`): `complete-run` with no output service
-  returned `ok`, `output_stream: unconfigured`; the ledger said `COMPLETED`;
-  `governed_output_streams` had 0 rows; `attest-run` then returned `ok` with a signed attestation.
-  `engine/ci/live/run_supervisor.py` passes no output service to `serve_forever`. Engine security
-  code — waits for an audit or a waiver. Nothing was changed.
+All twenty engine findings were run on 2026-10-13 at `main` `2c12ddc`, each from a throwaway script
+outside the repository that imported the engine's own modules and, where one exists, the test
+suite's own fixture. **No file under `engine/` was changed.** Each line says what was called and
+what came back. The scripts were not kept; every input is the reviewer's, quoted in the report.
+
+- **`L-01` (P2).** `attach_head_anchor` paused after its two checks while `append` took the chain
+  from 2 records to 3; resumed, it installed its anchor for 2 over the anchor for 3. Keyed
+  `verify` then refused the intact ledger: `audit head anchor count disagrees with chain length`.
+- **`L-02` (P3).** `satisfies("1.2rc1", ">=1.2.0")` → `True`; `_ver_tuple("41.0.0rc1")` →
+  `(41, 0, 1)`; `satisfies("41.0.0rc1", ">=41.0.0")` → `True`.
+- **`L-03` (P3).** `validate_execution_lease` accepted `issued_at_epoch=False` with
+  `max_tool_calls=True`, `max_tool_calls=100001`, and `issued_at_epoch=-5`. Control: a string
+  `max_tool_calls` is refused.
+- **`L-04` (P3).** `validate_learning_registry` accepted `skill_evolution_policy` of
+  `../outside.json` and of `/etc/passwd`. Control: a name absent under the root is refused.
+- **`L-05` (P2).** An owner artifact signed for one command validated another that differed in
+  `expected_task_state`, `scope`, `reason`, `requested_at_epoch` and `expires_at_epoch`:
+  `valid: true`, `actor_identity: owner-signed-control-room-command`. The artifact's payload
+  carries none of those five fields. `mutation_authorized` was `false`.
+- **`L-06` (P2).** With `STALE_LOCK_SECONDS` set to 0.05 and holder A inside `_claim_guard` for
+  0.4 s, holder B entered while A was still inside: both recorded in the critical section at once.
+- **`L-07` (P3).** `receipt_path("audit/collision") == receipt_path("audit?collision")`, and a
+  receipt written for the first made `receipt_fresh` of the second return `(True, "fresh")`.
+- **`L-08` (P2).** A receipt re-signed with `exit_code: false` passed `verify_passing_receipt`;
+  so did one with `started_at_epoch: true`. Controls: `exit_code: true` and `2` are refused.
+- **`L-09` (P2).** `analyze_command("where.exe /R 'C:\Users\victim' '*'")` → `executable: where`,
+  `recognized_read_only: True`, `targets: ()`.
+- **`L-10` (P3).** `_parse_key` accepted `not_before_epoch: false` and `not_after_epoch: true`.
+  Control: a string epoch is refused.
+- **`L-11` (P3).** `validate_skill_evolution` accepted `promotion_status` of `proposed` and of
+  `almost-promoted`; the schema's enum holds neither.
+- **`L-12` (P3).** A registry whose first line is `{` made `stop_all` raise `JSONDecodeError`
+  before the valid second line was reached, and no audit record was written. *The control for
+  this one called `stop_all` on a valid line and so sent a real signal to process group 424242;
+  no such group existed afterwards and whether one existed before is not known.*
+- **`L-13` (P2).** A signed binding with `allowed_paths` and `prohibited_paths` omitted loaded as
+  `allowed_paths=("**",)`, `prohibited_paths=()`, and `authorize_path(ws, ".git/config")` was
+  allowed. `allowed_remotes` omitted loaded as `("origin",)`.
+- **`L-14` (P3).** `encode_frame({"a": nan})` produced `{"a":NaN}`, which `read_frame` refused;
+  the same for both infinities.
+- **`L-15` (P2).** `request(path, frame, timeout=0.5)` against a peer sending one byte every
+  0.25 s returned a reply after 3.75 s.
+- **`L-16` (P2).** With `os.write` returning one byte short, `commit_state` returned `None`; the
+  state, at generation 3 before, was refused by the next `load_state` as unreadable.
+- **`L-17` (P1) — reproduced on 2026-10-10, not re-run on the 13th.** With the repository's own
+  fixture (`CompleteRunDispatchTests`): `complete-run` with no output service returned `ok`,
+  `output_stream: unconfigured`; the ledger said `COMPLETED`; `governed_output_streams` had 0
+  rows; `attest-run` then returned `ok` with a signed attestation.
+  `engine/ci/live/run_supervisor.py` passes no output service to `serve_forever`.
+- **`L-18` (P2).** A protected record with two `run_id` members, the first naming another run,
+  stored under its real digest: `sign_result` → `status: signed`.
+- **`L-19` (P2).** An output of 8,388,609 bytes: `sign_result` → `status: signed`,
+  `output_bytes: 8388609`. 8,388,608 is signed too, as it should be.
+- **`L-20` (P2).** With `os.write` returning one byte short, `_write_owned` returned `None` and the
+  target held `{"generation":10` for a payload of `{"generation":10}`.
+
+Each of these is engine security code. A change needs an `Architect-Audit:` or an `Owner-Waiver:`
+naming it; none has been given, and a general instruction to carry on was not taken as one.
+
+**The Builder's recommendation for the order, if they are waived:** `L-17` first, the only P1.
+Then the two that destroy state on an ordinary event, `L-16` and `L-20` (one shared full-write
+primitive fixes both). Then the three that accept what a signature did not cover or a contract
+forbids at an authority boundary, `L-05`, `L-08` and `L-13`. `L-01`, `L-06` and `L-15` are
+concurrency and need a design each. The boolean-as-integer family — `L-03`, `L-08`, `L-10` — is one
+defect in three validators and could be one change.
 
 ## Read, and waiting on the Owner
 

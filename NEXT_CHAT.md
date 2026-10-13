@@ -5,9 +5,9 @@
 > `config/canon-budget.json` holds it to 8500 bytes; over that, the wall accepts only an edit that
 > shrinks it.
 
-**Active branch:** `main` — `main` @ `2c12ddc`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
+**Active branch:** `main` — `main` @ `72f9bca`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `2c12ddc`.** PR #412 on `std-2.1` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `72f9bca`.** PR #413 on `l-repro` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** L-17, L-25, L-26, L-36 wait on the Owner; K-01, K-09 open.
 >
@@ -78,7 +78,7 @@ verifies under the floor-pinned root anchor — nothing shipped sets it, and the
 
 **The standing independent verdict is RED.** ELEVEN rounds; the current one is
 [`2026-10-09-eleventh-audit-e3fc507.md`](apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md)
-— no P0, four P1 (`K-01`–`K-04`), open: `K-01`, `K-07`, `K-09`; `L-01`–`L-43` (12th; 20 of 43 ◑). Read `e3fc507`;
+— no P0, four P1 (`K-01`–`K-04`), open: `K-01`, `K-07`, `K-09`; `L-01`–`L-43` (12th; 20 of 43 ◑; 20 repro). Read `e3fc507`;
 everything merged after it is ◑.
 
 **Two things wait on the Owner** *(the unsigned `BroPS 0.1.0` release is a DRAFT since 2026-10-08)*:
