@@ -185,8 +185,9 @@ impl SubmitError {
     /// enum, and none of its six members can express "the broker's own cross-binding failed" or "the
     /// supervisor refused with `lease_expired`". The distinction that matters lives in the durable
     /// Block reason — which §4.10(h)'s (**NOT IMPLEMENTED**) `bridge.governed-turn-diagnostic.v1` carrier would supply and
-    /// which this tree does NOT build. `governed_bridge_result::FrameError::to_turn_reason` makes the
-    /// same collapse for the same reason.
+    /// which this tree does NOT build. (`governed_bridge_result::FrameError` had a `to_turn_reason`
+    /// making the same collapse; nothing called it, tests included, and it was removed — cockpit
+    /// read R3-0329. A `FrameError` reaches the renderer through this one.)
     pub fn to_turn_reason(&self) -> TurnReason {
         TurnReason::UpstreamBlocked
     }
@@ -519,14 +520,11 @@ pub fn governed_turn_submit_prepared(
 ) -> Result<SignedTurnResult, SubmitError> {
     let frame = submit_frame(execution, challenge_document)?;
     let reply = transport.call(&frame).map_err(SubmitError::Transport)?;
-    // `parse_frame` rather than `parse`: the refused arm carries the forensic `receipt_id` and a
-    // caller that needs it should not have to decode the document twice.
-    match BridgeTurnResult::parse_frame(&reply).map_err(SubmitError::Frame)? {
-        BridgeTurnResult::Signed(signed) => Ok(signed),
-        BridgeTurnResult::Refused { reason, .. } => {
-            Err(SubmitError::Frame(FrameError::Refused(reason)))
-        }
-    }
+    // `parse`, the success-only decode: a refusal comes back as `FrameError::Refused(reason)`.
+    // This called `parse_frame` "because the refused arm carries the forensic `receipt_id`" and
+    // then matched `Refused { reason, .. }` — `parse`'s own match, dropping the id it named
+    // (cockpit read R3-0666). `SubmitError` has nowhere to carry a `receipt_id`.
+    BridgeTurnResult::parse(&reply).map_err(SubmitError::Frame)
 }
 
 /// `SHA256` of the exact frame bytes as they go on the wire — for a caller that logs what it sent.

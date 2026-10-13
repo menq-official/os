@@ -249,7 +249,9 @@ pub enum PullError {
     Refused(StreamRefusal),
     /// A LOCAL failure of the one-shot sidecar — spawn, connect, timeout, unexpected exit. §4.10(f)
     /// P1-5: this "is NOT one of these reasons and produces NO reply frame". No supervisor decided
-    /// anything, and this variant exists so that fact survives into the caller's log.
+    /// anything, and this variant exists so that fact reaches the caller. The broker's ladder —
+    /// the one production caller — does not log it: `LadderChain::pull` maps every `PullError` to
+    /// `TurnReason::UpstreamBlocked` and drops the value (cockpit read R3-0334).
     Transport(String),
     /// Something answered, and it was not a §4.10(f) frame. Same class as [`PullError::Transport`] — a
     /// non-verdict — kept separate because it says the peer spoke and spoke wrongly.
@@ -275,6 +277,11 @@ impl PullError {
     /// The closed renderer-facing reason. A length/digest disagreement is the same
     /// [`TurnReason::CommitReadbackMismatch`] `verify_and_accept` uses for its own output gates — the
     /// accepted body would not match the envelope's digest — and everything else is an upstream Block.
+    ///
+    /// **No production caller** (cockpit read R3-0334). `LadderChain::pull` in
+    /// `broker/src/ladder_executor.rs` does not call this: it answers `UpstreamBlocked` for every
+    /// `PullError`, so a length or digest disagreement on the served path Blocks with THAT reason
+    /// and not with `CommitReadbackMismatch`. Only this module's tests reach the mapping.
     pub fn to_turn_reason(&self) -> TurnReason {
         match self {
             PullError::LengthMismatch | PullError::DigestMismatch => {
@@ -344,11 +351,6 @@ impl<'a> OutputStreamCapability<'a> {
             receipt_id: envelope.receipt_id,
             execution_attempt_id: envelope.execution_attempt_id,
         })
-    }
-
-    /// The capability token, for the echo compare.
-    pub fn output_stream_id(&self) -> &str {
-        self.output_stream_id
     }
 
     /// The exact `bridge.governed-turn-output-read.v1` request for one range.
@@ -933,6 +935,65 @@ mod tests {
                 "accepted {bad:?} as a 43-char base64url capability"
             );
         }
+    }
+
+    /// Cockpit read R3-1228. Every fixture above is refused on LENGTH — the last one, written as
+    /// the out-of-alphabet case, is 42 `+` characters — so nothing reached the alphabet half of
+    /// the check. These are all exactly 43 bytes long and differ from a legal token in one byte.
+    #[test]
+    fn a_43_byte_token_with_one_byte_outside_the_alphabet_is_refused() {
+        let sha = sha256_hex(b"x");
+        let env = envelope(b"x", &sha);
+        let stem = "A".repeat(OUTPUT_STREAM_ID_LEN - 1);
+        // `+` and `/` are the STANDARD base64 alphabet's two; `=` is padding; `é` is two bytes, so
+        // it stands on a 41-character stem.
+        let mut bad: Vec<String> =
+            ["+", "/", "=", " ", ".", "\n", "\0"].iter().map(|c| format!("{stem}{c}")).collect();
+        bad.push(format!("{}é", "A".repeat(OUTPUT_STREAM_ID_LEN - 2)));
+        bad.push(format!("+{stem}"));
+        for token in &bad {
+            assert_eq!(token.len(), OUTPUT_STREAM_ID_LEN, "{token:?} would be refused on length");
+            assert_eq!(
+                OutputStreamCapability::from_envelope(token, &env),
+                Err(PullError::InvalidCapability),
+                "accepted {token:?}"
+            );
+        }
+        // The control: the same stem with a byte the base64url alphabet DOES hold is a capability,
+        // so each refusal above is about its one byte.
+        for c in ["-", "_", "z", "9"] {
+            let token = format!("{stem}{c}");
+            assert!(OutputStreamCapability::from_envelope(&token, &env).is_ok(), "refused {token:?}");
+        }
+    }
+
+    /// Cockpit read R3-1227. The one envelope fixture carries `rcpt-1` / `attempt-1`, and the
+    /// only `InvalidCapability` assertion varied the token, so the identity half of
+    /// `from_envelope` was reached by no test. A legal token, and an envelope missing one id.
+    #[test]
+    fn an_envelope_with_an_empty_receipt_or_attempt_id_binds_no_capability() {
+        let sha = sha256_hex(b"x");
+        let whole = envelope(b"x", &sha);
+        assert!(OutputStreamCapability::from_envelope(TOKEN, &whole).is_ok(), "the control");
+
+        let mut no_receipt = envelope(b"x", &sha);
+        no_receipt.receipt_id = "";
+        assert_eq!(
+            OutputStreamCapability::from_envelope(TOKEN, &no_receipt),
+            Err(PullError::InvalidCapability),
+            "a read would have presented an empty receipt_id"
+        );
+
+        let mut no_attempt = envelope(b"x", &sha);
+        no_attempt.execution_attempt_id = "";
+        assert_eq!(
+            OutputStreamCapability::from_envelope(TOKEN, &no_attempt),
+            Err(PullError::InvalidCapability),
+            "a read would have presented an empty execution_attempt_id"
+        );
+        // And through the entry the ladder uses: no request is built for either.
+        assert_eq!(OutputPull::start(&no_receipt, TOKEN).err(), Some(PullError::InvalidCapability));
+        assert_eq!(OutputPull::start(&no_attempt, TOKEN).err(), Some(PullError::InvalidCapability));
     }
 
     // ---- Every gate, one at a time ---------------------------------------------------------------

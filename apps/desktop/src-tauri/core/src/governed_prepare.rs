@@ -11,9 +11,13 @@
 //! > generation_config OBJECT))`. Those two hashes **differ**, so 3b-1B MUST NOT reuse the frozen
 //! > `&str` preparation — otherwise … **every** legitimate turn Blocks.
 //!
-//! The two digests are asserted UNEQUAL by a test here, against the frozen fixture's own pinned hex
-//! (`receipt.rs::brops_all_formula_parity_matches_python`), so "the frozen path is not silently
-//! reused" is a checked claim rather than a comment. The frozen function, its constant and its
+//! What a test here holds, exactly (cockpit read R3-1229): the governed digest is the pinned hex of
+//! `SHA256(JCS(object))`, and it is NOT the frozen formula's digest of the value the frozen path is
+//! handed for this same engine — `commands.rs` passes [`GOVERNED_ENGINE_ID`]'s literal as its raw
+//! `generation_config` string. That is the comparison a reuse of the frozen preparation would
+//! fail. The test used to compare against the frozen FIXTURE's hex only
+//! (`receipt.rs::brops_all_formula_parity_matches_python`), which is the hash of an unrelated
+//! string and differs whichever formula is in use. The frozen function, its constant and its
 //! fixture are untouched (§2.2 KEEP + ADD).
 //!
 //! ## Which process this belongs to
@@ -85,7 +89,8 @@ pub const MAX_ID_LEN: usize = 128;
 // =================================================================================================
 
 /// `engine_id` — the frozen governed-engine id, reused verbatim from `commands.rs`'s
-/// `GOVERNED_GENERATION_CONFIG`. **NOT overridable**: it pins the execution mechanism, so §4.10(g)
+/// `GOVERNED_GENERATION_CONFIG` (a second literal in another crate; a test here reads that file
+/// and holds the two equal). **NOT overridable**: it pins the execution mechanism, so §4.10(g)
 /// gives it no `BROPS_GOVERNED_*` variable at all.
 pub const GOVERNED_ENGINE_ID: &str = "brops.governed-engine.sidecar.v1";
 /// `model` — mirrors `ai.rs::DEFAULT_ANTHROPIC_MODEL` byte-for-byte.
@@ -389,6 +394,10 @@ impl GovernedGenerationConfig {
     }
 
     /// §2/§4.3/§7: model identity is a pure formula, never a registry lookup.
+    ///
+    /// Compared to nothing, and called by nothing but this module's test: no lease in the tree
+    /// carries a `model_profile_id` (negative-matrix row NM-TCB-23, `blocked`, names this function
+    /// as the formula's one implementation).
     pub fn model_profile_id(&self) -> String {
         format!("cfg-sha256:{}", self.sha256())
     }
@@ -797,17 +806,48 @@ mod tests {
         assert_eq!(frozen, "963be7a4e0b02ab18478b28a969f38f6c5c5b7f7bbe6bccf67ec9495cb377234");
         assert_ne!(defaults().sha256(), frozen);
 
-        // And the same statement for a config that names the SAME model: the two formulas disagree
-        // on every input, not just on the fixture's.
-        let same_model = GovernedGenerationConfig::validate(&field_map(&[
-            ("engine_id", GOVERNED_ENGINE_ID),
-            ("max_output_tokens", "4096"),
-            ("model", "claude"),
-            ("temperature", "0.00"),
-            ("top_p", "1.00"),
-        ]))
-        .unwrap();
-        assert_ne!(same_model.sha256(), sha256_hex(br#"{"model":"claude","temperature":0}"#));
+        // Cockpit read R3-1229. The line above compares the governed digest with the hash of an
+        // unrelated string, so it holds whichever formula `sha256()` uses. (A second block here
+        // did the same for a config "naming the SAME model" and claimed the two formulas disagree
+        // on every input. They do not: the frozen formula is `SHA256(the raw string)`, and handed
+        // the JCS text as its string it returns the governed digest — the first assertion below.)
+        //
+        // What can be wrong is the INPUT. The frozen path is handed ONE raw string for this
+        // engine: `commands.rs` passes `GOVERNED_GENERATION_CONFIG`, the same literal as
+        // `GOVERNED_ENGINE_ID` (held equal by the test after this one). The governed digest is
+        // over the five-field object and must not be the frozen digest of that string.
+        let config = defaults();
+        assert_eq!(config.sha256(), sha256_hex(&config.jcs()));
+        let frozen_for_this_engine = sha256_hex(GOVERNED_ENGINE_ID.as_bytes());
+        assert_eq!(
+            frozen_for_this_engine,
+            sha256_hex(config.engine_id().as_bytes()),
+            "the frozen path's string is this config's engine_id"
+        );
+        assert_ne!(
+            config.sha256(),
+            frozen_for_this_engine,
+            "the governed digest is the frozen raw-string digest: the frozen preparation was reused"
+        );
+        // ...nor the raw-string digest of any ONE of its own five values.
+        for (field, value) in config.as_map() {
+            assert_ne!(config.sha256(), sha256_hex(value.as_bytes()), "{field}");
+        }
+    }
+
+    /// Cockpit read R3-0670. `GOVERNED_ENGINE_ID`'s doc says it is "reused verbatim from
+    /// `commands.rs`", and nothing compared the two: `ai.rs` pins the four caps and the model
+    /// across the crates, not this. The app crate is not a dependency of this one, so the other
+    /// literal is read from its source.
+    #[test]
+    fn the_engine_id_is_the_literal_commands_rs_hands_the_frozen_preparation() {
+        let commands = include_str!("../../src/commands.rs");
+        let declaration = "const GOVERNED_GENERATION_CONFIG: &str = \"";
+        assert_eq!(commands.matches(declaration).count(), 1, "the declaration moved or was split");
+        let after = commands.split(declaration).nth(1).expect("counted above");
+        let literal = after.split('"').next().expect("a closing quote");
+        assert!(!literal.is_empty(), "the reader read nothing");
+        assert_eq!(literal, GOVERNED_ENGINE_ID);
     }
 
     #[test]
@@ -852,8 +892,9 @@ mod tests {
         );
         assert!(widest.jcs().len() * 188 > MAX_GENERATION_CONFIG_BYTES);
         // `max_output_tokens` is 7 digits at its cap, so the integer bound and the regex bound are
-        // the same length — widening the regex to 8 digits would not widen this number.
-        assert_eq!("1048576".len(), 7);
+        // the same length — widening the regex to 8 digits would not widen this number. (That was
+        // followed by an assertion that the literal "1048576" has seven characters, which cannot
+        // fail — cockpit read R3-1230. The 8-digit refusal is pinned by its own test below.)
     }
 
     #[test]

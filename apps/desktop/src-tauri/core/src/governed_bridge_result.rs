@@ -59,10 +59,12 @@
 //!
 //! §4.6 names `lease_id` in the receipt and §4.10(e) supplies it, but no signed artifact that reaches
 //! this side carries it: the §4.9 envelope binds `lease_handle`, and the §4.6 attested evidence carries
-//! `lease_handle` too. So [`SignedTurnResult::lease_id`] is an **unverifiable transport claim**, exposed
-//! for forensics/logging and deliberately absent from `check_echoes` — there is nothing to check it
-//! against, and a comparison invented for symmetry would be the exact "check that cannot fail" this file
-//! is otherwise built to avoid. Nothing may gate on it.
+//! `lease_handle` too. So `SignedTurnResult`'s `lease_id` is an **unverifiable transport claim**,
+//! deliberately absent from `check_echoes` — there is nothing to check it against, and a comparison
+//! invented for symmetry would be the exact "check that cannot fail" this file is otherwise built to
+//! avoid. Nothing may gate on it, and nothing can: it had a `lease_id()` accessor "for logs and
+//! forensics" that no log ever called (cockpit read R3-0331), so the accessor is gone and the value
+//! is readable only in the decoded frame's `Debug` form.
 //!
 //! ## The arithmetic, done first
 //!
@@ -104,21 +106,33 @@
 //! ## WIRED, NOT REACHABLE — the section below is HISTORY, kept for what it records
 //!
 //! RETRACTED. Everything under this heading down to the `use` line was written between 2026-08-10
-//! and 2026-08-12 and three of its claims stopped being true when the broker's ladder executor
+//! and 2026-08-12 and four of its claims stopped being true when the broker's ladder executor
 //! landed. The sibling module `governed_output_pull` retracted its copy on 2026-09-20; this one was
 //! missed. Read against the tree:
 //!
 //!  * "[`SignedTurnResult::check_echoes`] still [has no production caller] ... §6.1 step 14 — a later
 //!    stage that is not built": it is called from `LadderChain::run_verified` in
-//!    `broker/src/ladder_executor.rs`, on the verified envelope, right after the submit.
+//!    `broker/src/ladder_executor.rs`, right after the submit — on the envelope strict-parsed from
+//!    the signed bytes (`OwnedReceiptEnvelope::from_exact_jcs`) and NOT yet verified:
+//!    `verify_envelope` runs after it. This bullet said "on the verified envelope" (cockpit read
+//!    R3-0973). What a compare against an unverified envelope is worth is in `check_echoes`' own doc.
 //!  * "(2) **Nothing CALLS** `governed_turn_submit_prepared`": the same function calls it, and its
 //!    `config/reachability-declarations.json` entry is `must_have_caller`.
+//!  * "its `ProductionResolver` supplies the three artifact digests from static deployment config
+//!    rather than from a prepared turn" (the rest of that same item (2); cockpit read R3-0974): on
+//!    the served path `prepare_governed_turn_v1b` computes all three from the bytes the turn sends.
+//!    The config's three `resolved.*_sha256` values are still read into `ResolvedFacts`
+//!    (`broker/src/main.rs`), and no binary builds a chain over the resolver impl that would
+//!    consume them. `ChainExecutor` is still the served `GovernedExecutor`, built over the
+//!    `LadderChain`.
 //!  * "the broker's Linux execution reads the recorder's output straight off the local filesystem ...
 //!    instead of through the §4.10(f) egress at all": the ladder pulls through
 //!    `governed_output_pull::pull_output` (`LadderChain::pull`).
 //!
-//! What is still true of [`BridgeTurnResult::parse`] itself: no production code calls it — the ladder
-//! uses `parse_frame`, and `parse` is reached only by the CI pull driver and this module's tests.
+//! [`BridgeTurnResult::parse`] HAS a production caller since cockpit read R3-0666:
+//! `governed_submit::governed_turn_submit_prepared`, the ladder's submit, which used `parse_frame`
+//! and then repeated `parse`'s own match. `parse_frame` is now reached only through `parse` and by
+//! this module's tests.
 //! And what holds the line now is a deployment condition rather than a missing caller: the ladder is
 //! the executor only when `$BROPS_BROKER_CONFIG` resolves, which it does on no shipped install.
 //!
@@ -197,11 +211,6 @@ use serde_json::Value;
 /// `bridge.result.receipt` too.
 pub const BRIDGE_TURN_RESULT_PROTOCOL: &str = "bridge.governed-turn-result.v1";
 
-/// §4.10(f): the capability is "32 cryptographically-random bytes, base64url no-pad, EXACTLY 43 chars".
-/// Restated from `governed_output_pull` rather than imported so this module's parse does not depend on
-/// the pull's; a test asserts the two are equal, which is the check that keeps them one number.
-const OUTPUT_STREAM_ID_LEN: usize = 43;
-
 /// §4.6/§4.10(e): `signature_b64` is "b64url 86" — a detached Ed25519 signature. 86 canonical base64url
 /// characters decode to exactly 64 bytes, so there is no second check on the decoded length: it could
 /// not fail.
@@ -232,9 +241,14 @@ const MAX_CONTAINMENT_EVIDENCE_B64_LEN: usize = 65536;
 // copy moves and the other does not. There is now exactly one `128` in the crate for this rule.
 
 /// §4.6/§4.10(e)/§4.10(f): `output_bytes` is `<int 0..8388608>`. The number is the pull module's
-/// — it was a second private `8_388_608` here, with nothing equating the two, beside a stream-id
-/// length that DID have an equality test.
+/// — it was a second private `8_388_608` here, with nothing equating the two.
 use crate::governed_output_pull::MAX_OUTPUT_BYTES;
+
+/// §4.10(f): the capability is "32 cryptographically-random bytes, base64url no-pad, EXACTLY 43
+/// chars". The pull module's number too. It was restated here as a private `43` "so this module's
+/// parse does not depend on the pull's" — beside the import above, which already made it depend on
+/// the pull's (cockpit read R3-0665).
+use crate::governed_output_pull::OUTPUT_STREAM_ID_LEN;
 
 /// The literal maximum §4.6 frame, as the sidecar writes it (`json.dumps` with default separators).
 /// Asserted by construction in this module's tests and in `bridge/tests/test_governed_turn_result_bridge.py`,
@@ -243,6 +257,11 @@ use crate::governed_output_pull::MAX_OUTPUT_BYTES;
 /// It is a constant because it is the number every transport under this hop has to admit — and two in
 /// this tree do not: `ipc_framing::MAX_FRAME_PAYLOAD_BYTES` and the supervisor's broker-facing bound are
 /// both 8192.
+///
+/// **Asserted, not enforced.** Every use of this name is in a test module, here and in
+/// `governed_submit`: no production code compares a frame's length against it, and a test below
+/// holds this half of the file to this one occurrence. What bounds the bytes that are read is
+/// `governed_sidecar::MAX_STDOUT_BYTES`.
 pub const MAX_BRIDGE_TURN_RESULT_BYTES: usize = 74_236;
 
 /// The exhaustive §4.6 top-level key set. Five names, in the design's order.
@@ -355,16 +374,6 @@ pub enum FrameError {
     Refused(GovernedRefusal),
 }
 
-impl FrameError {
-    /// The closed renderer-facing reason. Both variants Block; a governed verdict and an unreadable
-    /// document are both "an upstream stage refused this turn" as far as the renderer is concerned,
-    /// and the distinction that matters lives in the durable Block reason
-    /// §4.10(h) (**NOT IMPLEMENTED**) writes, not here.
-    pub fn to_turn_reason(&self) -> TurnReason {
-        TurnReason::UpstreamBlocked
-    }
-}
-
 // =================================================================================================
 // The signed arm
 // =================================================================================================
@@ -397,8 +406,9 @@ pub struct SignedTurnResult {
     attestation_signature_b64: String,
     /// The exact containment-evidence bytes, when the turn produced any (§4.6: nullable).
     containment_evidence: Option<Vec<u8>>,
-    /// The forensic-only lease id — see the module docs: nothing signed carries it, so it can be checked
-    /// against nothing and must gate nothing.
+    /// The forensic-only lease id — see the module docs: nothing signed carries it (the §4.9 envelope
+    /// and the §4.6 attested evidence both bind `lease_handle` instead), so it can be checked against
+    /// nothing, is absent from `check_echoes`, and must gate nothing. No accessor: it shows in `Debug`.
     lease_id: String,
     // ---- TRANSPORT-ONLY echoes. Private, and readable only through `check_echoes`. ----
     echo_run_id: String,
@@ -447,16 +457,6 @@ impl SignedTurnResult {
     /// `LiveRunStateProvider` (§7) is what checks it.
     pub fn containment_evidence(&self) -> Option<&[u8]> {
         self.containment_evidence.as_deref()
-    }
-
-    /// The lease id, for logs and forensics ONLY.
-    ///
-    /// **Unverifiable.** No signed artifact reaching this side carries a `lease_id` — the §4.9 envelope
-    /// and the §4.6 attested evidence both bind `lease_handle` instead — so this value is a transport
-    /// claim with nothing to compare it against, and it is deliberately absent from
-    /// [`check_echoes`](SignedTurnResult::check_echoes). Gate nothing on it.
-    pub fn lease_id(&self) -> &str {
-        &self.lease_id
     }
 
     /// §7.1's echo equality: every transported echo must equal the VERIFIED envelope.
@@ -723,7 +723,7 @@ fn capped_b64(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::governed_output_pull::{OutputPull, OUTPUT_STREAM_ID_LEN as PULL_TOKEN_LEN};
+    use crate::governed_output_pull::OutputPull;
     use serde_json::json;
 
     /// A canonical base64url string of exactly `n` characters — canonical because every b64 field here is
@@ -817,7 +817,7 @@ mod tests {
         );
         assert_eq!(signed.attestation_signature_b64(), b64url(86));
         assert_eq!(signed.containment_evidence(), Some(&URL_SAFE_NO_PAD.decode(b64url(40)).unwrap()[..]));
-        assert_eq!(signed.lease_id(), "lease-1");
+        assert_eq!(signed.lease_id, "lease-1");
     }
 
     #[test]
@@ -1242,7 +1242,7 @@ mod tests {
         let mut frame = signed_frame();
         frame["receipt"]["lease_id"] = json!("a-completely-different-lease");
         let signed = BridgeTurnResult::parse(&frame).unwrap();
-        assert_eq!(signed.lease_id(), "a-completely-different-lease");
+        assert_eq!(signed.lease_id, "a-completely-different-lease");
         assert_eq!(signed.check_echoes(&envelope(&"a".repeat(64), 11)), Ok(()));
     }
 
@@ -1254,7 +1254,6 @@ mod tests {
         // §4.10(f) pull binds it to a VERIFIED envelope — which is the only way a read can present the
         // `receipt_id`/`execution_attempt_id` §4.10(f) P1-3 requires. There is no path from this frame
         // to a read that does not go through that binding.
-        assert_eq!(OUTPUT_STREAM_ID_LEN, PULL_TOKEN_LEN);
         let signed = BridgeTurnResult::parse(&signed_frame()).unwrap();
         let sha = "a".repeat(64);
         let env = envelope(&sha, 11);

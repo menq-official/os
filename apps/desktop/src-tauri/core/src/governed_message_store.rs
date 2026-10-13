@@ -746,10 +746,15 @@ mod tests {
 
     #[test]
     fn committed_binding_refuses_a_row_that_is_not_trusted_verified() {
-        // The trust-state check in isolation. `create_schema`'s CHECK constraint makes this
-        // unreachable through the normal table, so the test builds the same table WITHOUT the
+        // The trust-state MEMBERSHIP check in isolation. `create_schema`'s CHECK constraint makes
+        // this unreachable through the normal table, so the test builds the same table WITHOUT the
         // constraint — the shape an older/hand-made DB could present. Body, digest, author and
-        // timestamp all agree; only the trust state is wrong.
+        // timestamp all agree, and so does the LABEL: the projection says `unverified` too.
+        //
+        // It used to say `trusted_verified` over the `unverified` row (cockpit read R3-1226), so
+        // the equality check below the membership check refused it as well, and this test could
+        // not tell whether the membership check ran. The control at the end is the same table,
+        // another row, the same agreement, on each label inside the set: those are bound.
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE governed_messages (
@@ -763,8 +768,23 @@ mod tests {
             params![sha256_hex(b"hello world")],
         )
         .unwrap();
-        let msg = CommittedMessage::new("m-1".into(), "Bro".into(), "hello world".into(), 7, TRUSTED_VERIFIED.into());
+        let agreed = "unverified";
+        assert!(!COMMITTABLE_TRUST_STATES.contains(&agreed), "the fixture must be outside the set");
+        let msg = CommittedMessage::new("m-1".into(), "Bro".into(), "hello world".into(), 7, agreed.into());
         assert_eq!(verify_committed_binding(&conn, &msg), Err(TurnReason::CommitReadbackMismatch));
+
+        for (id, label) in [("m-2", COMMITTABLE_TRUST_STATES[0]), ("m-3", COMMITTABLE_TRUST_STATES[1])] {
+            conn.execute(
+                "INSERT INTO governed_messages VALUES (?1,'c','bt','Bro','hello world',?2,7,?3)",
+                params![id, sha256_hex(b"hello world"), label],
+            )
+            .unwrap();
+            let msg = CommittedMessage::new(id.into(), "Bro".into(), "hello world".into(), 7, label.into());
+            assert!(
+                verify_committed_binding(&conn, &msg).is_ok(),
+                "`{label}`, agreed on, is refused: the refusal above is not the set's"
+            );
+        }
     }
 
     #[test]
