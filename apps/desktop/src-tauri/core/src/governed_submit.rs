@@ -80,7 +80,6 @@ use serde_json::{json, Value};
 use crate::governed_bridge_result::{BridgeTurnResult, FrameError, SignedTurnResult};
 use crate::governed_prepare::{PreparedGovernedTurnV1B, MAX_ID_LEN};
 use crate::governed_turn_ipc::TurnReason;
-use crate::receipt::sha256_hex;
 
 /// §2.2/§4.10(g): the ingress frame's own protocol const — the ONE canonical discriminator.
 ///
@@ -90,9 +89,12 @@ use crate::receipt::sha256_hex;
 /// the two disjoint in both directions.
 pub const BRIDGE_SUBMIT_PROTOCOL: &str = "bridge.governed-turn-submit.v1";
 
-/// The exhaustive top-level field set, `additionalProperties:false`. Six names, and the writer emits
-/// exactly these — `the_frame_carries_exactly_the_six_designed_fields` asserts it against the
-/// consumer's own list.
+/// The exhaustive top-level field set, `additionalProperties:false`. Six names, sorted, and the
+/// writer emits exactly these: `the_frame_carries_exactly_the_six_designed_fields` compares a built
+/// frame's keys with THIS constant, and `the_six_fields_are_the_consumers_own_list` compares this
+/// constant with the tuple of the same name read out of `bridge/governed_turn_submit.py`. Until the
+/// second test existed the first was said to assert "against the consumer's own list" and nothing
+/// read the consumer's.
 pub const SUBMIT_REQUEST_FIELDS: [&str; 6] =
     ["challenge_doc_b64", "generation_config", "history", "protocol", "system", "task_id"];
 
@@ -120,8 +122,11 @@ pub enum SubmitError {
     /// object and the signed challenge describe different turns, and no amount of retrying makes
     /// them agree.
     CrossBinding(CrossBinding),
-    /// The challenge document cannot be carried: over [`MAX_CHALLENGE_DOC_BYTES`], not a strict JSON
-    /// object, or missing the §4.1 payload fields the cross-bindings compare against.
+    /// The challenge document cannot be carried: over [`MAX_CHALLENGE_DOC_BYTES`], not a JSON
+    /// object, or missing a `sig` or one of the six §4.1 payload fields
+    /// [`ChallengeDocument::from_bytes`] requires. The parse is `serde_json`'s into a `Value` and is
+    /// NOT strict: a repeated key is not refused there (the last one is what is read), which is why
+    /// `from_bytes` calls itself extraction and leaves canonicality to §4.10(a0).
     ChallengeDocument(&'static str),
     /// `task_id`/`run_id`/`conversation_id` is empty or over [`MAX_ID_LEN`].
     IdInvalid(&'static str),
@@ -152,7 +157,12 @@ pub enum CrossBinding {
     /// **Not one of §4.10(g)'s three, and named as an addition.** §4.10(g) requires the pre-submit
     /// assert `prepared.issued_request().request_sha256() == the pre-stored
     /// receipt_challenges.request_sha256`; that comparison needs the receipt DB, which the frame
-    /// writer neither holds nor should, so it belongs to `governed_turn_execute` (step 2 pre-store).
+    /// writer neither holds nor should, so it is not made here — and it is **made NOWHERE**. The
+    /// design gives it to `governed_turn_execute` (step 2 pre-store); the only function of that name
+    /// is the thin Tauri proxy in `src/governed_turn.rs`, and this writer's one caller,
+    /// `LadderChain::run_verified` in `broker/src/ladder_executor.rs`, neither pre-stores a
+    /// `receipt_challenges` row nor compares against one. `config/spec-conformance.json` records the
+    /// pre-store as genuinely absent under §4.10(g).
     /// What IS available here is the §4.1 payload's own `request_sha256`, which the authority derived
     /// from the create-pending facts. It is the same §2.2 envelope digest over the same eight fields,
     /// so equality must hold for a legitimate turn and a mismatch means the authority signed a
@@ -261,8 +271,13 @@ impl ChallengeDocument {
     /// decode. It is not a signature check (the broker cannot verify a challenge-authority signature
     /// and §4.10(a0) is where that happens), not a canonicality gate, and not a full §4.1 shape
     /// check. It refuses exactly what would make the frame unbuildable or a cross-binding
-    /// uncheckable: the §4.10(a0) size cap, a non-object document, an absent `payload`, and the six
-    /// payload fields this hop actually reads.
+    /// uncheckable: the §4.10(a0) size cap, a non-object document, an absent or non-string `sig`, an
+    /// absent `payload`, and six payload fields. FOUR of the six are what this hop reads —
+    /// [`submit_frame`] compares `task_id`, `run_id`, `generation_config_sha256` and
+    /// `request_sha256`. The other two, `install_id` and `request_nonce`, are required and bounded
+    /// here and compared with nothing: they are the values the consumer lifts off the document for
+    /// the §4.10(a0) open frame, so a document without them is refused before a frame exists. No
+    /// production code calls either accessor (`request_nonce()` is read by one broker test).
     pub fn from_bytes(bytes: &[u8]) -> Result<ChallengeDocument, SubmitError> {
         if bytes.is_empty() {
             return Err(SubmitError::ChallengeDocument("empty"));
@@ -383,8 +398,12 @@ impl GovernedTurnExecutionV1B {
         })
     }
 
-    /// The conversation the reply is written into on accept — recovered from the consumed challenge
-    /// row, never re-supplied by the renderer.
+    /// The conversation id [`new`](GovernedTurnExecutionV1B::new) was given. **Nothing reads it**
+    /// (cockpit read R3-0341): `new` bounds it and stores it, no code calls this accessor, and the
+    /// reply is written into the conversation the broker's `LadderChain::run_verified` takes from
+    /// its own `ValidatedRequest` — not from here, and not "recovered from the consumed challenge
+    /// row" as this comment used to say. Kept because removing it removes the `conversation_id` arm
+    /// of [`SubmitError::IdInvalid`], which is a refusal and not this read's to drop.
     pub fn conversation_id(&self) -> &str {
         &self.conversation_id
     }
@@ -485,7 +504,8 @@ pub fn submit_frame(
 ///
 /// **The production implementation is [`crate::governed_sidecar::GovernedSidecar`]** — the ONE place
 /// in the tree that starts the bridge, shared with the desktop app's governed turn, its governance
-/// mirror and its §4.10(f) output pull. It is a trait rather than a direct call because the tests in
+/// mirror and its approval-request write (the app's §4.10(f) output pull, which this sentence used to
+/// name, was deleted on 2026-09-20; the broker's `LadderChain` drives that loop). It is a trait rather than a direct call because the tests in
 /// this module drive the writer against fakes, and because the broker's other hops are injected the
 /// same way; it is NOT a trait because the implementation is missing.
 ///
@@ -525,14 +545,6 @@ pub fn governed_turn_submit_prepared(
     // then matched `Refused { reason, .. }` — `parse`'s own match, dropping the id it named
     // (cockpit read R3-0666). `SubmitError` has nowhere to carry a `receipt_id`.
     BridgeTurnResult::parse(&reply).map_err(SubmitError::Frame)
-}
-
-/// `SHA256` of the exact frame bytes as they go on the wire — for a caller that logs what it sent.
-///
-/// Deliberately NOT used as a check anywhere: there is no counterpart to compare it against, and a
-/// digest with nothing on the other side is the "reads as protection while protecting nothing" class.
-pub fn submit_frame_sha256(frame: &Value) -> String {
-    sha256_hex(&serde_json::to_vec(frame).unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -599,9 +611,67 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(keys, SUBMIT_REQUEST_FIELDS);
         assert_eq!(object["protocol"], BRIDGE_SUBMIT_PROTOCOL);
-        // The discriminator is absent from the frozen family in BOTH directions: `bridge.result` and
-        // `bridge.task-request` have no `protocol` key at all and are `additionalProperties:false`.
-        assert_ne!(BRIDGE_SUBMIT_PROTOCOL, "bridge.result");
+    }
+
+    /// A file from the repository, or a PANIC — there is no skip, because every path read here is
+    /// committed. (`governed_sidecar`'s tests have the same helper; it is private to that module.)
+    fn repo_file(rel: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..").join(rel);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} could not be read ({e})", path.display()))
+    }
+
+    /// The strings of a module-level `NAME: Tuple[str, ...] = ( ... )` in a Python source, in the
+    /// order written. Panics unless the name is assigned exactly once.
+    fn python_string_tuple(source: &str, name: &str) -> Vec<String> {
+        let head = format!("\n{name}: Tuple[str, ...] = (");
+        let mut parts = source.split(head.as_str());
+        let (_, body, none) = (parts.next(), parts.next(), parts.next());
+        assert!(none.is_none(), "{name} is assigned more than once");
+        let body = body.unwrap_or_else(|| panic!("{name} is not assigned as a string tuple"));
+        let body = body.split(')').next().expect("split yields at least one piece");
+        body.split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(|item| {
+                let inner = item.strip_prefix('"').and_then(|rest| rest.strip_suffix('"'));
+                inner.unwrap_or_else(|| panic!("{name} holds {item}, which is not a string")).to_string()
+            })
+            .collect()
+    }
+
+    /// The other half of the claim on [`SUBMIT_REQUEST_FIELDS`] (cockpit read R3-1234): the
+    /// consumer keeps its own copy of the list, and this reads it rather than trusting that two
+    /// hand-written lists of six names agree.
+    #[test]
+    fn the_six_fields_are_the_consumers_own_list() {
+        let consumer = repo_file("bridge/governed_turn_submit.py");
+        let mut theirs = python_string_tuple(&consumer, "SUBMIT_REQUEST_FIELDS");
+        assert_eq!(theirs.len(), 6, "the consumer's list: {theirs:?}");
+        theirs.sort_unstable();
+        assert_eq!(theirs, SUBMIT_REQUEST_FIELDS, "the consumer admits a different field set");
+    }
+
+    /// [`MAX_CHALLENGE_DOC_BYTES`] is "IMPORTED as a number" and was a second literal with nothing
+    /// comparing the two (cockpit read R3-0674). The authority's is `governed_turn_open`'s; the
+    /// consumer re-exports that one rather than typing a third.
+    #[test]
+    fn the_challenge_document_cap_is_the_number_the_open_gate_applies() {
+        let gate = repo_file("engine/runtime/governed_turn_open.py");
+        let mut assigned = gate
+            .lines()
+            .filter_map(|line| line.strip_prefix("MAX_CHALLENGE_DOC_BYTES = "))
+            .map(|value| value.trim().parse::<usize>());
+        let theirs = assigned.next().expect("governed_turn_open.py assigns MAX_CHALLENGE_DOC_BYTES");
+        assert!(assigned.next().is_none(), "the gate assigns the cap more than once");
+        assert_eq!(theirs, Ok(MAX_CHALLENGE_DOC_BYTES));
+
+        let consumer = repo_file("bridge/governed_turn_submit.py");
+        assert!(
+            consumer.lines().any(|line| line.trim_end()
+                == "MAX_CHALLENGE_DOC_BYTES = gto.MAX_CHALLENGE_DOC_BYTES"),
+            "the consumer no longer takes its cap from governed_turn_open"
+        );
     }
 
     #[test]
@@ -1040,6 +1110,25 @@ mod tests {
         );
     }
 
+    /// What "not a strict decode" means here, recorded rather than recommended (cockpit read
+    /// R3-0983): `SubmitError::ChallengeDocument` used to say "not a strict JSON object". A payload
+    /// that names `task_id` twice is accepted, the LAST spelling is the one the cross-binding sees,
+    /// and both travel on in the verbatim bytes for §4.10(a0) to judge.
+    #[test]
+    fn a_repeated_payload_key_is_not_refused_here_and_the_last_one_is_what_is_read() {
+        let raw = format!(
+            "{{\"payload\":{{\"task_id\":\"t-FIRST\",\"task_id\":\"t-LAST\",\"run_id\":\"r\",\
+             \"install_id\":\"i\",\"request_nonce\":\"n\",\"generation_config_sha256\":\"{a}\",\
+             \"request_sha256\":\"{b}\"}},\"sig\":\"c2ln\"}}",
+            a = "a".repeat(64),
+            b = "b".repeat(64),
+        );
+        assert_eq!(raw.matches("\"task_id\"").count(), 2, "the fixture must repeat the key");
+        let doc = ChallengeDocument::from_bytes(raw.as_bytes()).unwrap();
+        assert_eq!(doc.task_id(), "t-LAST");
+        assert_eq!(doc.bytes(), raw.as_bytes());
+    }
+
     #[test]
     fn an_uppercase_digest_is_refused_rather_than_folded() {
         let doc = json!({
@@ -1153,7 +1242,6 @@ mod tests {
         let sent = recorder.0.borrow();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0]["protocol"], BRIDGE_SUBMIT_PROTOCOL);
-        assert_ne!(sent[0]["protocol"], "bridge.governed-turn-output-read.v1");
     }
 
     #[test]
@@ -1237,8 +1325,10 @@ mod tests {
         //  * and **116x** the §4.6 REPLY's own `MAX_BRIDGE_TURN_RESULT_BYTES = 74236`, which is the
         //    asymmetry that makes the reply metadata-only and the output a separate §4.10(f) pull.
         // **The gap this measurement exposes, reported rather than patched.** NEITHER side bounds
-        // this frame: `ai::governed_sidecar_call` writes `stdin` with no cap, and
-        // `engine_sidecar.run` does a bare `stdin.read()`. §4.10(g) caps the three ARTIFACTS and
+        // this frame: `GovernedSidecar::round_trip` (`governed_sidecar.rs`) — the writer, and the one
+        // the broker reaches directly — does `stdin.write_all(&bytes)` with no cap, and
+        // `engine_sidecar.run` does a bare `stdin.read()`. (This named `ai::governed_sidecar_call`,
+        // which since 2026-08-12 only delegates to `round_trip` and which the broker never calls.) §4.10(g) caps the three ARTIFACTS and
         // never the frame. A cap invented in this module would be a bound the consumer does not
         // enforce — a refusal on one side of a wire the other side would have accepted — so the
         // number is measured and named here and the decision is left to an Architect.
@@ -1250,17 +1340,15 @@ mod tests {
             ceiling / crate::governed_bridge_result::MAX_BRIDGE_TURN_RESULT_BYTES,
             116
         );
-
-        // The digest helper is over the wire bytes, so it moves when the frame does.
-        assert_eq!(
-            submit_frame_sha256(&frame),
-            crate::receipt::sha256_hex(&serde_json::to_vec(&frame).unwrap())
-        );
     }
 
     /// §4.10(g)'s `MAX_CONVERSATION_BYTES`, restated locally ONLY so the arithmetic above reads as
-    /// one expression. `the_caps_that_can_fire_are_the_two_caller_sized_ones` in `governed_prepare`
-    /// is what pins the value.
+    /// one expression. Two assertions move when the NUMBER does: `assert_eq!(ceiling, 8_651_985)` in
+    /// the test above, which holds its sum with `MAX_SYSTEM_BYTES` and the measured minimum, and
+    /// `the_governed_ingress_caps_equal_the_ones_this_module_applies` in the app crate's `ai.rs`,
+    /// which equates it with that file's own `8 * 1024 * 1024`.
+    /// (`the_caps_that_can_fire_are_the_two_caller_sized_ones` in `governed_prepare`, which this used
+    /// to credit, only compares against the constant with `<`.)
     const MAX_CONVERSATION_BYTES_FOR_ARITHMETIC: usize =
         crate::governed_prepare::MAX_CONVERSATION_BYTES;
 }

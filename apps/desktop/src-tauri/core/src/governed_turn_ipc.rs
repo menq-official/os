@@ -5,8 +5,10 @@
 //! This module is the **pure, side-effect-free contract + validation layer** the trusted broker service
 //! uses to (a) strict-decode the renderer's request frame, (b) decide payload-aware idempotency, and
 //! (c) build the closed committed/blocked reply frame. It owns NO key, DB, socket, or verdict — those
-//! live in the broker service (a later slice). Keeping the contract pure makes every rev-30 rule here
-//! unit-testable without the OS trust chain.
+//! live in the broker service: the socket in the `brops-broker` binary (`broker/src/main.rs`), the
+//! control flow in `broker_orchestrator`, the live-turn rows in `broker_turns`, the committed row in
+//! `governed_message_store`. Keeping the contract pure makes every rev-30 rule here unit-testable
+//! without the OS trust chain.
 //!
 //! rev-30 rules encoded here:
 //! - Request `brops.renderer-governed-turn.v1 { conversation_id, agent?, client_request_id }`; ANY other
@@ -34,6 +36,13 @@ pub const RESULT_PROTOCOL: &str = "brops.renderer-governed-turn-result.v1";
 /// `MAX_ID_BYTES` caps the RENDERER's ids. It has the same value as `governed_prepare::MAX_ID_LEN`,
 /// which caps the ids of the signed chain, and is deliberately not an alias of it: they bound
 /// different inputs at different doors, and tying them would move one when the other is retuned.
+///
+/// It is a count of UTF-8 BYTES (`String::len()`), and the published schema is not:
+/// `bridge/contracts/renderer-governed-turn.schema.json` gives `conversation_id` and `agent`
+/// `"maxLength": 128` with no pattern, and JSON Schema counts `maxLength` in characters. For an ASCII
+/// id the two agree. For any other they do not — 100 two-byte characters are 200 bytes, valid under
+/// the schema and `malformed` here — so this decode is the narrower of the two and the schema alone
+/// does not say what this door admits.
 pub const MAX_ID_BYTES: usize = 128;
 /// The frame bound, and it IS the transport's: [`crate::ipc_framing::MAX_FRAME_PAYLOAD_BYTES`]. It was
 /// a second literal `8192` with nothing equating the two, so the size check in
@@ -69,19 +78,6 @@ pub enum TurnReason {
     UpstreamBlocked,
 }
 
-impl TurnReason {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TurnReason::Malformed => "malformed",
-            TurnReason::PeerDenied => "peer_denied",
-            TurnReason::RetryConflict => "retry_conflict",
-            TurnReason::TurnInProgress => "turn_in_progress",
-            TurnReason::CommitReadbackMismatch => "commit_readback_mismatch",
-            TurnReason::UpstreamBlocked => "upstream_blocked",
-        }
-    }
-}
-
 /// The renderer's request frame, strict-decoded. `deny_unknown_fields` makes ANY field beyond these three
 /// (+ `protocol`) a decode error ⇒ `malformed`, so the renderer can never smuggle
 /// system/history/config/hashes/nonces or the broker's own `broker_turn_id`/`request_nonce`.
@@ -95,9 +91,14 @@ pub struct RendererGovernedTurnRequest {
     pub client_request_id: String,
 }
 
-/// A validated request: the raw frame checked against every rev-30 rule. Construction is the ONLY way to
-/// obtain one, so downstream broker code can trust the invariants (valid protocol, ids within caps,
-/// canonical lowercase UUIDv4 correlation token).
+/// A validated request: the raw frame checked against every rev-30 rule (valid protocol, ids within
+/// caps, canonical lowercase UUIDv4 correlation token).
+///
+/// [`ValidatedRequest::decode`] is the only function that RETURNS one, and the only way production
+/// code obtains one (`broker_orchestrator::run_governed_turn`). The type does not enforce that: all
+/// three fields are `pub`, so a struct literal compiles in any crate and carries no check — the
+/// broker crate's test modules build theirs that way. The invariants are therefore `decode`'s, held
+/// by every caller going through it, not a property of holding the type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedRequest {
     pub conversation_id: String,
@@ -117,8 +118,8 @@ impl ValidatedRequest {
         Self::from_decoded(req)
     }
 
-    /// Validate an already-deserialized frame (shared by `decode` and by callers that decode elsewhere).
-    pub fn from_decoded(req: RendererGovernedTurnRequest) -> Result<ValidatedRequest, TurnReason> {
+    /// Validate an already-deserialized frame. `decode` is its only caller.
+    fn from_decoded(req: RendererGovernedTurnRequest) -> Result<ValidatedRequest, TurnReason> {
         if req.protocol != REQUEST_PROTOCOL {
             return Err(TurnReason::Malformed);
         }
@@ -222,10 +223,13 @@ pub fn decide_idempotency(req: &ValidatedRequest, live: &[LiveTurn]) -> Idempote
     IdempotencyDecision::New
 }
 
-/// The broker-produced immutable UI projection of a verified+persisted assistant message (rev-30 P0).
-/// Built ONLY by the broker after its verification transaction commits; `body` is the exact
-/// strict-UTF8-decoded accepted-output bytes and equals the committed row. The renderer renders this
-/// read-only and can never construct or mutate it.
+/// The broker-produced UI projection of a verified+persisted assistant message (rev-30 P0).
+/// In production it is built in one place, `governed_message_store`, from the row its verification
+/// transaction committed; `body` is the exact strict-UTF8-decoded accepted-output bytes and equals
+/// the committed row. That is a convention of the callers and not of this type: every field is `pub`,
+/// [`CommittedMessage::new`] is `pub` and takes any `trust_state` string, and the struct derives
+/// `Deserialize`, so any crate can build one. What keeps a renderer from minting one is that it is
+/// the other end of the socket, not anything here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedMessage {
     pub message_id: String,
@@ -267,8 +271,13 @@ impl CommittedMessage {
     }
 }
 
-/// The closed renderer↔broker reply frame (rev-30 P0). `committed` carries a `message` and no `reason`;
-/// `blocked` carries a `reason` and no `message`. Every reply echoes the correlation ids.
+/// The renderer↔broker reply frame (rev-30 P0). The two constructors below keep the rule —
+/// [`committed`](RendererGovernedTurnResult::committed) carries a `message` and no `reason`,
+/// [`blocked`](RendererGovernedTurnResult::blocked) a `reason` and no `message` — and every reply
+/// echoes the correlation ids. The TYPE is not closed: `status` is a `String`, `message` and `reason`
+/// are two independent `pub` options, and the struct derives `Deserialize`, so a value with both, with
+/// neither, or with a third `status` can be written as a literal or decoded off a wire. A reader of
+/// this frame has to check the pairing itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RendererGovernedTurnResult {
     pub protocol: String,
@@ -368,6 +377,64 @@ mod tests {
         let big = "a".repeat(MAX_ID_BYTES + 1);
         let oversize = req_json("").replace("conv-1", &big);
         assert_eq!(ValidatedRequest::decode(&oversize), Err(TurnReason::Malformed));
+    }
+
+    /// The empty-id checks and the agent cap, which no fixture reached (cockpit read R3-1237): the
+    /// one id case above replaces `conv-1` with an oversize value and nothing else. Every frame here
+    /// differs from the valid one in exactly one id, the valid one decodes first, and each
+    /// replacement is asserted to have replaced something — so only that id can be what refuses.
+    #[test]
+    fn an_empty_id_or_an_oversize_agent_is_malformed_and_the_cap_itself_is_admitted() {
+        let valid = req_json("");
+        assert!(ValidatedRequest::decode(&valid).is_ok());
+        let with = |from: &str, to: &str| {
+            let changed = valid.replace(from, to);
+            assert_ne!(changed, valid, "the fixture no longer contains {from}");
+            changed
+        };
+        let conversation = r#""conversation_id":"conv-1""#;
+        let agent = r#""agent":"agent-x""#;
+        let at_cap = "a".repeat(MAX_ID_BYTES);
+        let over_cap = "a".repeat(MAX_ID_BYTES + 1);
+
+        let empty_conversation = with(conversation, r#""conversation_id":"""#);
+        assert_eq!(ValidatedRequest::decode(&empty_conversation), Err(TurnReason::Malformed));
+        let empty_agent = with(agent, r#""agent":"""#);
+        assert_eq!(ValidatedRequest::decode(&empty_agent), Err(TurnReason::Malformed));
+        let oversize_agent = with(agent, &format!(r#""agent":"{over_cap}""#));
+        assert_eq!(ValidatedRequest::decode(&oversize_agent), Err(TurnReason::Malformed));
+
+        // The cap is inclusive on both ids: exactly `MAX_ID_BYTES` decodes.
+        let agent_at_cap = with(agent, &format!(r#""agent":"{at_cap}""#));
+        assert_eq!(ValidatedRequest::decode(&agent_at_cap).unwrap().agent.as_deref(), Some(at_cap.as_str()));
+        let conversation_at_cap = with(conversation, &format!(r#""conversation_id":"{at_cap}""#));
+        assert_eq!(ValidatedRequest::decode(&conversation_at_cap).unwrap().conversation_id, at_cap);
+
+        // `agent` is optional, and an absent one is not an empty one.
+        let no_agent = with(&format!("{agent},"), "");
+        assert_eq!(ValidatedRequest::decode(&no_agent).unwrap().agent, None);
+    }
+
+    /// `MAX_ID_BYTES` counts UTF-8 bytes, which the schema's `maxLength` does not (see the constant).
+    /// 64 two-byte characters are exactly the cap and decode; 100 of them are 100 characters — inside
+    /// the schema's 128 — and 200 bytes, and are refused here.
+    #[test]
+    fn the_id_cap_counts_utf8_bytes_not_characters() {
+        let valid = req_json("");
+        let conversation = r#""conversation_id":"conv-1""#;
+        assert!(valid.contains(conversation));
+        let two_byte = "Ա";
+        assert_eq!(two_byte.len(), 2);
+
+        let at_cap = two_byte.repeat(MAX_ID_BYTES / 2);
+        assert_eq!((at_cap.chars().count(), at_cap.len()), (64, MAX_ID_BYTES));
+        let admitted = valid.replace(conversation, &format!(r#""conversation_id":"{at_cap}""#));
+        assert_eq!(ValidatedRequest::decode(&admitted).unwrap().conversation_id, at_cap);
+
+        let inside_the_schema = two_byte.repeat(100);
+        assert!(inside_the_schema.chars().count() <= 128 && inside_the_schema.len() > MAX_ID_BYTES);
+        let refused = valid.replace(conversation, &format!(r#""conversation_id":"{inside_the_schema}""#));
+        assert_eq!(ValidatedRequest::decode(&refused), Err(TurnReason::Malformed));
     }
 
     #[test]
