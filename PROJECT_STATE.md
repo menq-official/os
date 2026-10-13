@@ -11,7 +11,7 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `2c0a59b`.** PR #422 on `ck-m9` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `8bef40c`.** PR #423 on `ck-m10` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** L-17, L-25, L-26, L-36 wait on the Owner; K-01, K-09 open.
 >
@@ -44,11 +44,11 @@ Each row carries the date it was measured, because they are not measured togethe
 | Windows | |
 |---|---|
 | engine (Python) · 2026-09-21 | not re-measured |
-| `tools/` self-tests · 2026-10-08 | 1769 OK; contrast gate 98 pairs |
+| `tools/` self-tests · 2026-10-13 | 1832 OK; contrast gate 98 pairs |
 | frontend · 2026-10-13 | typecheck clean, 1155 / 87 files |
 | **Debian** | |
 | engine (Python), non-root, Debian 13 · 2026-10-08 | 2741 OK, 17 skipped |
-| Rust, 10 crates · 2026-10-13 | 1579 passed, 1 ignored (needs root; CI runs it) |
+| Rust, 10 crates · 2026-10-13 | 1582 passed, 1 ignored (needs root; CI runs it) |
 | `npm audit --audit-level=high` · 2026-09-01 | 0 vulns |
 | FW-1 boundary proof · 2026-09-01 | 23/23 x3 |
 

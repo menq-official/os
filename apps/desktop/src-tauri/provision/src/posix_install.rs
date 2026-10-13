@@ -80,7 +80,7 @@
 use std::ffi::OsStr;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::CommandExt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use crate::anchor::{self, CUSTODY_REMEDY, INSTALLER_TOOL, MANIFEST_FILE};
@@ -237,21 +237,40 @@ pub fn read_passwd() -> Result<String, ProvisionError> {
 /// launch, with the string the application computes for itself. So a path that is relative, or
 /// carries `.` / `..`, or is not UTF-8, is not merely untidy: it is an anchor bound to a
 /// spelling the application will never produce.
+///
+/// The STRING is what is judged (cockpit read R3-0157, R3-0158). This used to ask
+/// `Path::components()`, which normalises as it walks: on an absolute path it drops a `.`
+/// segment and collapses repeated separators. So `/home/gev/./x` could never be refused for its
+/// `.`, and `/home//gev/x` or a trailing `/` passed as written — each a spelling the
+/// application, which joins clean components, never produces.
 pub fn refuse_ambiguous_path(label: &str, path: &Path) -> Result<(), ProvisionError> {
-    if path.to_str().is_none() {
+    let Some(raw) = path.to_str() else {
         return refuse(format!("{label} is not valid UTF-8: {}", path.display()));
-    }
+    };
     if !path.is_absolute() {
         return refuse(format!("{label} must be an absolute path, got {}", path.display()));
     }
-    if path.components().any(|c| matches!(c, Component::CurDir | Component::ParentDir)) {
-        return refuse(format!(
-            "{label} must not contain `.` or `..` components, got {}",
-            path.display()
-        ));
-    }
     if path.parent().is_none() {
         return refuse(format!("{label} must not be the filesystem root"));
+    }
+    // An absolute path splits into an empty first segment and then its names. Any OTHER empty
+    // segment is a repeated or trailing separator; `.` and `..` are the two names that are not
+    // names.
+    let mut segments = raw.split('/');
+    let _leading = segments.next();
+    for segment in segments {
+        if segment.is_empty() {
+            return refuse(format!(
+                "{label} must not contain a repeated or trailing `/`, got {}",
+                path.display()
+            ));
+        }
+        if segment == "." || segment == ".." {
+            return refuse(format!(
+                "{label} must not contain `.` or `..` components, got {}",
+                path.display()
+            ));
+        }
     }
     Ok(())
 }

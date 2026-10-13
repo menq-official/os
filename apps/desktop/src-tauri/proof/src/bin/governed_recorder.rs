@@ -685,16 +685,28 @@ mod linux {
 
         let path = std::path::Path::new(dir).join("evidence-head-sequence.json");
         let path_str = path.to_str().ok_or("evidence counter path is not UTF-8")?.to_string();
-        let current: u64 = match read_measured(&path_str) {
-            Ok((facts, raw)) => {
-                guard::check_counter_file(&facts, euid)?;
-                serde_json::from_slice::<serde_json::Value>(&raw)
-                    .ok()
-                    .and_then(|v| v.get("head_sequence").and_then(serde_json::Value::as_u64))
-                    .ok_or_else(|| format!("the evidence head-sequence counter at {path_str} is damaged"))?
-            }
-            Err(_) if !path.exists() => 0,
-            Err(e) => return Err(e),
+        // "Missing" is decided by asking whether ANYTHING is at the path, without following it
+        // (cockpit read R3-0148). This was `Err(_) if !path.exists() => 0`, and `exists()` follows
+        // links: a dangling symlink where the counter should be was "not there", the counter
+        // restarted at 1 and was renamed over the link. Only `ENOENT` starts a counter.
+        let absent = match std::fs::symlink_metadata(&path) {
+            Ok(_) => false,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+            // NOT HELD BY A TEST, and said so: the directory was just checked to be this uid's
+            // own at 0700, so an `lstat` of a name inside it has no way to fail except "not
+            // there". Mutating this arm to `true` leaves every test green. It stays because
+            // "could not look" must never become "start again from 1" if that ever changes.
+            Err(e) => return Err(format!("cannot look at the evidence head-sequence counter at {path_str}: {e}")),
+        };
+        let current: u64 = if absent {
+            0
+        } else {
+            let (facts, raw) = read_measured(&path_str)?;
+            guard::check_counter_file(&facts, euid)?;
+            serde_json::from_slice::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v.get("head_sequence").and_then(serde_json::Value::as_u64))
+                .ok_or_else(|| format!("the evidence head-sequence counter at {path_str} is damaged"))?
         };
         let next = current.checked_add(1).ok_or("the evidence head sequence overflowed")?;
         let temporary = format!("{path_str}.tmp");
@@ -1078,6 +1090,37 @@ mod linux {
     #[cfg(test)]
     mod ancestry_tests {
         use super::check_ancestry;
+
+        /// Cockpit read R3-0148. The counter restarted at 1 whenever the read failed AND
+        /// `path.exists()` said false — and `exists()` follows links, so a dangling symlink
+        /// where the counter should be is "not there". The head sequence is the supervisor's
+        /// monotonic epoch; a counter that quietly restarts is one that names a head already
+        /// recorded. Only "nothing is there" starts a counter; anything else that cannot be
+        /// read is an error.
+        #[test]
+        fn the_head_sequence_starts_only_where_nothing_is_there() {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = std::env::temp_dir().join(format!("r3-0148-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let state = dir.to_str().unwrap();
+            // SAFETY: geteuid never fails and touches no memory.
+            let me = unsafe { libc::geteuid() };
+
+            assert_eq!(super::next_head_sequence(state, me), Ok(1), "an absent counter starts at 1");
+            assert_eq!(super::next_head_sequence(state, me), Ok(2));
+
+            // Something stands where the counter is and cannot be read as one: a link to nowhere.
+            let counter = dir.join("evidence-head-sequence.json");
+            std::fs::remove_file(&counter).unwrap();
+            std::os::unix::fs::symlink(dir.join("no-such-target"), &counter).unwrap();
+            let outcome = super::next_head_sequence(state, me);
+            let still_a_link = std::fs::symlink_metadata(&counter).map(|m| m.file_type().is_symlink()).unwrap_or(false);
+            let _ = std::fs::remove_dir_all(&dir);
+            assert!(outcome.is_err(), "the counter restarted over something it could not read: {outcome:?}");
+            assert!(still_a_link, "the unreadable entry was replaced");
+        }
 
         /// The rule passes on a path whose every directory is root's — the shape of the kit's
         /// TCB directory — so the refusals below are refusals of the directory, not of the walk.

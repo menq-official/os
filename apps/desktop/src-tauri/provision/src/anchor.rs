@@ -551,6 +551,29 @@ fn try_add_entry(dir: &Path) -> Result<AddEntry, ProvisionError> {
     try_add_entry_named(dir, || Ok(format!("{PROBE_PREFIX}{}", crate::random_hex(12)?)))
 }
 
+/// What a FAILED exclusive create says about the directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CreateFailure {
+    /// The name was already there: nothing was learned, try another.
+    Taken,
+    /// The operating system refused the write. A permission denial — and a READ-ONLY
+    /// FILESYSTEM, which refuses the same write for a stronger reason. That one used to fall
+    /// through to "unmeasurable", so an anchor on the least writable place a machine has was
+    /// refused as one whose custody could not be established (cockpit read R3-0152).
+    Refused,
+    /// Anything else: the question could not be asked. Never read as a refusal.
+    Unmeasurable,
+}
+
+fn classify_create_failure(kind: std::io::ErrorKind) -> CreateFailure {
+    use std::io::ErrorKind;
+    match kind {
+        ErrorKind::AlreadyExists => CreateFailure::Taken,
+        ErrorKind::PermissionDenied | ErrorKind::ReadOnlyFilesystem => CreateFailure::Refused,
+        _ => CreateFailure::Unmeasurable,
+    }
+}
+
 /// [`try_add_entry`] with the name supplied, so the one case randomness makes unreachable — the
 /// name is already taken — can be driven by a test.
 fn try_add_entry_named(
@@ -565,11 +588,13 @@ fn try_add_entry_named(
                 let _ = std::fs::remove_file(&probe);
                 return Ok(AddEntry::Created);
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                return Ok(AddEntry::Denied(format!("create {} -> {e}", probe.display())));
-            }
-            Err(e) => return Ok(AddEntry::Unmeasurable(e.to_string())),
+            Err(e) => match classify_create_failure(e.kind()) {
+                CreateFailure::Taken => continue,
+                CreateFailure::Refused => {
+                    return Ok(AddEntry::Denied(format!("create {} -> {e}", probe.display())));
+                }
+                CreateFailure::Unmeasurable => return Ok(AddEntry::Unmeasurable(e.to_string())),
+            },
         }
     }
     Ok(AddEntry::Unmeasurable(
@@ -686,7 +711,9 @@ fn probe_tree(
                         "this account CAN open a file in the trust anchor directory for writing",
                     )
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                // A refusal of the write by the same rule the create probe uses, so a read-only
+                // filesystem refuses here too instead of being "unmeasurable" (R3-0152).
+                Err(e) if classify_create_failure(e.kind()) == CreateFailure::Refused => {
                     refusals.push(format!("open-for-write {} -> {e}", path.display()));
                 }
                 Err(e) => {
@@ -1390,6 +1417,32 @@ mod probe_tests {
             Err(e) => panic!("{e}"),
         }
         assert_eq!(std::fs::read(&taken).unwrap(), b"planted", "the existing entry was opened");
+    }
+
+    /// Cockpit read R3-0152. A read-only filesystem refuses the create with its own error, and
+    /// that error fell through to "unmeasurable" — so the anchor on the LEAST writable place a
+    /// machine has was refused as one whose custody could not be established. It is a refusal
+    /// of the write, the same answer a permission denial gives.
+    #[test]
+    fn a_read_only_filesystem_refuses_the_write_it_is_not_unmeasurable() {
+        use std::io::ErrorKind;
+        assert_eq!(classify_create_failure(ErrorKind::ReadOnlyFilesystem), CreateFailure::Refused);
+        assert_eq!(classify_create_failure(ErrorKind::PermissionDenied), CreateFailure::Refused);
+        assert_eq!(classify_create_failure(ErrorKind::AlreadyExists), CreateFailure::Taken);
+        // Everything else says the question could not be asked, and is never read as a denial.
+        for other in [ErrorKind::NotFound, ErrorKind::StorageFull, ErrorKind::Interrupted, ErrorKind::Other] {
+            assert_eq!(classify_create_failure(other), CreateFailure::Unmeasurable, "{other:?}");
+        }
+        // BOTH probes ask it: the create in a directory and the open of an existing entry. A
+        // text check, and it says so — neither can be driven to EROFS without a read-only mount.
+        // Line endings are normalised first: a Windows checkout hands `include_str!` CRLF, and
+        // a marker written with `\n` then matches nothing. The first push of this test did not
+        // do it, and the `windows-latest` leg failed on exactly the assertion below.
+        let source = include_str!("anchor.rs").replace("\r\n", "\n");
+        let production = source.split("\n#[cfg(test)]\nmod probe_tests {").next().unwrap();
+        assert_ne!(production.len(), source.len(), "the test module marker moved");
+        assert_eq!(production.matches(concat!("classify_create_", "failure(e.kind())")).count(), 2);
+        assert!(!production.contains(concat!("e.kind() == std::io::ErrorKind::", "PermissionDenied")));
     }
 
     /// A parent the probe could not ask is a refusal, never "cannot be deleted". A sweep of the

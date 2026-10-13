@@ -244,6 +244,34 @@ fn arguments_that_could_mean_something_else_are_refused() {
         assert!(err.contains(needle), "{args:?}: {err}");
     }
 }
+/// Cockpit read R3-0157, R3-0158. The manifest binds the path as a STRING. `Path::components()`
+/// normalises as it walks: on an absolute path it drops a `.` segment and collapses repeated
+/// separators, so the check that was meant to refuse `/home/gev/./x` could never see the `.`,
+/// and `/home//gev/x` passed as written — an anchor bound to a spelling the application, which
+/// builds its path from clean components, never computes. The raw string is what is judged.
+#[test]
+fn a_path_whose_spelling_is_not_its_components_is_refused() {
+    for bad in [
+        "/home/gev/./x",
+        "/home/gev/.",
+        "/./home/gev/x",
+        "/home//gev/x",
+        "//home/gev/x",
+        "/home/gev/x/",
+        "/home/gev/x//",
+        "/home/gev/../gev/x",
+    ] {
+        assert!(
+            install::refuse_ambiguous_path("--app-data", Path::new(bad)).is_err(),
+            "{bad:?} is not the spelling its own components rebuild, and it was accepted"
+        );
+    }
+    // Names that merely CONTAIN a dot are ordinary names.
+    for good in ["/home/gev/.local/share/x", "/home/gev/a.b/x", "/opt/brops-1.2/trust", "/home/gev/..x/y"] {
+        assert!(install::refuse_ambiguous_path("--app-data", Path::new(good)).is_ok(), "{good:?}");
+    }
+}
+
 
 #[test]
 fn a_path_the_application_would_spell_differently_is_refused() {
