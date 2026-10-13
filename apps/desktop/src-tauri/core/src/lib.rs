@@ -404,6 +404,34 @@ mod tests {
         assert!(repo::approvals::pending_for(&c, &step.id).unwrap().is_none());
     }
 
+    // R3-0132: `advance` completes ONE active step — deliberately, so that a second active step
+    // gets its own gate — and then, finding no pending step, stamped the run terminal under a
+    // comment that says "no active or pending step remains". The second step was still active:
+    // a run reported `succeeded` with work in flight, and one that can never be advanced again.
+    #[test]
+    fn a_run_is_not_stamped_terminal_while_another_step_is_still_active() {
+        let c = conn();
+        let op = crate::repo::audit::Actor::local_operator;
+        let r = repo::runs::create(&c, "two at once", "", op()).unwrap();
+        let one = repo::runs::add_step(&c, &r.id, "one", "").unwrap();
+        let two = repo::runs::add_step(&c, &r.id, "two", "").unwrap();
+        repo::runs::advance(&c, &r.id, op()).unwrap(); // step one active
+        // A step can be activated directly; the run now holds two active steps and none pending.
+        repo::runs::set_step_status(&c, &two.id, "active").unwrap();
+
+        let after = repo::runs::advance(&c, &r.id, op()).unwrap();
+        let steps = repo::runs::list_steps(&c, &r.id).unwrap();
+        let status_of = |id: &str| steps.iter().find(|s| s.id == id).unwrap().status.clone();
+        assert_eq!(status_of(&one.id), "done", "the step that was gated is completed");
+        assert_eq!(status_of(&two.id), "active", "the other one keeps its own gate");
+        assert_eq!(after.status, "running", "a run with an active step is not finished");
+
+        // And the next advance completes that step and only then finishes the run.
+        let done = repo::runs::advance(&c, &r.id, op()).unwrap();
+        assert_eq!(done.status, "succeeded");
+        assert!(repo::runs::list_steps(&c, &r.id).unwrap().iter().all(|s| s.status == "done"));
+    }
+
     #[test]
     fn advance_blocks_unapproved_gated_step_and_rejected_is_terminal() {
         let c = conn();

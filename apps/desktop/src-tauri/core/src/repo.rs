@@ -2522,16 +2522,32 @@ pub mod runs {
                     }
                 }
                 None => {
-                    // No active or pending step remains — inspect outcomes
-                    // before stamping the terminal status: a run with failed
-                    // work must not report `succeeded` (M-6).
-                    let failed: i64 = tx.query_row(
-                        "SELECT COUNT(*) FROM run_steps WHERE run_id = ?1 AND status = 'failed'",
+                    // No PENDING step remains. That is not yet "nothing remains": only one
+                    // active step was completed above, on purpose, and a run can hold another.
+                    // This arm used to stamp the run terminal under a comment saying no active
+                    // step was left — a run reported `succeeded` with a step still in flight,
+                    // and a terminal run cannot be advanced again to finish it.
+                    let still_active: i64 = tx.query_row(
+                        "SELECT COUNT(*) FROM run_steps WHERE run_id = ?1 AND status = 'active'",
                         [run_id],
                         |r| r.get(0),
                     )?;
-                    let terminal = if failed > 0 { "failed" } else { "succeeded" };
-                    set_status(tx, run_id, terminal, actor)?;
+                    if still_active > 0 {
+                        if run.status != "running" {
+                            set_status(tx, run_id, "running", actor)?;
+                        }
+                    } else {
+                        // Nothing active and nothing pending — inspect outcomes before stamping
+                        // the terminal status: a run with failed work must not report
+                        // `succeeded` (M-6).
+                        let failed: i64 = tx.query_row(
+                            "SELECT COUNT(*) FROM run_steps WHERE run_id = ?1 AND status = 'failed'",
+                            [run_id],
+                            |r| r.get(0),
+                        )?;
+                        let terminal = if failed > 0 { "failed" } else { "succeeded" };
+                        set_status(tx, run_id, terminal, actor)?;
+                    }
                 }
             }
             super::audit::record(tx, "run.advanced", actor, "run", run_id)?;
