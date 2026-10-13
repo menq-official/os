@@ -164,6 +164,18 @@ fn validate_ollama_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// One Ollama endpoint under a base URL [`validate_ollama_url`] accepted.
+///
+/// The validator allows a base ending in `/` (`http://localhost:11434/` is a root, not a path),
+/// and both call sites appended `/api/…` to it as text: `http://localhost:11434//api/chat`, which
+/// is not the endpoint. What a server does with the doubled slash was NOT measured — none runs
+/// on the box this was written on; if it redirects to the clean path, the client here follows no
+/// redirect on purpose and the turn fails (cockpit read R3-0170). The base's trailing slashes
+/// are dropped before the endpoint is joined, so the question does not arise.
+fn ollama_endpoint(base: &str, endpoint: &str) -> String {
+    format!("{}{endpoint}", base.trim_end_matches('/'))
+}
+
 /// A reqwest client that never follows redirects — so a 3xx can't silently
 /// relay a confidential prompt to a different host than the one we validated.
 fn no_redirect_client() -> Result<reqwest::Client, String> {
@@ -618,7 +630,7 @@ pub async fn status() -> AiStatus {
             let reachable = if url_ok {
                 match no_redirect_client() {
                     Ok(c) => c
-                        .get(format!("{url}/api/tags"))
+                        .get(ollama_endpoint(&url, "/api/tags"))
                         .timeout(Duration::from_millis(1500))
                         .send()
                         .await
@@ -1445,6 +1457,36 @@ struct FileSnapshot {
     digest: String,
     /// `None` for a file above [`SNAPSHOT_MAX_FILE_BYTES`]: detectable, not restorable.
     bytes: Option<Vec<u8>>,
+    /// The permission bits (`st_mode & 0o7777`) on Unix; `None` where there are none to read.
+    /// A file's mode is part of what it is: world-writable, anyone can rewrite it once the
+    /// turn is over; without its execute bit, a gate script no longer runs (cockpit read
+    /// R3-0164). The guard used to compare and restore bytes only.
+    mode: Option<u32>,
+}
+
+/// The permission bits of `md`, where the platform has them.
+fn mode_bits(md: &std::fs::Metadata) -> Option<u32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Some(md.permissions().mode() & 0o7777)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = md;
+        None
+    }
+}
+
+/// Put `mode` back on `path`. `Ok` where the platform has no mode or none was recorded.
+fn restore_mode(path: &std::path::Path, mode: Option<u32>) -> std::io::Result<()> {
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        use std::os::unix::fs::PermissionsExt;
+        return std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+    }
+    let _ = (path, mode);
+    Ok(())
 }
 
 /// A byte-exact snapshot of [`BRO_PROTECTED_PATHS`] under one root, taken before an agent-mode
@@ -1555,13 +1597,30 @@ impl TrustSurfaceGuard {
             }
             // Only a regular file is read: a directory, a FIFO or a device in the file's place is
             // a change, and reading one of those can block or never end.
-            let current = match std::fs::symlink_metadata(path) {
-                Ok(md) if md.is_file() => std::fs::read(path).ok(),
-                _ => None,
+            let (current, current_mode) = match std::fs::symlink_metadata(path) {
+                Ok(md) if md.is_file() => (std::fs::read(path).ok(), mode_bits(&md)),
+                _ => (None, None),
             };
             if link.is_none()
                 && current.as_deref().map(brops_core::receipt::sha256_hex) == Some(snap.digest.clone())
             {
+                // The same bytes. The MODE is the other half of the file (R3-0164): compared
+                // here, put back, and named in the notice with what it was changed to.
+                if snap.mode.is_some() && current_mode != snap.mode {
+                    let was = |m: Option<u32>| m.map(|m| format!("{m:04o}")).unwrap_or_else(|| "?".into());
+                    match restore_mode(path, snap.mode) {
+                        Ok(()) => restored.push(format!(
+                            "{rel} (mode only: {} put back to {})",
+                            was(current_mode),
+                            was(snap.mode)
+                        )),
+                        Err(e) => unrestorable.push(format!(
+                            "{rel} (mode changed {} -> {}; could not be put back: {e})",
+                            was(snap.mode),
+                            was(current_mode)
+                        )),
+                    }
+                }
                 continue;
             }
             // Keep what the turn wrote before putting the original back — a change made in
@@ -1579,7 +1638,9 @@ impl TrustSurfaceGuard {
                     if let Some(parent) = path.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
-                    match std::fs::write(path, original) {
+                    // With the mode it had: a file written back after a deletion is created at
+                    // the default mode, and one written over keeps whatever the turn left on it.
+                    match std::fs::write(path, original).and_then(|()| restore_mode(path, snap.mode)) {
                         Ok(()) if link.is_some() => restored.push(format!(
                             "{rel} (had been replaced by a symlink; the link was removed, not followed)"
                         )),
@@ -1721,7 +1782,7 @@ fn collect_snapshot(
             if let Ok(bytes) = std::fs::read(path) {
                 out.insert(
                     path.to_path_buf(),
-                    FileSnapshot { digest: brops_core::receipt::sha256_hex(&bytes), bytes: None },
+                    FileSnapshot { digest: brops_core::receipt::sha256_hex(&bytes), bytes: None, mode: mode_bits(&md) },
                 );
             }
             return;
@@ -1729,7 +1790,7 @@ fn collect_snapshot(
         if let Ok(bytes) = std::fs::read(path) {
             out.insert(
                 path.to_path_buf(),
-                FileSnapshot { digest: brops_core::receipt::sha256_hex(&bytes), bytes: Some(bytes) },
+                FileSnapshot { digest: brops_core::receipt::sha256_hex(&bytes), bytes: Some(bytes), mode: mode_bits(&md) },
             );
         }
         return;
@@ -3380,7 +3441,7 @@ async fn ollama(url: &str, model: &str, system: &str, messages: &[ChatMsg]) -> R
     validate_ollama_url(url)?;
     let body = serde_json::json!({ "model": model, "messages": msgs, "stream": false });
     let resp = no_redirect_client()?
-        .post(format!("{url}/api/chat"))
+        .post(ollama_endpoint(&url, "/api/chat"))
         .timeout(Duration::from_secs(120))
         .json(&body)
         .send()
@@ -4329,6 +4390,46 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Cockpit read R3-0164. The guard compared and restored BYTES. A turn that only changed a
+    /// protected file's mode — world-writable, so that anyone on the machine can rewrite the
+    /// verifier later, with no turn running and no guard watching — changed nothing the guard
+    /// looked at. And a file it restored after a deletion came back at the default mode, so an
+    /// executable gate script was "restored" as a file that no longer runs.
+    #[cfg(unix)]
+    #[test]
+    fn a_mode_change_on_the_trust_surface_is_a_change_and_is_put_back() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("brops-guard-mode-{}", brops_core::id()));
+        let write = |rel: &str, body: &str, mode: u32| {
+            let p = root.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, body).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(mode)).unwrap();
+            p
+        };
+        let mode_of = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        let verifier = write("engine/runtime/isolated_signer.py", "TRUSTED = True\n", 0o644);
+        let gate = write("tools/check_ai_surfaces.sh", "#!/bin/sh\nexit 1\n", 0o755);
+        let untouched = write("bridge/engine_adapter.py", "x = 1\n", 0o640);
+
+        let guard = TrustSurfaceGuard::take(&root);
+        // The bytes are left exactly as they were; only the mode moves.
+        std::fs::set_permissions(&verifier, std::fs::Permissions::from_mode(0o666)).unwrap();
+        // And an executable is deleted outright.
+        std::fs::remove_file(&gate).unwrap();
+
+        let notice = guard.settle().expect("a mode change on the trust surface was not reported");
+        assert!(notice.contains("isolated_signer.py"), "{notice}");
+        assert!(notice.contains("0666") && notice.contains("0644"), "the notice names both modes: {notice}");
+        assert_eq!(mode_of(&verifier), 0o644, "the mode was not put back");
+        assert_eq!(std::fs::read_to_string(&verifier).unwrap(), "TRUSTED = True\n");
+        assert_eq!(std::fs::read_to_string(&gate).unwrap(), "#!/bin/sh\nexit 1\n");
+        assert_eq!(mode_of(&gate), 0o755, "a restored executable came back without its mode");
+        assert_eq!(mode_of(&untouched), 0o640);
+        assert!(!notice.contains("engine_adapter.py"), "a file nobody touched was reported: {notice}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The turn that changed nothing says nothing — a guard that cries wolf gets ignored.
     #[test]
     fn an_untouched_trust_surface_produces_no_notice() {
@@ -4885,6 +4986,23 @@ mod tests {
         assert!(live.exists(), "unknown liveness + fresh → kept by age backstop");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Cockpit read R3-0170: every base the validator accepts yields an endpoint with exactly
+    /// one slash between host and path, and neither call site joins the two as text any more.
+    #[test]
+    fn an_accepted_base_url_with_a_trailing_slash_gives_a_clean_endpoint() {
+        for base in ["http://localhost:11434", "http://localhost:11434/", "http://localhost:11434//"] {
+            assert_eq!(ollama_endpoint(base, "/api/chat"), "http://localhost:11434/api/chat", "{base}");
+            assert_eq!(ollama_endpoint(base, "/api/tags"), "http://localhost:11434/api/tags", "{base}");
+        }
+        assert!(validate_ollama_url("http://localhost:11434/").is_ok(), "the validator accepts this base");
+        let source = include_str!("ai.rs");
+        let production = source.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+        assert_ne!(production.len(), source.len(), "the test module marker moved");
+        let joined_as_text = concat!("format!(\"{url}", "/api/");
+        assert!(!production.contains(joined_as_text), "an endpoint is appended to the base as text again");
+        assert_eq!(production.matches("ollama_endpoint(&url, ").count(), 2);
     }
 
     #[test]

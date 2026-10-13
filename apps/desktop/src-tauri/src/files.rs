@@ -407,6 +407,12 @@ fn write_text(path: &Path, content: &str) -> Result<(), String> {
     if !meta.file_type().is_file() {
         return Err("not an editable file".to_string());
     }
+    // A file the user made read-only is not replaced (cockpit read R3-0179). The write below is
+    // a temporary file renamed over the target, and a rename asks the DIRECTORY for permission,
+    // never the file — so nothing else here would notice. Decided before the temporary exists.
+    if meta.permissions().readonly() {
+        return Err("the file is read-only".to_string());
+    }
     let parent = path
         .parent()
         .ok_or_else(|| fs_err("cannot write file", path, &"no parent directory"))?;
@@ -532,6 +538,36 @@ mod tests {
         assert_eq!(cut.entries.len(), 3);
         assert!(cut.truncated, "an over-cap listing must be flagged truncated");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Cockpit read R3-0179. The write goes to a temporary file that is renamed over the
+    /// target, and a rename needs write permission on the DIRECTORY, not on the file — so a
+    /// file the user had made read-only was replaced all the same, and came back read-only with
+    /// other bytes in it. A read-only file is refused, and stays what it was.
+    #[test]
+    fn a_file_the_user_made_read_only_is_not_written_over() {
+        let dir = scratch("readonly-write");
+        let file = dir.join("notes.txt");
+        fs::write(&file, "the user's text").unwrap();
+        let set_readonly = |readonly: bool| {
+            let mut permissions = fs::metadata(&file).unwrap().permissions();
+            permissions.set_readonly(readonly);
+            fs::set_permissions(&file, permissions).unwrap();
+        };
+        set_readonly(true);
+        let outcome = write_text(&file, "something else");
+        let after = fs::read_to_string(&file).unwrap();
+        let still_readonly = fs::metadata(&file).unwrap().permissions().readonly();
+        set_readonly(false); // before any assertion: Windows will not delete a read-only file
+        let why = outcome.expect_err("a read-only file was written over");
+        assert!(why.contains("read-only"), "{why}");
+        assert_eq!(after, "the user's text");
+        assert!(still_readonly, "the refusal changed the file's permissions");
+        // Nothing of the attempt is left beside it, and a writable file is still written.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1, "a temporary file was left behind");
+        write_text(&file, "something else").expect("a writable file is written");
+        assert_eq!(fs::read_to_string(&file).unwrap(), "something else");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Cockpit read R3-0879. The clamp was told ONE home — `HOME` if set, else `USERPROFILE` —

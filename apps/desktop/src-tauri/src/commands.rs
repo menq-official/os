@@ -1629,9 +1629,13 @@ pub enum GovernedDelivery<'a> {
 /// challenge needs a conversation FK and Ask Bro / a run step have no conversation; this one is
 /// `kind = "ask"`, which the UI list excludes, and a held reply is never posted to it.
 fn hidden_ask_conversation(conn: &rusqlite::Connection) -> Result<String, String> {
+    // A read that FAILED is not "there is none" (cockpit read R3-0173). This was `.ok()`, so a
+    // database that could not list the `ask` conversations was answered by creating another
+    // one — and the governed ask was then recorded in a conversation nobody had been using.
     let existing = brops_core::repo::chat::list_conversations(conn, Some("ask"))
-        .ok()
-        .and_then(|v| v.into_iter().next());
+        .map_err(|e| format!("the governed Ask conversation could not be looked up: {e}"))?
+        .into_iter()
+        .next();
     match existing {
         Some(c) => Ok(c.id),
         None => brops_core::repo::chat::create_conversation(
@@ -3335,6 +3339,27 @@ mod tests {
             assert!(err.contains("returned an accept"), "{err}");
         }
         assert_eq!(only_a_block(Err("db".into())).unwrap_err(), "db");
+    }
+
+    // Cockpit read R3-0173. `hidden_ask_conversation` read the `ask` conversations with `.ok()`:
+    // a read that failed was "there is none", and it created another. Here the read fails — one
+    // `ask` row holds bytes where its title should be text — while an insert still works, so the
+    // old code returned a brand-new conversation and left two behind.
+    #[test]
+    fn a_failed_lookup_of_the_ask_conversation_is_an_error_and_creates_nothing() {
+        let conn = brops_core::db::open_in_memory().expect("in-memory db");
+        let first = hidden_ask_conversation(&conn).expect("the first lookup creates it");
+        assert_eq!(hidden_ask_conversation(&conn).as_deref(), Ok(first.as_str()), "and the second adopts it");
+        let asks = |c: &rusqlite::Connection| -> i64 {
+            c.query_row("SELECT COUNT(*) FROM conversations WHERE kind = 'ask'", [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(asks(&conn), 1);
+
+        conn.execute("UPDATE conversations SET title = X'FFFE' WHERE kind = 'ask'", []).unwrap();
+        let outcome = hidden_ask_conversation(&conn);
+        assert!(outcome.is_err(), "a lookup that could not be read returned {outcome:?}");
+        assert!(outcome.unwrap_err().contains("could not be looked up"));
+        assert_eq!(asks(&conn), 1, "a failed lookup created another ask conversation");
     }
 
     // Cockpit read R3-0877. `ask` is the hidden, system-owned conversation kind: the governed
