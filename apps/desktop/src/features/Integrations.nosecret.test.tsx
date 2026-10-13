@@ -195,14 +195,27 @@ describe('Integrations — no external secret crosses this boundary', () => {
   it('there is no field to type a secret into', async () => {
     // The input half, kept beside the output half so the two are read together. A boundary with
     // no way in and a boundary with no way out are different guarantees, and Phase 9 needs both.
+    //
+    // With the declare form OPEN, and over every input the page has. This looped over
+    // `queryAllByRole('textbox')` with the form closed, when the page's one input is the search
+    // field — role `searchbox` — so the loop ran zero times and a password field in the form, or
+    // a field named for a secret, passed.
+    const user = userEvent.setup();
     setup();
     await screen.findByText('GitHub');
-    for (const box of screen.queryAllByRole('textbox')) {
-      const name = (box.getAttribute('aria-label') ?? '') + (box.getAttribute('placeholder') ?? '');
+    await user.click(screen.getByRole('button', { name: /Declare a connector…/ }));
+    const fields = Array.from(document.querySelectorAll('input, textarea, select'));
+    // The search field and the form's name and provider: three, and all of them are looked at.
+    expect(fields).toHaveLength(3);
+    for (const box of fields) {
+      const name = [
+        box.getAttribute('aria-label'), box.getAttribute('placeholder'), box.getAttribute('name'),
+        box.closest('label')?.textContent,
+      ].filter(Boolean).join(' ');
+      expect(name, 'a field with no name at all cannot be checked').not.toBe('');
       expect(SECRET_SHAPED.test(name), `a field named ${name}`).toBe(false);
       expect(box).not.toHaveAttribute('type', 'password');
     }
-    expect(document.querySelector('input[type="password"]')).toBeNull();
   });
 
   it('`I-03`: one byte outside the printable range no longer defeats the decode', () => {

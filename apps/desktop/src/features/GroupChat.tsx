@@ -8,6 +8,8 @@ import { useAsync, established } from '../hooks/useAsync';
 import type { Tone } from '../domain/enums';
 import { Conversations } from './Conversations';
 import { STR } from './GroupChat.strings';
+import { NOT_ESTABLISHED } from './filesModel';
+import { parseTimestamp } from './timestamps';
 import {
   CONSENSUS_RULES, DEFAULT_CONSENSUS_RULE, evaluateConsensus,
   type ConsensusOutcome, type ConsensusReason, type ConsensusRule,
@@ -252,20 +254,6 @@ function RoundCard({ round, verdict, old }: {
 }
 
 /**
- * Who Bro put on this room's asks — the delegation surface, bound to the room the deck has open.
- *
- * It sits at the bottom of the deck rather than as a free-floating panel because the deck is what
- * OWNS the binding: the room selector above chose the room, and the asks the deck sent are the
- * only turns that report a delegation to this window. Nothing here re-derives which room a
- * delegation belongs to — `applyGroupDelegationEvent` already refused anything whose payload names
- * a different conversation, using the direct path's own equality.
- *
- * The cards themselves are `DelegationSurface`, unchanged: the tier/tool distinction, the
- * `enforcement: "none"` scope warning, the stored-ledger probe and its live-only note all come
- * from the finished direct path. The one thing that surface cannot know is that in a group room
- * it is NOT the whole story, so `delegationScopeNote` above it says exactly which turns reach it.
- */
-/**
  * §D's room readout: **participants / handoffs / messages** and `grpElapsed`.
  *
  * Every figure is derived from something this deck already read, and each one that CANNOT be
@@ -275,7 +263,9 @@ function RoundCard({ round, verdict, old }: {
  *
  * Handoffs are the case in question. The delegation trail arrives on the LIVE `StreamEvent`
  * channel while a turn runs; it is not reconstructable from the stored messages. So a room the
- * owner has merely opened shows "—", and the count appears once turns have run in this session.
+ * owner has merely opened shows "—", and the count appears once a turn has run in this session —
+ * `live` — whether or not that turn delegated anything: a turn that ran and handed nothing to
+ * anyone is a measured zero.
  */
 function RoomReadout(
   { room, participants, messageCount, rounds, handoffs, live, L }: {
@@ -291,8 +281,8 @@ function RoomReadout(
     L: (k: Key) => string;
   },
 ) {
-  const started = Number(room.createdAt);
-  const elapsed = Number.isFinite(started) && started > 0
+  const started = parseTimestamp(room.createdAt)?.getTime() ?? null;
+  const elapsed = started !== null && started > 0
     ? formatElapsed(Date.now() - started)
     : null;
   // EVERY figure tests `=== null`, and none tests truthiness — sixth independent audit, `A-07`.
@@ -327,10 +317,6 @@ function RoomReadout(
   );
 }
 
-/** An em dash means "not established" — never a measured zero. */
-const NOT_ESTABLISHED = '—';
-
-
 /** Coarse, honest elapsed: a room open for two days does not need its seconds. NOT exported —
  *  `routes.tsx` lazy-loads this module as a map of components, so a non-component export here
  *  is a type error rather than a style preference. */
@@ -344,6 +330,20 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
+/**
+ * Who Bro put on this room's asks — the delegation surface, bound to the room the deck has open.
+ *
+ * It sits at the bottom of the deck rather than as a free-floating panel because the deck is what
+ * OWNS the binding: the room selector above chose the room, and the asks the deck sent are the
+ * only turns that report a delegation to this window. Nothing here re-derives which room a
+ * delegation belongs to — `applyGroupDelegationEvent` already refused anything whose payload names
+ * a different conversation, using the direct path's own equality.
+ *
+ * The cards themselves are `DelegationSurface`, unchanged: the tier/tool distinction, the
+ * `enforcement: "none"` scope warning, the stored-ledger probe and its live-only note all come
+ * from the finished direct path. The one thing that surface cannot know is that in a group room
+ * it is NOT the whole story, so `delegationScopeNote` above it says exactly which turns reach it.
+ */
 function RoomDelegations({ roomId, state }: { roomId: string; state: GroupDelegations }) {
   const { lang } = useApp();
   const L = (k: Key) => STR[k][lang] ?? STR[k].en;
@@ -459,11 +459,16 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
   // Delegations reported by the asks this deck has sent while it has been mounted, plus the ask
   // each one arrived on. Live only — nothing stores a delegation, and the surface says so.
   const [delegations, setDelegations] = useState<GroupDelegations>(NO_GROUP_DELEGATIONS);
+  // The room whose asks have RUN while it was open here. A delegation frame is one way to know a
+  // turn ran; a turn that ran and delegated nothing is the other, and without this it left the
+  // Handoffs cell on "—" — "not established" — for a zero that had been measured.
+  const [ranIn, setRanIn] = useState<string | null>(null);
   // A different room is a different record. The fold already refuses a frame belonging to another
   // conversation, so this is not what keeps the rooms apart — it is what stops the previous room's
   // cards from lingering under a room that has reported nothing.
   useEffect(() => {
     setDelegations((prev) => (prev === NO_GROUP_DELEGATIONS ? prev : NO_GROUP_DELEGATIONS));
+    setRanIn(null);
     // The same goes for what the previous room's asks failed with. These two were left standing,
     // so "no position was collected from Scout" stayed under a room nobody had asked anything.
     setAskErrors((prev) => (prev.length === 0 ? prev : []));
@@ -497,6 +502,9 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
         roundId: round?.id ?? null,
         question: round?.question ?? null,
       };
+      // An ask that was blocked, errored or threw ran no turn, so it establishes nothing about
+      // handoffs; only one that came back without any of those does.
+      const failedBefore = errors.length;
       try {
         await desktop.streamReply(conversationId, (ev) => {
           if (ev.type === 'error') errors.push({ who: name, detail: ev.message });
@@ -514,6 +522,7 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
             }
           }
         }, name);
+        if (errors.length === failedBefore) setRanIn(conversationId);
       } catch (e: unknown) {
         errors.push({ who: name, detail: e instanceof Error ? e.message : String(e) });
       }
@@ -534,7 +543,7 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
     // The persisted opening message IS the round — `readConsensusTranscript` identifies a round by
     // that message's id and nothing else. Keeping it here is what lets an ask name its round
     // without guessing which round a delegation "probably" belonged to.
-    let opening: { id: string } | null = null;
+    let opening: { id: string };
     try {
       opening = await desktop.postMessage({
         conversationId: roomId,
@@ -552,7 +561,7 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
     const errors = await collect(
       roomId,
       asked,
-      opening ? { id: opening.id, question: sanitizeQuestion(q) } : null,
+      { id: opening.id, question: sanitizeQuestion(q) },
     );
     setAskErrors(errors);
     setBusy(false);
@@ -615,7 +624,7 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
             messageCount={establishedMessages === null ? null : establishedMessages.length}
             rounds={establishedMessages === null ? null : rounds.length}
             handoffs={askTrail(delegations).length}
-            live={delegations !== NO_GROUP_DELEGATIONS}
+            live={delegations !== NO_GROUP_DELEGATIONS || ranIn === room.id}
             L={L}
           />
 
@@ -726,10 +735,10 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
  * Group Chat (Phase 7) — the collaboration hall: the shared conversation workspace,
  * plus the CONSENSUS deck underneath it.
  *
- * The deck carries its own room selector because the workspace above owns its
- * selection privately; "Show this room above" pushes the deck's choice up through
- * the store's deep-link. The one seam still missing is the other direction — see the
- * note in the handoff report.
+ * The deck carries its own room selector because the workspace above keeps its
+ * selection in its own state; "Show this room above" pushes the deck's choice up through
+ * the store's deep-link. Nothing goes the other way: picking a room in the workspace does
+ * not move the deck's selector.
  *
  * What does cross: when the workspace creates or renames a room it says so, and the deck
  * re-reads its list. Two reads of one list are still two reads; they are no longer two answers.

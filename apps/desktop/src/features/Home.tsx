@@ -11,6 +11,7 @@ import { Markdown } from '../components/markdown';
 import { useToast } from '../components/toast';
 import { STR, taskSummary, activitySummary } from './Home.strings';
 import { countOf, percentOf, readList, isUnreadable, type Reading } from './homeMetrics';
+import { parseTimestamp } from './timestamps';
 
 // Real status → aios `.pill` modifier. The pill only re-skins a status that the
 // backend actually returned — it never invents a "verified"/"live" state.
@@ -35,15 +36,6 @@ const FLOW_BUCKETS = 12;
 // Agent statuses that count as engaged. Mirrors the same set the Agents screen
 // treats as working; it classifies real backend statuses, it does not invent one.
 const BUSY_AGENT_STATUSES: ReadonlySet<string> = new Set(['working', 'thinking', 'observing', 'review']);
-
-// Parse an event timestamp (ISO or epoch string) to ms, or null if unparseable.
-// Same honest derivation Activity.tsx uses for its beat timeline.
-function parseTime(raw: string): number | null {
-  const n = Number(raw);
-  const d = new Date(Number.isNaN(n) ? raw : n);
-  const ms = d.getTime();
-  return Number.isNaN(ms) ? null : ms;
-}
 
 export function Home() {
   const { t, setRoute, lang } = useApp();
@@ -109,10 +101,15 @@ export function Home() {
   };
 
   const active = useAsync(() => desktop.listTasksByStatus('active'), []);
-  const approvals = useAsync(
-    () => desktop.listApprovals().then((rows) => rows.filter((a) => a.status === 'pending')),
-    [],
-  );
+  // ONE read of `list_approvals`. The pending list, the pending count and the pending share are
+  // all taken from this answer, so they cannot disagree and cannot fail separately.
+  const allApprovals = useAsync(() => desktop.listApprovals(), []);
+  const approvals = {
+    ...allApprovals,
+    data: allApprovals.data === null
+      ? null
+      : allApprovals.data.filter((a) => a.status === 'pending'),
+  };
   const agents = useAsync(() => desktop.listAgents(), []);
   const projects = useAsync(() => desktop.listProjects(), []);
 
@@ -120,7 +117,6 @@ export function Home() {
   // plain list command; nothing here fabricates a value the backend didn't return.
   const allTasks = useAsync(() => desktop.listTasks(), []);
   const activity = useAsync(() => desktop.listActivity(), []);
-  const allApprovals = useAsync(() => desktop.listApprovals(), []);
 
   // Page-local trilingual labels for the new instruments, sourced from
   // Home.strings. `t()` still serves every shared dict key; L() resolves the
@@ -171,11 +167,11 @@ export function Home() {
   }, [agents.data, lang]);
 
   // Recent-activity throughput — real events bucketed into equal time windows across
-  // their own span (same parseTime derivation as Activity's beatline).
+  // their own span, each time read by the shared `parseTimestamp`.
   const flow = useMemo(() => {
     const rows = activity.data ?? [];
     const times = rows
-      .map((e) => parseTime(e.createdAt))
+      .map((e) => parseTimestamp(e.createdAt)?.getTime() ?? null)
       .filter((n): n is number => n != null)
       .sort((a, b) => a - b);
     // T-057: how many of the plotted events are FABRICATED. Counted here rather
@@ -183,7 +179,7 @@ export function Home() {
     // and the honest fix is to draw the same line and tell the reader what is in it.
     // Over the SAME rows the total counts: a seeded row whose time cannot be read is not on the
     // line, and was still counted as one "of them".
-    const seeded = rows.filter((e) => e.source === 'seed' && parseTime(e.createdAt) != null).length;
+    const seeded = rows.filter((e) => e.source === 'seed' && parseTimestamp(e.createdAt) != null).length;
     if (times.length === 0)
       return { points: [] as { label: string; value: number }[], total: 0, peak: 0, seeded: 0 };
     const min = times[0];

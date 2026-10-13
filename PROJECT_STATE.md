@@ -11,9 +11,9 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #460 · branch `ck-m59`** (base `main`, tip `8be96f8`, task T-145).
+> **⏭️ CURRENT ACTIVE: PR #461 · branch `ck-m62`** (base `main`, tip `32032c7`, task T-145).
 >
-> cockpit read, governed submit and IPC
+> cockpit read, GroupChat Home Integrations
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
@@ -45,7 +45,7 @@ Each row carries the date it was measured, because they are not measured togethe
 |---|---|
 | engine (Python) · 2026-09-21 | not re-measured |
 | `tools/` self-tests · 2026-10-13 | 1832 OK; contrast gate 98 pairs |
-| frontend · 2026-10-14 | tsc clean, 1286 / 88 files, a11y 82 |
+| frontend · 2026-10-14 | tsc clean, 1294 / 88 files, a11y 82 |
 | **Debian** | |
 | engine (Python), non-root, Debian 13 · 2026-10-13 | 2741 OK, 17 skipped |
 | Rust, 10 crates · 2026-10-14 | 1644 passed, 1 ignored (needs root; CI runs it) |

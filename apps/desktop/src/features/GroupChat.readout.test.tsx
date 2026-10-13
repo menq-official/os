@@ -10,6 +10,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { GroupChat } from './GroupChat';
+import { STR } from './GroupChat.strings';
 
 /**
  * §D's room readout — *"consensus readout (participants/handoffs/messages/consensus %)"* and
@@ -42,8 +43,10 @@ function mount(over: Record<string, unknown> = {}) {
   return render(<AppProvider><ToastProvider><GroupChat /></ToastProvider></AppProvider>);
 }
 
-const readout = () => screen.getByRole('group', { name: /room readout|սրահի|сводка/i })
-  ?? screen.getByLabelText(/room readout/i);
+/** A readout label in whichever language the page is in — read from the strings file, so a
+ *  matcher cannot name a word the page does not have. */
+const labelOf = (k: keyof typeof STR) =>
+  new RegExp(`^(?:${Object.values(STR[k]).join('|')})$`);
 
 /** The value cell that follows a given label, by walking the description list. */
 function valueFor(label: RegExp): string {
@@ -133,7 +136,7 @@ describe('GroupChat — the room readout counts only what it can establish', () 
     render(<AppProvider><ToastProvider><GroupChat /></ToastProvider></AppProvider>);
     await waitFor(() => expect(valueFor(/PARTICIPANT/i)).toBe('2'));
     expect(valueFor(/MESSAGE/i)).toBe('—');
-    expect(valueFor(/ROUND|ՇՐՋԱՆ|РАУНД/i)).toBe('—');
+    expect(valueFor(labelOf('readoutRounds'))).toBe('—');
   });
 
   it('a room with no messages reports zero, because that IS established', async () => {
@@ -160,6 +163,34 @@ describe('GroupChat — the room readout counts only what it can establish', () 
     render(<AppProvider><ToastProvider><GroupChat /></ToastProvider></AppProvider>);
     await waitFor(() => expect(screen.getByLabelText(/room readout/i)).toBeInTheDocument());
     expect(valueFor(/OPEN FOR|ԲԱՑ|ОТКРЫТА/i)).toBe('—');
+  });
+
+  it('a createdAt in ISO form is read by the shared parser, like every other page reads one', async () => {
+    // `Number('2026-…')` is NaN, so the readout's own conversion showed "—" for a time the
+    // shared `parseTimestamp` reads.
+    const iso = new Date(Date.now() - 3 * 60 * 60 * 1000 - 60_000).toISOString();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'list_conversations') return Promise.resolve([{ ...ROOM, createdAt: iso }]);
+      if (cmd === 'list_conversation_participants') return Promise.resolve(['Bro']);
+      return Promise.resolve([]);
+    });
+    render(<AppProvider><ToastProvider><GroupChat /></ToastProvider></AppProvider>);
+    await waitFor(() => expect(valueFor(/PARTICIPANT/i)).toBe('1'));
+    expect(valueFor(labelOf('readoutElapsed'))).toMatch(/^3h \d+m$/);
+  });
+
+  it('a blank or zero createdAt is still not a duration', async () => {
+    for (const createdAt of ['', '0']) {
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === 'list_conversations') return Promise.resolve([{ ...ROOM, createdAt }]);
+        if (cmd === 'list_conversation_participants') return Promise.resolve(['Bro']);
+        return Promise.resolve([]);
+      });
+      const view = render(<AppProvider><ToastProvider><GroupChat /></ToastProvider></AppProvider>);
+      await waitFor(() => expect(valueFor(/PARTICIPANT/i)).toBe('1'));
+      expect(valueFor(labelOf('readoutElapsed')), JSON.stringify(createdAt)).toBe('—');
+      view.unmount();
+    }
   });
 
   it('`T-040`: the raised asyncUtilTimeout is actually in force', async () => {
@@ -203,7 +234,78 @@ describe('GroupChat — the room readout counts only what it can establish', () 
     expect(dl.tagName).toBe('DL');
     // Every figure is paired with its term, so a screen reader never reads a bare number.
     expect(within(dl).getAllByRole('term').length).toBe(within(dl).getAllByRole('definition').length);
-    void readout;
+  });
+});
+
+// The Handoffs cell left "—" only when a delegation frame arrived, so an ask that ran and handed
+// nothing to anyone — a measured zero — was shown as "not established" for good.
+describe('GroupChat — handoffs after this room\'s asks have run', () => {
+  /** What the backend pushes on the `stream_reply` channel for each ask. */
+  function mountAsking(frames: Array<Record<string, unknown>>, reply: () => Promise<unknown> = () => Promise.resolve(null)) {
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      const a = (args ?? {}) as { body?: string; onEvent?: { onmessage: ((e: unknown) => void) | null } };
+      if (cmd === 'list_conversations') return Promise.resolve([ROOM, { ...ROOM, id: 'g-2', title: 'Release review' }]);
+      if (cmd === 'list_conversation_participants') return Promise.resolve(['Auditor']);
+      if (cmd === 'post_user_message') {
+        return Promise.resolve({
+          id: 'open-1', conversationId: 'g-1', role: 'user', author: 'You',
+          body: String(a.body ?? ''), createdAt: '1700000000000', receipt: null,
+        });
+      }
+      if (cmd === 'stream_reply') {
+        for (const frame of frames) a.onEvent?.onmessage?.(frame);
+        return reply();
+      }
+      return Promise.resolve([]);
+    });
+    return render(<AppProvider><ToastProvider><GroupChat /></ToastProvider></AppProvider>);
+  }
+
+  async function ask() {
+    await waitFor(() => expect(valueFor(/PARTICIPANT/i)).toBe('1'));
+    expect(valueFor(labelOf('readoutHandoffs'))).toBe('—');
+    fireEvent.change(screen.getByLabelText(STR.questionLabel.en), { target: { value: 'Ship it?' } });
+    const open = screen.getByRole('button', { name: STR.openRound.en });
+    await waitFor(() => expect(open).toBeEnabled());
+    fireEvent.click(open);
+    await waitFor(() => expect(invokeMock.mock.calls.some((c) => c[0] === 'stream_reply')).toBe(true));
+    // The ask is over when the button stops saying "opening".
+    await waitFor(() => expect(screen.getByRole('button', { name: STR.openRound.en })).toBeEnabled());
+  }
+
+  it('an ask that ran and delegated nothing is zero handoffs, a measured zero', async () => {
+    mountAsking([{ type: 'delta', text: 'POSITION: YES' }]);
+    await ask();
+    await waitFor(() => expect(valueFor(labelOf('readoutHandoffs'))).toBe('0'));
+  });
+
+  it('the zero belongs to the room that was asked, and does not survive leaving it', async () => {
+    mountAsking([{ type: 'delta', text: 'POSITION: YES' }]);
+    await ask();
+    await waitFor(() => expect(valueFor(labelOf('readoutHandoffs'))).toBe('0'));
+    const pickRoom = (id: string) =>
+      fireEvent.change(screen.getByLabelText(STR.roomLabel.en), { target: { value: id } });
+    pickRoom('g-2');
+    await waitFor(() => expect(valueFor(labelOf('readoutHandoffs'))).toBe('—'));
+    // Back in the first room: what its asks reported was dropped with the room, so the count is
+    // no longer something this window can state.
+    pickRoom('g-1');
+    await waitFor(() => expect(valueFor(/PARTICIPANT/i)).toBe('1'));
+    expect(valueFor(labelOf('readoutHandoffs'))).toBe('—');
+  });
+
+  it('an ask the wall blocked ran no turn, so handoffs stay not established', async () => {
+    mountAsking([{ type: 'blocked', reason: 'governed_verification_unconfigured' }]);
+    await ask();
+    await screen.findByText(/governed_verification_unconfigured/);
+    expect(valueFor(labelOf('readoutHandoffs'))).toBe('—');
+  });
+
+  it('an ask that failed ran no turn either', async () => {
+    mountAsking([], () => Promise.reject(new Error('channel closed')));
+    await ask();
+    await screen.findByText(/channel closed/);
+    expect(valueFor(labelOf('readoutHandoffs'))).toBe('—');
   });
 });
 

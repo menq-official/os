@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Integration } from '../domain/entities';
 import {
   enablementOf, credentialCustodyOf, verdictOf, isGenuinelyConnected,
-  connectorStateOf, summarize, UNTESTED, isAnswered,
+  connectorStateOf, summarize, UNTESTED,
   type Reachability,
 } from './integrationsModel';
 
@@ -86,16 +86,6 @@ describe('the verdict can only reach connected_verified through a real check', (
   });
 });
 
-describe('isAnswered', () => {
-  it('is true only for a probe that really got an answer either way', () => {
-    expect(isAnswered(reachable)).toBe(true);
-    expect(isAnswered(unreachable)).toBe(true);
-    expect(isAnswered(UNTESTED)).toBe(false);
-    expect(isAnswered(unsupported)).toBe(false);
-    expect(isAnswered(indeterminate)).toBe(false);
-  });
-});
-
 describe('page telemetry counts what is true, not what was asked for', () => {
   const states = [
     connectorStateOf(rec({ id: 'a', status: 'connected' }), UNTESTED),
@@ -111,11 +101,7 @@ describe('page telemetry counts what is true, not what was asked for', () => {
     expect(t.total).toBe(6);
     expect(t.enabled).toBe(3);
     expect(t.verifiedConnected).toBe(1);
-    expect(t.enabledUnverified).toBe(1);
-    expect(t.unreachable).toBe(1);
     expect(t.faulted).toBe(1);
-    expect(t.notEnabled).toBe(1);
-    expect(t.unknownStatus).toBe(1);
     expect(t.untested).toBe(4);
   });
 

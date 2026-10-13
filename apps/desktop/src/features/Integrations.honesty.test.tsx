@@ -183,6 +183,12 @@ describe('only a real affirmative answer earns the verified word', () => {
   });
 });
 
+// NO BACKEND IN THIS TREE CAN PRODUCE THIS OUTCOME. `integrations::set_status` (core/src/repo.rs)
+// spends a confirmed grant inside its own transaction, and no command in this build raises one for
+// a connector, so the real answer to Enable is the refusal pinned further down ("enabling a
+// connector is not promised while nothing can approve it"). The mock below resolves instead. What
+// this pins is the copy on the success arm — that it says "enabled locally — not yet verified"
+// and never "connected" — for the day a grant path exists; it is not a description of today.
 describe('enabling records intent and says exactly that', () => {
   it('announces "enabled locally — not yet verified", never "connected"', async () => {
     const user = userEvent.setup();

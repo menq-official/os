@@ -276,13 +276,17 @@
       ]
     },
     "frontend_tests": {
-      "value": 1286,
+      "value": 1294,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-14",
-        "head": "11425df",
+        "head": "c49f041",
         "environments": {
+          "Debian 13 (trixie) native @ c49f041 + four more groups of the cockpit read; Handoffs shows a measured zero after an ask that ran": {
+            "ran": 1294,
+            "skipped": 0
+          },
           "Debian 13 (trixie) native @ 11425df + five more groups of the cockpit read; no control of a conversation row reaches delete_conversation": {
             "ran": 1286,
             "skipped": 0

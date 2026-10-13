@@ -148,6 +148,45 @@ describe('Home — the seeded count is taken over the rows that are plotted', ()
   });
 });
 
+// R3-0790: Home kept its own copy of the timestamp conversion, without the shared parser's blank
+// guard: `Number('')` is 0, so an event with no recorded time was plotted at 1970 and counted.
+describe('Home — an event with no recorded time is not on the line', () => {
+  it('a blank createdAt is not counted as a plotted event', async () => {
+    const rows = events(5, 0);
+    rows[0] = { ...rows[0], createdAt: '' };
+    setup(rows);
+    await waitFor(() => expect(screen.getByText(/4 recent events/)).toBeTruthy());
+    expect(screen.queryByText(/5 recent events/)).toBeNull();
+  });
+});
+
+// R3-0791: the pending list and the pending share came from two separate `list_approvals` calls,
+// so one could fail, or answer differently, while the other stood.
+describe('Home — approvals are read once', () => {
+  const approval = (id: string, actionType: string, status: string) => ({
+    id, actionType, target: 't', level: 'A2', riskLevel: 'low', status, requestedBy: 'webview:main',
+    decisionNote: null, entityType: null, entityId: null, requestedAt: '1700000000000', decidedAt: null,
+  });
+
+  it('one list_approvals call feeds the pending list and the pending share', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'list_approvals') {
+        return Promise.resolve([approval('ap-1', 'Send email', 'pending'), approval('ap-2', 'Delete repo', 'approved')]);
+      }
+      return Promise.resolve([]);
+    });
+    render(<AppProvider><ToastProvider><Home /></ToastProvider></AppProvider>);
+    // The list shows the pending one only…
+    await waitFor(() => expect(screen.getByText('Send email')).toBeInTheDocument());
+    expect(screen.queryByText('Delete repo')).toBeNull();
+    // …the share is taken over both rows of the same answer…
+    const share = screen.getByText(HOME_STR.approvalsPending.en).closest('.hx-ratio') as HTMLElement;
+    expect(share.querySelector('b')).toHaveTextContent('50%');
+    // …and the backend was asked once.
+    expect(invokeMock.mock.calls.filter((c) => c[0] === 'list_approvals')).toHaveLength(1);
+  });
+});
+
 // R3-0246: one sentence — the page subtitle — was printed four times in the hero: as the
 // eyebrow, as the subtitle, as the caption over the counts, and as the counts group's name.
 describe('Home — the subtitle is said once', () => {

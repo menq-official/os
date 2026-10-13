@@ -41,11 +41,6 @@
 
 import type { Integration } from '../domain/entities';
 
-/** The statuses the Rust store accepts (domain.rs `INTEGRATION_STATUSES`). Anything
- *  else arriving over IPC is unrecognized and must fail closed, never be read as on. */
-export const RECORD_STATUSES = ['disconnected', 'connected', 'error'] as const;
-export type RecordStatus = (typeof RECORD_STATUSES)[number];
-
 // ── 2. Enablement — what the local record says ───────────────────────────────────────
 
 /**
@@ -122,11 +117,6 @@ export interface Reachability {
 /** The starting state of every connector: nothing has been contacted. */
 export const UNTESTED: Reachability = { state: 'untested' };
 
-/** True only for a probe that really ran and really got an answer, either way. */
-export function isAnswered(r: Reachability): boolean {
-  return r.state === 'reachable' || r.state === 'unreachable';
-}
-
 // ── Composite verdict ────────────────────────────────────────────────────────────────
 
 /**
@@ -193,15 +183,9 @@ export interface Summary {
   total: number;
   /** Locally enabled — the owner's recorded intent, not a proven link. */
   enabled: number;
-  notEnabled: number;
   faulted: number;
-  unknownStatus: number;
   /** Enabled AND probe-verified. The ONLY count that may drive a live affordance. */
   verifiedConnected: number;
-  /** Enabled but never actually contacted (or the probe could not answer). */
-  enabledUnverified: number;
-  /** Enabled and a real probe said the channel did not answer. */
-  unreachable: number;
   /** No probe has run at all — across every connector, whatever its enablement. */
   untested: number;
   /** Drives the page's live indicator. False whenever nothing is proven. */
@@ -214,12 +198,8 @@ export function summarize(states: readonly ConnectorState[]): Summary {
   return {
     total: states.length,
     enabled: count((s) => s.enablement === 'enabled'),
-    notEnabled: count((s) => s.enablement === 'not_enabled'),
     faulted: count((s) => s.enablement === 'faulted'),
-    unknownStatus: count((s) => s.enablement === 'unknown'),
     verifiedConnected,
-    enabledUnverified: count((s) => s.verdict === 'enabled_unverified'),
-    unreachable: count((s) => s.verdict === 'unreachable'),
     untested: count((s) => s.reachability.state === 'untested'),
     anyVerifiedConnected: verifiedConnected > 0,
   };
