@@ -635,6 +635,17 @@ impl<'de> Deserialize<'de> for StrictStringMap {
     }
 }
 
+/// One spelling per number: ASCII digits, no sign, no leading zero (but `0` itself), inside
+/// `u64`. `str::parse::<u64>` alone accepts `+2000` and `0002000`; the field is a STRING, so the
+/// canonical-bytes check sees those as canonical and one instant had many signed spellings
+/// (cockpit read R3-0124).
+fn is_canonical_u64(text: &str) -> bool {
+    !text.is_empty()
+        && text.bytes().all(|b| b.is_ascii_digit())
+        && (text == "0" || !text.starts_with('0'))
+        && text.parse::<u64>().is_ok()
+}
+
 fn is_lower_hex64(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
@@ -703,7 +714,7 @@ pub fn parse_strict(envelope_jcs_b64: &str) -> Result<Parsed, ReceiptError> {
         }
     }
     for f in TIMESTAMP_FIELDS {
-        if map.get(*f).unwrap().parse::<u64>().is_err() {
+        if !is_canonical_u64(map.get(*f).unwrap()) {
             return Err(ReceiptError::NotTimestamp(f));
         }
     }
@@ -1030,6 +1041,36 @@ mod tests {
         fields.insert("requested_at".into(), "not-a-number".into());
         let (env, _sig) = wire(&fields, &key);
         assert_eq!(parse_strict(&env), Err(ReceiptError::NotTimestamp("requested_at")));
+    }
+
+    /// Cockpit read R3-0124. A timestamp was anything `str::parse::<u64>` accepts, and that
+    /// accepts a leading `+` and any number of leading zeros. The fields are strings, so the
+    /// canonical-bytes check two steps later sees `"+2000"` as canonical: one instant had many
+    /// signed spellings, and two receipts for the same instant could differ in their bytes. A
+    /// timestamp is ASCII digits with no leading zero.
+    #[test]
+    fn a_timestamp_has_one_spelling() {
+        let key = signing_key(7);
+        for bad in ["+2000", "0002000", "02000", " 2000", "2000 ", "2_000", "٢٠٠٠", "", "18446744073709551616"] {
+            for field in ["requested_at", "completed_at"] {
+                let mut fields = valid_fields();
+                fields.insert(field.into(), bad.into());
+                let (env, _sig) = wire(&fields, &key);
+                match parse_strict(&env) {
+                    Err(ReceiptError::NotTimestamp(f)) => assert_eq!(f, field, "{bad:?}"),
+                    // An empty value is refused one step earlier, by its own name.
+                    Err(ReceiptError::EmptyField(f)) if bad.is_empty() => assert_eq!(f, field),
+                    other => panic!("{field} = {bad:?} was read as a timestamp: {other:?}"),
+                }
+            }
+        }
+        // Zero and the largest u64 are each one spelling and are accepted as timestamps.
+        for good in ["0", "18446744073709551615"] {
+            let mut fields = valid_fields();
+            fields.insert("requested_at".into(), good.into());
+            let (env, _sig) = wire(&fields, &key);
+            assert!(!matches!(parse_strict(&env), Err(ReceiptError::NotTimestamp(_))), "{good}");
+        }
     }
 
     #[test]

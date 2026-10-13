@@ -61,17 +61,43 @@ pub fn id() -> String {
 /// Current timestamp as milliseconds since the Unix epoch, rendered as text.
 /// The fixed 13-digit width keeps lexicographic `ORDER BY … DESC` correct (all
 /// timestamp columns store this same format — never mix in ISO-8601 text).
+///
+/// A clock that cannot be read — one set before the epoch — stamps the epoch itself, and at the
+/// SAME width: `0000000000000`. It used to be the one-character `"0"`, which is not the format
+/// the sentence above promises (cockpit read R3-0119). The row sorts oldest, which is the honest
+/// place for a time nobody could read; it is not a refusal, and a caller that needs one has to
+/// read the clock itself.
 pub fn now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    ms.to_string()
+    render_epoch_ms(ms)
+}
+
+/// [`now`]'s format: at least 13 digits, zero-padded on the left.
+fn render_epoch_ms(ms: u128) -> String {
+    format!("{ms:013}")
 }
 
 #[cfg(test)]
 mod tests {
+    /// Cockpit read R3-0119: every timestamp `now` can write is the fixed width its doc states,
+    /// the unreadable-clock value included, so text order is time order.
+    #[test]
+    fn a_timestamp_is_thirteen_digits_whatever_the_clock_said() {
+        assert_eq!(super::render_epoch_ms(0), "0000000000000");
+        assert_eq!(super::render_epoch_ms(7), "0000000000007");
+        assert_eq!(super::render_epoch_ms(1_754_000_000_000), "1754000000000");
+        let mut written = [1_754_000_000_000u128, 0, 999, 1_000_000_000_000]
+            .map(super::render_epoch_ms)
+            .to_vec();
+        written.sort();
+        assert_eq!(written, ["0000000000000", "0000000000999", "1000000000000", "1754000000000"]);
+        assert_eq!(super::now().len(), 13);
+    }
+
     use super::*;
 
     fn conn() -> rusqlite::Connection {

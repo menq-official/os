@@ -890,6 +890,12 @@ pub fn mark_published(
 // Signer-owned durable evidence-head floor CAS (§5 step 11 / §7 P1-7).
 // ---------------------------------------------------------------------------
 
+/// 64 hex characters: what a `final_event_hash` is, wherever it comes from — a presented head
+/// ([`EvidenceHead::validate`]) or a row read back from the floor.
+fn is_hex64(text: &str) -> bool {
+    text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// A validated evidence head presented to the floor CAS (§7). `head_sequence` is the re-ANCHOR/re-SIGN
 /// counter (the monotonic epoch); the chain-content identity is `final_event_hash` with
 /// `event_count`/`last_sequence` (`last_sequence == event_count`, 1-based).
@@ -919,9 +925,7 @@ impl EvidenceHead {
         if self.last_sequence != self.event_count {
             return Err(LedgerError::InvalidHead("last_sequence != event_count"));
         }
-        if self.final_event_hash.len() != 64
-            || !self.final_event_hash.bytes().all(|b| b.is_ascii_hexdigit())
-        {
+        if !is_hex64(&self.final_event_hash) {
             return Err(LedgerError::InvalidHead("final_event_hash not 64-hex"));
         }
         Ok(())
@@ -1018,7 +1022,10 @@ fn evidence_floor_cas_body(
 
     // Fail closed on a corrupt stored row (startup-integrity, scoped to the rows we touch).
     fn refuse_corrupt(highest: i64, ec: i64, ls: i64, feh: &str) -> Result<(), LedgerError> {
-        if highest < 1 || ec < 1 || ls < 1 || ls != ec || feh.len() != 64 {
+        // The hash by the SAME rule a presented head is held to (cockpit read R3-0146). This
+        // asked only for 64 characters, so a stored value `validate` would refuse outright was
+        // read back as intact.
+        if highest < 1 || ec < 1 || ls < 1 || ls != ec || !is_hex64(feh) {
             return Err(LedgerError::Corrupt("evidence_head_floor"));
         }
         Ok(())
@@ -1755,6 +1762,13 @@ mod tests {
             evidence_floor_cas(&conn, &head(5, 3, "not-hex"), 1),
             Err(LedgerError::InvalidHead(_))
         ));
+        // `"not-hex"` above is seven characters: it is refused for its LENGTH. The hex half of
+        // the rule was held by nothing until a sweep of R3-0146 removed it and this test stayed
+        // green. 64 characters that are not hex, and the reason by name.
+        assert!(matches!(
+            evidence_floor_cas(&conn, &head(5, 3, &"z".repeat(64)), 1),
+            Err(LedgerError::InvalidHead("final_event_hash not 64-hex"))
+        ));
         let mut mismatched = head(5, 3, H64);
         mismatched.last_sequence = 99; // last_sequence != event_count
         assert!(matches!(
@@ -1843,6 +1857,41 @@ mod tests {
         conn.execute_batch(
             "UPDATE governed_evidence_head_floor SET final_event_hash = 'short' \
              WHERE task_id = 'task-1'",
+        )
+        .unwrap();
+        let mut other = head(100, 3, H64_B);
+        other.task_id = "task-2".into();
+        assert!(matches!(
+            evidence_floor_cas(&conn, &other, 110),
+            Err(LedgerError::Corrupt("evidence_head_floor"))
+        ));
+    }
+
+    /// Cockpit read R3-0146. The stored-row check asked only for 64 characters, so a row whose
+    /// `final_event_hash` is 64 characters of anything passed as intact — while a PRESENTED head
+    /// with the same value is refused by `validate` as not a hash. One rule for both, in both
+    /// places the stored value is read: this task's own row and the install-wide ceiling.
+    #[test]
+    fn a_stored_final_hash_that_is_not_hex_is_a_corrupt_row() {
+        let not_hex = "z".repeat(64);
+        // The row this task holds.
+        let conn = store();
+        evidence_floor_cas(&conn, &head(99, 3, H64), 100).unwrap();
+        conn.execute(
+            "UPDATE governed_evidence_head_floor SET final_event_hash = ?1 WHERE task_id = 'task-1'",
+            [&not_hex],
+        )
+        .unwrap();
+        assert!(matches!(
+            evidence_floor_cas(&conn, &head(100, 4, H64_B), 110),
+            Err(LedgerError::Corrupt("evidence_head_floor"))
+        ));
+        // The ceiling, held by another task's bucket.
+        let conn = store();
+        evidence_floor_cas(&conn, &head(99, 3, H64), 100).unwrap();
+        conn.execute(
+            "UPDATE governed_evidence_head_floor SET final_event_hash = ?1 WHERE task_id = 'task-1'",
+            [&not_hex],
         )
         .unwrap();
         let mut other = head(100, 3, H64_B);

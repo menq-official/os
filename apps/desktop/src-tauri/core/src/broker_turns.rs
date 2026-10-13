@@ -398,9 +398,15 @@ impl DurableAcceptanceLedger {
     /// The claim body, run INSIDE the owned `BEGIN IMMEDIATE`. Returning `Err` means the caller
     /// ROLLBACKs, so a refusal writes nothing at all.
     fn claim_body(&self, receipt_id: &str, request_nonce: &str, now_ms: i64) -> Result<(), LedgerRefusal> {
+        // An EMPTY id is not a replay (cockpit read R3-0108). The tables' length CHECK made the
+        // `INSERT OR IGNORE` below write no row for one, and "no row" is how a replay is
+        // recognised — so a malformed claim on a fresh ledger was named a replay attack. It is a
+        // fault of the claim, decided before either table is touched.
+        if receipt_id.is_empty() || request_nonce.is_empty() {
+            return Err(LedgerRefusal::Fault);
+        }
         // §7.1(d). `INSERT OR IGNORE` + rows_affected IS the compare-and-set: 0 rows means the
-        // PRIMARY KEY already held this receipt_id (or the length CHECK rejected an empty one) — either
-        // way this receipt does not get to be accepted again.
+        // PRIMARY KEY already held this receipt_id — this receipt does not get to be accepted again.
         let inserted = self
             .conn
             .execute(
@@ -778,6 +784,22 @@ mod tests {
             Ok(()),
             "the rolled-back receipt_id must still be free (all-or-nothing), even after a restart"
         );
+    }
+
+    /// Cockpit read R3-0108. An empty `receipt_id` or `request_nonce` is not a replay of
+    /// anything: nothing was ever accepted under it. The table's length CHECK made the
+    /// `INSERT OR IGNORE` write no row, and "no row written" is how a replay is recognised — so
+    /// a malformed claim was reported as an attack that had not happened, on a fresh ledger.
+    /// It is a fault, and it writes nothing.
+    #[test]
+    fn an_empty_identifier_is_a_fault_and_never_a_replay() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut l = file_ledger(&dir.path().join("broker.db"));
+        assert_eq!(l.claim("", "n-1"), Err(LedgerRefusal::Fault), "an empty receipt_id on a fresh ledger");
+        assert_eq!(l.claim("r-1", ""), Err(LedgerRefusal::Fault), "an empty nonce on a fresh ledger");
+        // Neither refusal left anything behind: the same ids, well formed, are claimed once.
+        assert_eq!(l.claim("r-1", "n-1"), Ok(()));
+        assert_eq!(l.claim("r-1", "n-2"), Err(LedgerRefusal::ReceiptReplay), "a real replay is still one");
     }
 
     #[test]

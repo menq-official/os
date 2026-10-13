@@ -406,6 +406,17 @@ fn parse_read_reply(
         // The refused arm. `output_stream_id`/`seq` are `<same or null>` here, so they are NOT compared:
         // a refusal is allowed to name nothing, and §4.10(f) forbids it to disclose the row's real
         // binding to a caller that failed to present it.
+        //
+        // They are still REQUIRED, with the shape §4.10(f) fixes (cockpit read R3-0113). This arm
+        // read `error.reason` and nothing else, so seven keys of any names — or a "refusal"
+        // carrying a chunk and an `eof` — parsed as a clean refusal. `bytes_b64` and `eof` are
+        // null here; the id is a string or null; the seq a non-negative integer or null.
+        let is_null = |key: &str| obj.get(key).map(Value::is_null).unwrap_or(false);
+        let id_ok = obj.get("output_stream_id").map(|v| v.is_null() || v.is_string()).unwrap_or(false);
+        let seq_ok = obj.get("seq").map(|v| v.is_null() || v.is_u64()).unwrap_or(false);
+        if !(is_null("bytes_b64") && is_null("eof") && id_ok && seq_ok) {
+            return Err(PullError::MalformedReply);
+        }
         let reason = obj
             .get("error")
             .and_then(Value::as_object)
@@ -679,6 +690,55 @@ mod tests {
             "eof": null,
             "error": { "reason": reason },
         })
+    }
+
+    /// Cockpit read R3-0113. A refused reply was read for its `error.reason` and for nothing
+    /// else: seven keys of any names, with bytes in `bytes_b64` or a `true` in `eof`, were a
+    /// clean refusal. §4.10(f) fixes the refused frame — the same seven keys, `bytes_b64` and
+    /// `eof` null, `output_stream_id` and `seq` the request's or null — and a frame that says
+    /// "refused" while carrying a chunk is not one this side can read as either.
+    #[test]
+    fn a_refused_reply_is_the_fixed_frame_or_it_is_malformed() {
+        let env = envelope(b"", "");
+        let cap = OutputStreamCapability::from_envelope(TOKEN, &env).unwrap();
+        // The fixed frame, with the id and seq null or echoed, is a refusal.
+        assert_eq!(
+            parse_read_reply(&refused_reply("stream_expired"), &cap, 0),
+            Err(PullError::Refused(StreamRefusal::StreamExpired))
+        );
+        let mut echoed = refused_reply("stream_unknown");
+        echoed["output_stream_id"] = json!(TOKEN);
+        echoed["seq"] = json!(0);
+        assert_eq!(
+            parse_read_reply(&echoed, &cap, 0),
+            Err(PullError::Refused(StreamRefusal::StreamUnknown))
+        );
+
+        let mutate = |f: &dyn Fn(&mut Value)| {
+            let mut reply = refused_reply("stream_expired");
+            f(&mut reply);
+            reply
+        };
+        for (what, reply) in [
+            ("bytes in a refusal", mutate(&|r| r["bytes_b64"] = json!("AAAA"))),
+            ("an eof in a refusal", mutate(&|r| r["eof"] = json!(true))),
+            ("a false eof in a refusal", mutate(&|r| r["eof"] = json!(false))),
+            ("a seq that is not a number", mutate(&|r| r["seq"] = json!("0"))),
+            ("a negative seq", mutate(&|r| r["seq"] = json!(-1))),
+            ("an id that is not a string", mutate(&|r| r["output_stream_id"] = json!(7))),
+            ("`eof` renamed", mutate(&|r| {
+                let obj = r.as_object_mut().unwrap();
+                let v = obj.remove("eof").unwrap();
+                obj.insert("done".into(), v);
+            })),
+            ("`bytes_b64` renamed", mutate(&|r| {
+                let obj = r.as_object_mut().unwrap();
+                let v = obj.remove("bytes_b64").unwrap();
+                obj.insert("bytes".into(), v);
+            })),
+        ] {
+            assert_eq!(parse_read_reply(&reply, &cap, 0), Err(PullError::MalformedReply), "{what}");
+        }
     }
 
     /// A supervisor that serves the real ranges of `output`, so the loop under test is driven by the
