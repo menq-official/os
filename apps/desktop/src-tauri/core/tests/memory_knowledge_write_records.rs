@@ -79,7 +79,7 @@ fn creating_a_memory_records_it_and_the_row_reads_back_as_recorded() {
 fn pinning_records_an_update_so_a_pin_never_looks_like_tampering() {
     let c = conn();
     let entry = repo::memory::create(&c, new_memory("a"), brops_core::repo::audit::Actor::local_operator()).unwrap();
-    let pinned = repo::memory::set_pinned(&c, &entry.id, true).unwrap();
+    let pinned = repo::memory::set_pinned(&c, &entry.id, true, brops_core::repo::audit::Actor::local_operator()).unwrap();
     assert!(pinned.pinned);
 
     let records = repo::memory::write_records(&c, &entry.id).unwrap();
@@ -151,7 +151,7 @@ fn a_failed_write_records_nothing() {
     assert!(bad.is_err());
     // Deleting a row that does not exist.
     assert!(repo::memory::delete(&c, "nope", brops_core::repo::audit::Actor::local_operator()).is_err());
-    assert!(repo::memory::set_pinned(&c, "nope", true).is_err());
+    assert!(repo::memory::set_pinned(&c, "nope", true, brops_core::repo::audit::Actor::local_operator()).is_err());
 
     assert_eq!(lwr::count(&c).unwrap(), 0, "a refused write must leave no record behind");
 }
@@ -220,7 +220,7 @@ fn memory_and_knowledge_share_one_chain_that_recomputes_end_to_end() {
     let c = conn();
     let m1 = repo::memory::create(&c, new_memory("one"), brops_core::repo::audit::Actor::local_operator()).unwrap();
     let k1 = repo::knowledge::create(&c, new_note("two"), brops_core::repo::audit::Actor::local_operator()).unwrap();
-    repo::memory::set_pinned(&c, &m1.id, true).unwrap();
+    repo::memory::set_pinned(&c, &m1.id, true, brops_core::repo::audit::Actor::local_operator()).unwrap();
     repo::knowledge::delete(&c, &k1.id, brops_core::repo::audit::Actor::local_operator()).unwrap();
     let m2 = repo::memory::create(&c, new_memory("three"), brops_core::repo::audit::Actor::local_operator()).unwrap();
     repo::memory::delete(&c, &m2.id, brops_core::repo::audit::Actor::local_operator()).unwrap();

@@ -1021,7 +1021,7 @@ pub fn create_memory(state: State<AppState>, input: NewMemoryEntry) -> Result<Me
 #[tauri::command]
 pub fn set_memory_pinned(state: State<AppState>, id: String, pinned: bool) -> Result<MemoryEntry, String> {
     let conn = locked(&state)?;
-    repo::memory::set_pinned(&conn, &id, pinned).map_err(|e| e.to_string())
+    repo::memory::set_pinned(&conn, &id, pinned, repo::audit::Actor::local_operator()).map_err(|e| e.to_string())
 }
 
 /// FORBIDDEN (tier L2, `deny-delete-memory`) — see [`forbidden_hard_delete`].

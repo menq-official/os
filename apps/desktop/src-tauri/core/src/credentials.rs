@@ -135,11 +135,16 @@ pub fn unbind(
 ) -> CoreResult<()> {
     let entity = approval_entity_id(bundle_digest, slot_id);
     crate::repo::atomic(conn, |tx| {
-        tx.execute(
+        let removed = tx.execute(
             "DELETE FROM credential_bindings WHERE bundle_digest = ?1 AND slot_id = ?2",
             rusqlite::params![bundle_digest, slot_id],
         )?;
-        audit::record(tx, "credential.unbound", actor, "credential_binding", &entity)?;
+        // The evidence row says a binding WAS removed, so it is written only when one was
+        // (cockpit read R3-0109). Unbinding a slot that holds nothing is still `Ok` — the stop
+        // button must not fail on a slot that is already stopped — and it records nothing.
+        if removed > 0 {
+            audit::record(tx, "credential.unbound", actor, "credential_binding", &entity)?;
+        }
         Ok(())
     })
 }
@@ -185,6 +190,32 @@ mod tests {
     /// A well-formed reference, used wherever a test needs one that is not the
     /// subject of the test.
     const REF: &str = "engine:slack/bot-token";
+
+    /// Cockpit read R3-0109. `unbind` wrote a `credential.unbound` evidence row whether or not
+    /// there was a binding to remove, so the audit table recorded an unbinding that had not
+    /// happened — for a slot nobody had ever bound.
+    #[test]
+    fn unbinding_nothing_records_nothing() {
+        let (conn, digest) = fixture();
+        let unbound = |conn: &Connection| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM audit_events WHERE event_type = 'credential.unbound'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        unbind(&conn, &digest, "never-bound", audit::Actor::local_operator()).unwrap();
+        assert_eq!(unbound(&conn), 0, "an unbind that removed no binding left an evidence row");
+
+        // A real one is still recorded, once — and unbinding it again records nothing more.
+        grant_for(&conn, &digest, "slack_bot");
+        bind(&conn, &digest, "slack_bot", REF, audit::Actor::local_operator()).unwrap();
+        unbind(&conn, &digest, "slack_bot", audit::Actor::local_operator()).unwrap();
+        assert_eq!(unbound(&conn), 1);
+        unbind(&conn, &digest, "slack_bot", audit::Actor::local_operator()).unwrap();
+        assert_eq!(unbound(&conn), 1, "a second unbind of the same slot was recorded again");
+    }
 
     fn fixture() -> (Connection, String) {
         let conn = crate::db::open_in_memory().unwrap();

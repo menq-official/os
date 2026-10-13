@@ -1226,6 +1226,64 @@ mod tests {
         assert!(repo::integrations::set_status(&c, &i.id, "disconnected", crate::repo::audit::Actor::local_operator()).is_err());
     }
 
+    /// Cockpit read R3-0127. `approve_confirmed` turned EVERY failure of its read into "pending
+    /// approval … not found": a database that could not be read, a row that could not be
+    /// decoded. The operator was told the approval did not exist when the truth was that the
+    /// store could not answer. Only "no such row" is "not found".
+    #[test]
+    fn a_store_that_cannot_answer_is_not_an_approval_that_does_not_exist() {
+        let c = conn();
+        // No such row: not found, as before.
+        let missing = repo::approvals::approve_confirmed(
+            &c, "no-such-approval", repo::approvals::NATIVE_CONFIRMER_PRINCIPAL, None, "n", "d",
+            crate::repo::audit::Actor::local_operator(),
+        );
+        assert!(matches!(missing, Err(CoreError::NotFound(_))), "{missing:?}");
+        // A store that cannot be read at all: the table is gone.
+        c.execute_batch("PRAGMA foreign_keys = OFF; ALTER TABLE approvals RENAME TO approvals_moved;")
+            .unwrap();
+        let broken = repo::approvals::approve_confirmed(
+            &c, "no-such-approval", repo::approvals::NATIVE_CONFIRMER_PRINCIPAL, None, "n", "d",
+            crate::repo::audit::Actor::local_operator(),
+        );
+        match broken {
+            Err(CoreError::Sqlite(e)) => assert!(e.to_string().contains("approvals"), "{e}"),
+            other => panic!("a store with no approvals table answered: {other:?}"),
+        }
+    }
+
+    /// Cockpit read R3-0129. Creating and deleting a memory entry each leave an evidence row;
+    /// pinning one — a content change, recorded in the write chain — left none, so the audit
+    /// table could not say who pinned what. Both directions are recorded, with the actor, in
+    /// the transaction that makes the change; a pin that changes no row records nothing.
+    #[test]
+    fn pinning_and_unpinning_a_memory_entry_are_audited() {
+        let c = conn();
+        let m = repo::memory::create(&c, NewMemoryEntry { scope: "global".into(), kind: "note".into(), content: "x".into() }, crate::repo::audit::Actor::local_operator()).unwrap();
+        let rows = |c: &rusqlite::Connection| -> Vec<(String, String, String, String)> {
+            c.prepare("SELECT event_type, actor_type, actor_id, entity_id FROM audit_events \
+                       WHERE event_type LIKE 'memory.%pinned' ORDER BY rowid")
+                .unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        repo::memory::set_pinned(&c, &m.id, true, crate::repo::audit::Actor::local_operator()).unwrap();
+        repo::memory::set_pinned(&c, &m.id, false, crate::repo::audit::Actor::scheduler()).unwrap();
+        let op = crate::repo::audit::LOCAL_OPERATOR.to_string();
+        assert_eq!(
+            rows(&c),
+            vec![
+                ("memory.pinned".to_string(), "user".to_string(), op, m.id.clone()),
+                ("memory.unpinned".to_string(), "system".to_string(), "scheduler".to_string(), m.id.clone()),
+            ]
+        );
+        // An id that names no entry is an error and leaves no evidence row.
+        assert!(repo::memory::set_pinned(&c, "no-such-entry", true, crate::repo::audit::Actor::local_operator()).is_err());
+        assert_eq!(rows(&c).len(), 2);
+    }
+
     // --- T-052: audit attribution -------------------------------------------------
 
     #[test]
@@ -1455,7 +1513,7 @@ mod tests {
         // `pinned DESC, updated_at DESC`, and `set_pinned` bumps `updated_at` — so pinning
         // the newer entry (which this test used to do, under a comment saying "older")
         // sorts it first by recency alone, and the test passes with `pinned DESC` deleted.
-        repo::memory::set_pinned(&c, &first.id, true).unwrap();
+        repo::memory::set_pinned(&c, &first.id, true, crate::repo::audit::Actor::local_operator()).unwrap();
         c.execute(
             "UPDATE memory_entries SET updated_at = '9999999999999' WHERE id = ?1",
             [&second.id],

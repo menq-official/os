@@ -881,9 +881,17 @@ pub mod approvals {
             });
         }
         super::atomic(conn, |tx| {
+            // Only "no such row" is "not found" (cockpit read R3-0127). This mapped EVERY error
+            // of the read to it, so a store that could not be read, or a row that could not be
+            // decoded, told the operator the approval did not exist.
             let a: Approval = tx
                 .query_row("SELECT * FROM approvals WHERE id = ?1", [id], map)
-                .map_err(|_| CoreError::NotFound(format!("pending approval {id}")))?;
+                .map_err(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => {
+                        CoreError::NotFound(format!("pending approval {id}"))
+                    }
+                    other => CoreError::Sqlite(other),
+                })?;
             if a.status != "pending" {
                 return Err(CoreError::NotFound(format!("pending approval {id}")));
             }
@@ -1862,7 +1870,11 @@ pub mod memory {
     /// Pinning is a real content change (`pinned` is part of the recorded digest), so
     /// it is now atomic and records an `updated` write record — otherwise a pin toggle
     /// would silently leave every entry looking diverged.
-    pub fn set_pinned(conn: &Connection, id: &str, pinned: bool) -> CoreResult<MemoryEntry> {
+    ///
+    /// And it is AUDITED (cockpit read R3-0129): `create` and `delete` each left an evidence
+    /// row and this left none, so the audit table could not say who pinned an entry. The event
+    /// is `memory.pinned` or `memory.unpinned`, written in the same transaction as the change.
+    pub fn set_pinned(conn: &Connection, id: &str, pinned: bool, actor: audit::Actor<'_>) -> CoreResult<MemoryEntry> {
         super::atomic(conn, |tx| {
             let now = now();
             let changed = tx.execute(
@@ -1883,6 +1895,8 @@ pub mod memory {
                 &digest(&entry),
                 &now,
             )?;
+            let event = if pinned { "memory.pinned" } else { "memory.unpinned" };
+            super::audit::record(tx, event, actor, "memory_entry", id)?;
             Ok(())
         })?;
         get(conn, id)
@@ -3150,24 +3164,44 @@ pub mod agent_runs {
                     Ok(_) => ("queued", None),
                     Err(r) => ("refused", Some(r.as_str())),
                 };
-                (state, reason, format!("fr-{}-{}", &digest[..12], now_ms))
+                (state, reason, format!("fr-{}-{}-{}", &digest[..12], bundle_tag(&bundle_id), now_ms))
             } else {
                 let name = crate::receipt::sha256_hex(digest.as_bytes());
-                ("refused", Some(MALFORMED_DIGEST_REASON), format!("fr-malformed-{}-{}", &name[..12], now_ms))
+                (
+                    "refused",
+                    Some(MALFORMED_DIGEST_REASON),
+                    format!("fr-malformed-{}-{}-{}", &name[..12], bundle_tag(&bundle_id), now_ms),
+                )
             };
-            super::atomic(conn, |tx| {
-                tx.execute(
+            // A run that was not WRITTEN is neither audited nor counted (cockpit read R3-0138).
+            // `INSERT OR IGNORE` writes no row when the id is already there, and this used to
+            // record `flow_run.enqueued` and bump the tick's count all the same. The id carries
+            // the bundle as well as the digest, so two bundles armed on one digest no longer
+            // share one; what is left to ignore is the same bundle in the same tick, twice.
+            let written = super::atomic(conn, |tx| {
+                let written = tx.execute(
                     "INSERT OR IGNORE INTO flow_runs(id, bundle_id, bundle_digest, trigger_kind, \
                      invoked_by, due_at, state, refusal_reason, created_at) \
                      VALUES (?1,?2,?3,'interval','run_due',?4,?5,?6,?7)",
                     rusqlite::params![id, bundle_id, digest, now_ms.to_string(), state, reason, crate::now()],
                 )?;
-                super::audit::record(tx, "flow_run.enqueued", audit::Actor::scheduler(), "flow_run", &id)?;
-                Ok(())
+                if written > 0 {
+                    super::audit::record(tx, "flow_run.enqueued", audit::Actor::scheduler(), "flow_run", &id)?;
+                }
+                Ok(written > 0)
             })?;
+            if !written {
+                continue;
+            }
             if state == "queued" { enqueued += 1 } else { refused += 1 }
         }
         Ok((due_found, enqueued, refused))
+    }
+
+    /// Twelve hex characters standing for one bundle id inside a run id. A hash, so the id stays
+    /// plain ASCII of a fixed shape whatever the bundle is called.
+    fn bundle_tag(bundle_id: &str) -> String {
+        crate::receipt::sha256_hex(bundle_id.as_bytes())[..12].to_string()
     }
 
     /// How much of a failed tick's error text the row keeps.
@@ -3684,6 +3718,66 @@ pub mod agent_runs {
                 rusqlite::params![bundle_id, digest],
             )
             .unwrap();
+        }
+
+        /// Cockpit read R3-0138. The run id was `fr-<digest prefix>-<tick>`, so two armed bundles
+        /// on ONE digest produced one id in the same tick: the second `INSERT OR IGNORE` wrote
+        /// nothing, and the tick still audited a `flow_run.enqueued` for it and counted it. The
+        /// evidence table and the tick row described a run that did not exist. The id carries
+        /// the bundle, and a row that was not written is neither audited nor counted.
+        #[test]
+        fn two_bundles_on_one_digest_each_get_their_own_run_and_a_repeat_tick_adds_nothing() {
+            let conn = crate::db::open(":memory:").unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            arm_directly(&conn, "agt-a", "x");
+            conn.execute(
+                "INSERT INTO agent_bundle_active(bundle_id, bundle_digest, interval_ms, updated_at) \
+                 VALUES ('agt-b','x',1,'0')",
+                [],
+            )
+            .unwrap();
+            let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+
+            let counts = enqueue_due(&conn, 1_000_000_000, dir.path()).unwrap();
+            assert_eq!(counts, (2, 0, 2), "two bundles were due and both are refused (a malformed digest)");
+            assert_eq!(count("SELECT COUNT(*) FROM flow_runs"), 2, "one run row per bundle");
+            assert_eq!(count("SELECT COUNT(DISTINCT bundle_id) FROM flow_runs"), 2);
+            assert_eq!(count("SELECT COUNT(*) FROM audit_events WHERE event_type = 'flow_run.enqueued'"), 2);
+
+            // The SAME tick again writes no row, so it audits nothing and counts nothing new. Both
+            // bundles are still "due" only if no run of theirs exists; whatever the due logic says,
+            // the evidence must match the rows.
+            let again = enqueue_due(&conn, 1_000_000_000, dir.path()).unwrap();
+            let runs = count("SELECT COUNT(*) FROM flow_runs");
+            let audited = count("SELECT COUNT(*) FROM audit_events WHERE event_type = 'flow_run.enqueued'");
+            assert_eq!(runs, audited, "every audited run is a row, and every row was audited once");
+            assert_eq!(u32::try_from(runs - 2).unwrap(), again.1 + again.2, "the tick counted exactly the rows it wrote");
+
+            // And the case the rule is FOR, reached directly: a row already holds the id the tick
+            // is about to use, so the insert writes nothing. (A sweep found the lines above never
+            // get that far — on a repeat tick the bundle is no longer due.) The row is planted
+            // under another bundle, so this one is still due.
+            let conn = crate::db::open(":memory:").unwrap();
+            arm_directly(&conn, "agt-a", "x");
+            let now_ms = 1_000_000_000i64;
+            let taken = format!(
+                "fr-malformed-{}-{}-{}",
+                &crate::receipt::sha256_hex(b"x")[..12],
+                bundle_tag("agt-a"),
+                now_ms
+            );
+            conn.execute(
+                "INSERT INTO flow_runs(id, bundle_id, bundle_digest, trigger_kind, invoked_by, due_at, \
+                 state, refusal_reason, created_at) VALUES (?1,'agt-elsewhere','x','interval','run_due','0','refused','planted','0')",
+                [&taken],
+            )
+            .unwrap();
+            let counts = enqueue_due(&conn, now_ms, dir.path()).unwrap();
+            assert_eq!(counts, (1, 0, 0), "the bundle was due, and the run that was not written is not counted");
+            let audited: i64 = conn
+                .query_row("SELECT COUNT(*) FROM audit_events WHERE event_type = 'flow_run.enqueued'", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(audited, 0, "a run that was not written was audited as enqueued");
         }
 
         /// Audit L-41. A stored digest that is not 64 lowercase hex characters is a REFUSED run
@@ -5044,7 +5138,7 @@ pub fn seed(conn: &Connection) -> CoreResult<()> {
         knowledge::create(conn, NewKnowledgeNote { title: "Forward-only migrations".into(), body: "Schema advances one numbered migration at a time; runner is idempotent.".into(), source: "src-tauri/core/db.rs".into(), tags: "sqlite,migrations".into() }, audit::Actor::seed())?;
 
         let m = memory::create(conn, NewMemoryEntry { scope: "global".into(), kind: "preference".into(), content: "Respond in Armenian; work only in menqstudio/BroPS.".into() }, audit::Actor::seed())?;
-        memory::set_pinned(conn, &m.id, true)?;
+        memory::set_pinned(conn, &m.id, true, audit::Actor::seed())?;
         memory::create(conn, NewMemoryEntry { scope: "global".into(), kind: "fact".into(), content: "Foundation v1 is Locked (D-010).".into() }, audit::Actor::seed())?;
 
         let r1 = runs::create(conn, "Wire the remaining workspaces to the backend", "schema → repos → commands → UI", audit::Actor::seed())?;
