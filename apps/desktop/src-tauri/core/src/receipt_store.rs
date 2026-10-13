@@ -804,7 +804,9 @@ fn in_immediate_tx<T>(
     if !conn.is_autocommit() {
         return Err(CoreError::Invalid {
             field: "connection",
-            value: "verify_and_record_receipt must own its transaction; it was called \
+            // Three entry points come through here; the message names none of them. It used to
+            // name `verify_and_record_receipt`, whichever of the three had been called.
+            value: "a receipt-store write must own its transaction; it was called \
                     inside an open transaction"
                 .to_string(),
         });
@@ -1918,6 +1920,23 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stored, error, "the durable row and the reason shown are the same text");
+    }
+
+    /// R3-0126: three entry points share one transaction helper, and its refusal of a nested
+    /// call named one of them — `verify_and_record_receipt` — whichever had been called.
+    #[test]
+    fn a_nested_call_is_refused_in_words_that_fit_the_function_that_was_called() {
+        let conn = db();
+        let now = 1_000_000u64;
+        let fx = Fx::new(now, "nonce-NEST");
+        seed_turn(&conn, &fx, now);
+        conn.execute_batch("BEGIN;").unwrap();
+        let err = record_pre_verification_block(&conn, "nonce-NEST", "transport failed", now)
+            .expect_err("a nested call must be refused");
+        conn.execute_batch("ROLLBACK;").unwrap();
+        let said = err.to_string();
+        assert!(said.contains("inside an open transaction"), "{said}");
+        assert!(!said.contains("verify_and_record_receipt"), "it names a function that was not called: {said}");
     }
 
     /// The pre-verification block bounds its own reason too, instead of trusting the caller.

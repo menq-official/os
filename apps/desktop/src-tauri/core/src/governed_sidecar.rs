@@ -399,7 +399,9 @@ impl SidecarPrincipal {
             }
             if t.contains('\0') {
                 return Err(format!(
-                    "`sidecar.{INVOKER_KEY}[{i}]` contains a NUL byte, which no argv token may                      carry: the spawn would then fail with an error about the interpreter rather                      than about this config"
+                    "`sidecar.{INVOKER_KEY}[{i}]` contains a NUL byte, which no argv token may \
+                     carry: the spawn would then fail with an error about the interpreter rather \
+                     than about this config"
                 ));
             }
             invoker.push(t.to_string());
@@ -782,10 +784,10 @@ impl GovernedSidecar {
         };
         let mut child = Reaped(built.spawn().map_err(|e| {
             format!(
-                "Could not run the governed engine sidecar (`{program}` -> `{} {}`{becoming}): {e}. \
-                 Set BROPS_GOVERNED_PYTHON / BROPS_GOVERNED_SIDECAR, or unset \
-                 BROPS_ALLOW_GOVERNED_ENGINE.",
-                self.python, self.sidecar
+                "Could not run the governed engine sidecar (`{program}` -> `{} {}`{becoming}): {e}. {}",
+                self.python,
+                self.sidecar,
+                spawn_failure_advice(self.principal.as_ref().map(|p| p.account()))
             )
         })?);
 
@@ -898,6 +900,25 @@ fn parse_sidecar_stdout(stdout: &[u8]) -> Result<Value, String> {
         )
     })?;
     crate::strict_json::from_str(text.trim()).map_err(|e| format!("could not parse bridge-result ({e:?})"))
+}
+
+/// What an operator is told to do when the sidecar could not be started.
+///
+/// It depends on WHO was starting it. The desktop app picks the interpreter and the script from
+/// two environment variables, so those are what to set. Under a distinct principal the caller is
+/// the broker, which reads none of them: the interpreter, the script and the invoker come from
+/// the deployment config's `sidecar` block, and a spawn that fails there is nearly always the
+/// sudoers vector for that account. The advice used to name the variables on both paths.
+fn spawn_failure_advice(principal_account: Option<&str>) -> String {
+    match principal_account {
+        None => {
+            "Set BROPS_GOVERNED_PYTHON / BROPS_GOVERNED_SIDECAR, or unset BROPS_ALLOW_GOVERNED_ENGINE.".to_string()
+        }
+        Some(account) => format!(
+            "Check the deployment config's `sidecar` block (the invoker, the interpreter and the \
+             script) and the sudoers vector that lets this process become `{account}`."
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -1326,6 +1347,47 @@ mod tests {
         assert_eq!(read_stdout_capped(&b"hi"[..]).unwrap(), b"hi");
     }
 
+    /// R3-0116: under a distinct principal the thing that failed to start is the invoker, the
+    /// caller is the broker, and the broker reads none of `BROPS_GOVERNED_PYTHON`,
+    /// `BROPS_GOVERNED_SIDECAR` or `BROPS_ALLOW_GOVERNED_ENGINE` — only the desktop app does. The
+    /// advice sent the operator to set variables nothing on that path looks at.
+    #[test]
+    fn the_spawn_failure_advice_names_what_the_caller_actually_reads() {
+        // The desktop path: the variables it reads.
+        let desktop = spawn_failure_advice(None);
+        assert!(desktop.contains("BROPS_GOVERNED_PYTHON") && desktop.contains("BROPS_GOVERNED_SIDECAR"), "{desktop}");
+
+        // The broker path: its config's `sidecar` block and the sudoers vector for the account.
+        let broker = spawn_failure_advice(Some("brops-sidecar"));
+        assert!(!broker.contains("BROPS_GOVERNED_PYTHON"), "{broker}");
+        assert!(!broker.contains("BROPS_ALLOW_GOVERNED_ENGINE"), "{broker}");
+        assert!(broker.contains("`sidecar`"), "{broker}");
+        assert!(broker.contains("sudoers") && broker.contains("brops-sidecar"), "{broker}");
+    }
+
+    /// The same advice, through the real spawn: an invoker that does not exist, under a
+    /// distinct principal. This is the path the broker takes.
+    #[test]
+    fn a_spawn_that_fails_under_a_distinct_principal_points_at_the_config_not_the_environment() {
+        let block = serde_json::json!({
+            "principal": "brops-sidecar",
+            "invoker": ["/nonexistent/brops-no-such-invoker", "-n", "-u", "brops-sidecar", "/usr/bin/env"],
+        });
+        let principal = SidecarPrincipal::from_config(Some(&block)).expect("a well-formed block");
+        let s = GovernedSidecar::as_distinct_principal(
+            "/usr/bin/python3",
+            distinct_script().to_str().expect("temp path is UTF-8"),
+            std::env::temp_dir(),
+            trust(),
+            principal,
+        );
+        let err = s.round_trip("{}").expect_err("an invoker that does not exist cannot produce a reply");
+        assert!(err.contains("Could not run the governed engine sidecar"), "{err}");
+        assert!(err.contains("as `brops-sidecar`"), "{err}");
+        assert!(err.contains("sudoers"), "{err}");
+        assert!(!err.contains("BROPS_GOVERNED_PYTHON"), "{err}");
+    }
+
     /// A spawn that cannot happen is an `Err`, never a document — and the message names both the
     /// interpreter and the variables an operator would fix.
     #[test]
@@ -1607,6 +1669,9 @@ mod tests {
             let got = SidecarPrincipal::from_config(block.as_ref());
             let err = got.err().unwrap_or_else(|| panic!("`{what}` was accepted"));
             assert!(err.len() > 40, "`{what}` refused without saying anything useful: {err}");
+            // A message is a sentence. One of these had two runs of about twenty spaces in it,
+            // where a source line had been wrapped without its `\` (cockpit read R3-0115).
+            assert!(!err.contains("  "), "`{what}` refused with a run of spaces in the message: {err:?}");
         }
     }
 
