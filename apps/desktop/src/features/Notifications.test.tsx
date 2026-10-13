@@ -149,7 +149,7 @@ describe('Notifications — what the page says when the list is not the ordinary
     if (cmd === 'read_evidence_chain') return Promise.reject(new Error('broker_unavailable'));
     return Promise.resolve(null);
   });
-  const live = () => document.querySelector('.nsig-sr')?.textContent ?? '';
+  const live = () => document.querySelector('.v-notifications > p[aria-live="polite"]')?.textContent ?? '';
 
   it('a severity the page does not know never leads ahead of a critical signal', async () => {
     listing(() => Promise.resolve([
@@ -191,5 +191,17 @@ describe('Notifications — what the page says when the list is not the ordinary
     listing(() => Promise.resolve([]));
     page();
     await waitFor(() => expect(screen.getByText(NTF_STR.clearTitle.en)).toBeInTheDocument());
+  });
+
+  // `.nsig-sr` was a page-local copy of the shared visually-hidden rule (`.sr-only`,
+  // components/ui.css). One rule, one name: the page uses the shared class and ships no copy.
+  it('the live region is classed `sr-only`, and the page declares no `.nsig-sr`', async () => {
+    listing(() => Promise.resolve([NOTE]));
+    page();
+    await waitFor(() => expect(live()).toBe(`1 ${NTF_STR.liveCount.en}`));
+    const region = document.querySelector('.v-notifications > p[aria-live="polite"]')!;
+    expect(region.classList.contains('sr-only')).toBe(true);
+    expect(document.querySelector('.v-notifications > style')!.textContent).not.toMatch(/\.nsig-sr(?![\w-])/);
+    expect(document.querySelector('.nsig-sr')).toBeNull();
   });
 });

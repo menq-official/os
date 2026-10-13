@@ -26,7 +26,7 @@ const STATUS_STATE: Record<string, string> = {
   planned: 'state-idle', active: 'state-working', blocked: 'state-blocked',
   completed: 'state-completed', archived: 'state-idle',
 };
-// project.status → foundation `.pill` tone (`.bad` is defined locally below).
+// project.status → foundation `.pill` tone (every tone, `.bad` included, is theme/aios.css's).
 const STATUS_PILL: Record<string, string> = {
   planned: 'off', active: 'live', blocked: 'bad', completed: 'mint', archived: 'off',
 };
@@ -47,8 +47,9 @@ const TASK_PILL: Record<string, string> = {
 
 // UI strings live in `./Projects.strings` (trilingual en/hy/ru). `L(key)` resolves
 // the active language via the store's `lang`, falling back to English. Status
-// labels are derived from the same table (keys `st_<status>`) and shared between
-// the pills, the legend and the KPI tiles.
+// labels are NOT in that table: the pills, the legend and the status select read
+// `statusLabel()` from `domain/statusLabels.ts`, through the `statusLabels` map
+// `Projects()` builds from it. The KPI tiles use the table's own count words.
 
 function NewProjectForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { t, lang } = useApp();
@@ -373,7 +374,7 @@ export function Projects() {
       <style>{PF_CSS}</style>
       {header}{creatingModal}
 
-      <span className="pf-sr" aria-live="polite">{announcement}</span>
+      <span className="sr-only" aria-live="polite">{announcement}</span>
 
       {/* HERO · the workstream field */}
       <section className="surface soft lg hud pf-field reveal" aria-label={t('nav.projects')}>
@@ -460,9 +461,6 @@ export function Projects() {
 // (surface/soft/lg/hud/bracket/ticks/eyebrow/pill/tag/wire/sec-head/pageHead/micro/
 // muted) is the shared aios.css; colours resolve through the `--st-rgb` state token.
 const PF_CSS = `
-.v-projects .pf-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.v-projects .pill.bad{color:var(--danger);border-color:rgb(var(--danger-rgb)/.32);background:rgb(var(--danger-rgb)/.09)}
-
 .v-projects .pf-field{padding:var(--s6) var(--s5) var(--s5)}
 .v-projects .field-top{display:flex;justify-content:space-between;align-items:center;gap:var(--s4);flex-wrap:wrap;margin-bottom:var(--s4)}
 .v-projects .pf-legend{display:flex;gap:12px;flex-wrap:wrap}

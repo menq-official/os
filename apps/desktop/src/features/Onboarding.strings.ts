@@ -3,8 +3,10 @@
 // production "Verified" is not yet enabled and is never faked.
 //
 // `howBody` used to tell the owner that anything reaching the AI model runs through a lease and a
-// verified receipt. That is only true when the backend resolves the governed engine provider; in the
-// default configuration the command layer falls through to the ungoverned streaming path, so nothing
+// verified receipt. That is only true when the backend resolves the governed engine provider. There
+// is no default provider: with nothing set `resolve_provider` (src-tauri/src/ai.rs) refuses with
+// "no AI provider configured" and no reply is produced at all; under the development opt-in
+// `BROPS_ALLOW_UNGOVERNED=1` the command layer runs the ungoverned streaming path, where nothing
 // about a reply is leased, receipted or verified. Since this is the screen read BEFORE deciding to
 // trust the product, the copy now names the condition instead of asserting the guarantee.
 export const STR = {

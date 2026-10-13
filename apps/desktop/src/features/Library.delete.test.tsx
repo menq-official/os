@@ -30,7 +30,7 @@ const DENIAL = 'delete_library_item not allowed. Permissions associated with thi
 /** What the HANDLER returns if the ACL ever let the call through (`forbidden_hard_delete`). */
 const HANDLER_REFUSAL = 'forbidden_command:delete_library_item: nothing was deleted.';
 
-function setup(deleteOutcome: 'refuse' | 'accept' | 'handler' | 'broken') {
+function setup(deleteOutcome: 'refuse' | 'accept' | 'handler' | 'broken' | 'pending') {
   const store = [ITEM];
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'list_library') return Promise.resolve([...store]);
@@ -38,6 +38,7 @@ function setup(deleteOutcome: 'refuse' | 'accept' | 'handler' | 'broken') {
       if (deleteOutcome === 'refuse') return Promise.reject(new Error(DENIAL));
       if (deleteOutcome === 'handler') return Promise.reject(new Error(HANDLER_REFUSAL));
       if (deleteOutcome === 'broken') return Promise.reject(new Error('database is locked'));
+      if (deleteOutcome === 'pending') return new Promise(() => {});
       store.length = 0;
       return Promise.resolve(null);
     }
@@ -119,10 +120,31 @@ describe('Library — a policy refusal is named as permanent; an unknown failure
       await deleteTheItem();
       const alert = await screen.findByRole('alert');
       expect(alert).toHaveTextContent('database is locked');
+      expect(alert).toHaveTextContent(/The backend rejected this delete/);
       expect(alert).not.toHaveTextContent(PERMANENT);
     } finally {
       delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     }
+  });
+
+  // The classifier returned `noBackend` and no page read it: outside the desktop runtime the
+  // alert said "The backend rejected this delete" about a backend that was never there.
+  it('with no desktop backend at all, no backend is said to have rejected anything', async () => {
+    setup('broken');
+    await deleteTheItem();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Delete refused — nothing was removed');
+    expect(alert).toHaveTextContent('database is locked');
+    expect(alert).not.toHaveTextContent(/backend rejected/i);
+    expect(alert).not.toHaveTextContent(PERMANENT);
+  });
+});
+
+describe('Library — the confirm button says the delete is in flight', () => {
+  it('reads "Deleting…" until the backend answers', async () => {
+    setup('pending');
+    await deleteTheItem();
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Deleting…'));
   });
 });
 

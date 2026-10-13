@@ -2,9 +2,11 @@
 // entry carries en / hy / ru so Russian is correct rather than silently falling
 // back to English. The shared i18n dictionary (`t()`) still serves every existing
 // key; only these page-local labels — with no shared dict key yet — live here.
-// No interpolation: counts are rendered as separate nodes, never spliced into a
-// translated sentence (the lone count-prefixed line puts the number ahead of the
-// phrase, which reads naturally in all three languages).
+// No entry here takes a parameter. Most counts are rendered as separate nodes; three
+// are joined to an entry by a template in Notifications.tsx — the live region's
+// `${n} ${liveCount}`, the gate body's `${n} ${gateMirrored}` and a severity band's
+// aria-label, `${label} · ${n} ${statTotal}` — each putting the number AHEAD of the
+// phrase, the one order that reads naturally in all three languages.
 export const STR = {
   filterAll: { en: 'All', hy: 'Բոլորը', ru: 'Все' },
   filterUnread: { en: 'Unread', hy: 'Չկարդացված', ru: 'Непрочитанные' },
@@ -180,10 +182,12 @@ export const STR = {
   // blocked or unreachable read still painted a satisfied first node. Every node now
   // maps to a fact from the actual GovernanceRead, and says which honest case it is.
   gateChainRead: { en: 'READ', hy: 'ԸՆԹԵՐՑՈՒՄ', ru: 'ЧТЕНИЕ' },
-  gateChainEngineSealed: {
-    en: 'ENGINE · sealed',
-    hy: 'ՇԱՐԺԻՉ · կնքված',
-    ru: 'ДВИЖОК · запечатан',
+  // The word `gateTitleBlocked` uses for the same state. This node read "sealed" after the
+  // title above it had been changed so that no state is called that.
+  gateChainEngineRefused: {
+    en: 'ENGINE · refused',
+    hy: 'ՇԱՐԺԻՉ · մերժեց',
+    ru: 'ДВИЖОК · отклонил',
   },
   gateChainEngineUnreachable: {
     en: 'ENGINE · unreachable',

@@ -289,7 +289,7 @@ export function Notifications() {
       <div className="nsig-hint micro">{L('keyboardHint')}</div>
 
       {/* Live region: new/changed signals are announced politely. */}
-      <p className="nsig-sr" aria-live="polite">
+      <p className="sr-only" aria-live="polite">
         {loading ? L('liveLoading') : state.error ? L('liveError') : `${visible.length} ${L('liveCount')}`}
       </p>
 
@@ -467,7 +467,7 @@ export function Notifications() {
             const engineLabel = !r || r.state === 'ok'
               ? L('gateChainEngine')
               : r.state === 'blocked'
-                ? L('gateChainEngineSealed')
+                ? L('gateChainEngineRefused')
                 : L('gateChainEngineUnreachable');
             const mirrorLabel = !r || r.state !== 'ok'
               ? L('gateChainMirror')
@@ -533,7 +533,6 @@ const CSS = `
 .nsig-band-n i { font-family: var(--f-mono); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-muted); }
 
 .nsig-hint { margin: 12px 0 4px; letter-spacing: .1em; }
-.nsig-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 .nsig-feed { display: flex; flex-direction: column; gap: var(--s3, 10px); }
 .nsig-srow {

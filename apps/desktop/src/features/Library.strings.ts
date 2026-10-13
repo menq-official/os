@@ -98,11 +98,6 @@ export const STR = {
     hy: 'Մաքրել որոնումն ու զտիչները',
     ru: 'Очистить поиск и фильтры',
   },
-  previewEmpty: {
-    en: 'Select an item to preview it.',
-    hy: 'Ընտրեք տարր՝ նախադիտելու համար։',
-    ru: 'Выберите элемент для предпросмотра.',
-  },
   listLabel: {
     en: 'Library results',
     hy: 'Դարանի արդյունքներ',
@@ -112,11 +107,6 @@ export const STR = {
     en: 'Tags',
     hy: 'Պիտակներ',
     ru: 'Теги',
-  },
-  loadFailed: {
-    en: 'Couldn’t load the library.',
-    hy: 'Չհաջողվեց բեռնել դարանը։',
-    ru: 'Не удалось загрузить библиотеку.',
   },
   newTitle: {
     en: 'New library item',

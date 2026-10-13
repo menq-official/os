@@ -70,17 +70,27 @@ export const STR = {
   },
   // The old header pill read "Verifiable memory" unconditionally. Nothing verifies a
   // memory entry: `list_memory` returns plain rows from the local SQLite store with no
-  // signature, receipt or chain behind them, so that claim was unbacked and is gone.
+  // signature or receipt behind them (each write also appends an unsigned local write
+  // record, which that command does not read), so that claim was unbacked and is gone.
   // What IS real is the outcome of the one `list_memory` read, so the pill names that.
+  // (Knowledge.strings.ts carries the same three sentences as `recall*`.)
   storeReading: { en: 'Reading the store…', hy: 'Կարդում ենք պահոցը…', ru: 'Читаем хранилище…' },
   storeUnavailable: { en: 'Store unavailable', hy: 'Պահոցն անհասանելի է', ru: 'Хранилище недоступно' },
   storeLoaded: { en: 'Read from the store', hy: 'Կարդացված է պահոցից', ru: 'Прочитано из хранилища' },
 
-  // --- Refused writes (delete/pin may be denied by the window capability set) --
+  // --- Refused writes. `delete_memory` is denied by the window capability set and its
+  //     handler refuses unconditionally behind that; `set_memory_pinned` is granted and
+  //     can still fail in the store.
   deleteRefusedTitle: {
     en: 'Delete refused — nothing was removed',
     hy: 'Ջնջումը մերժվեց — ոչինչ չհեռացվեց',
     ru: 'Удаление отклонено — ничего не удалено',
+  },
+  // Shown only when `classifyDeleteRefusal` returns `policy`. Library's sentence, word for word.
+  deleteRefusedPermanent: {
+    en: 'This is a standing policy refusal, not a transient failure — retrying cannot succeed.',
+    hy: 'Սա մշտական քաղաքականության մերժում է, ոչ թե ժամանակավոր ձախողում — կրկնելը չի կարող հաջողել։',
+    ru: 'Это постоянный отказ политики, а не временный сбой — повтор не поможет.',
   },
   deleteRefusedBody: {
     en: 'The backend rejected this delete, so the memory is still in the store and still listed.',
@@ -149,7 +159,9 @@ export const STR = {
 
   // --- Honest metric strip --------------------------------------------------
   memoryState: { en: 'Memory state', hy: 'Հիշողության վիճակ', ru: 'Состояние памяти' },
-  countedStore: { en: 'counted from the store', hy: 'store-ից հաշված', ru: 'подсчитано из хранилища' },
+  // Knowledge's `countedFromStore`, word for word. The Armenian here read 'store-ից հաշված'
+  // and the Russian 'подсчитано из хранилища' — the same sentence, drifted between two pages.
+  countedStore: { en: 'counted from the store', hy: 'պահոցից հաշված', ru: 'посчитано из хранилища' },
 } as const;
 
 // Parameterised copy — kept as per-language builders so the real counts

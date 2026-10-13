@@ -192,6 +192,8 @@ export const STR = {
   // Header pill — bound to the REAL `search_knowledge` / `list_knowledge` read state.
   // There is no background recall process to be "active": the page issues one read
   // and shows what came back, so the pill names that outcome and nothing more.
+  // (Memory.strings.ts carries the same three sentences as `store*`; `Memory.honesty.test.tsx`
+  // holds every string the two catalogs and Library's repeat to the same words.)
   recallReading: {
     en: 'Reading the store…',
     hy: 'Կարդում ենք պահոցը…',
@@ -208,7 +210,8 @@ export const STR = {
     ru: 'Прочитано из хранилища',
   },
 
-  // ── Delete refusal (the delete command may be denied by the capability set) ──
+  // ── Delete refusal (`delete_knowledge` is denied by the window capability set, and its
+  //    handler refuses unconditionally behind that: a refusal is the only outcome today) ──
   deleteRefusedTitle: {
     en: 'Delete refused — nothing was removed',
     hy: 'Ջնջումը մերժվեց — ոչինչ չհեռացվեց',
@@ -218,6 +221,15 @@ export const STR = {
     en: 'The backend rejected this delete, so the article is still in the store and still listed below.',
     hy: 'Backend-ը մերժեց այս ջնջումը, ուստի հոդվածը դեռ պահոցում է և դեռ ցուցակում է ստորև։',
     ru: 'Бэкенд отклонил это удаление, поэтому статья всё ещё в хранилище и всё ещё в списке ниже.',
+  },
+  // A refusal that will not change on a retry. `classifyDeleteRefusal` returns `policy` only
+  // for the capability wall's own wording or the handler's `forbidden_command:` prefix; any
+  // other failure is left unclassified and gets no such sentence. Library's sentence, word
+  // for word.
+  deleteRefusedPermanent: {
+    en: 'This is a standing policy refusal, not a transient failure — retrying cannot succeed.',
+    hy: 'Սա մշտական քաղաքականության մերժում է, ոչ թե ժամանակավոր ձախողում — կրկնելը չի կարող հաջողել։',
+    ru: 'Это постоянный отказ политики, а не временный сбой — повтор не поможет.',
   },
   deleting: {
     en: 'Deleting…',

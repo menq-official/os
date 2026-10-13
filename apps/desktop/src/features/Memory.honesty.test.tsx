@@ -5,8 +5,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 //
 //   * A "Verifiable memory" pill rendered UNCONDITIONALLY in the header. Nothing
 //     verifies a memory row — `list_memory` returns plain local SQLite rows with no
-//     signature, receipt or chain behind them — so the badge claimed more than the
-//     backend can prove, in every state including a failed read.
+//     signature or receipt behind them, and the one thing every write does append, the
+//     unsigned local write-record chain described further down, is not read by that
+//     command — so the badge claimed more than the backend can prove, in every state
+//     including a failed read.
 //   * `delete_memory` (DENIED in the window capability set) and `set_memory_pinned`
 //     both ended in `.catch(() => s.reload())`: the refusal vanished, the row came
 //     straight back on the reload, and the user was told nothing.
@@ -19,6 +21,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Memory } from './Memory';
+import { STR as MEM_STR } from './Memory.strings';
+import { STR as KB_STR } from './Knowledge.strings';
+import { STR as LIB_STR } from './Library.strings';
 import { FORBIDDEN as SHARED_FORBIDDEN } from './writeRecord.vocabulary';
 
 const ENTRY = {
@@ -33,16 +38,26 @@ const ENTRY = {
 
 const DENIAL = 'delete_memory not allowed. Permissions associated with this command: ';
 
-function setup(opts: { listFails?: boolean; deleteRefuses?: boolean; pinRefuses?: boolean } = {}) {
+/** What the HANDLER returns if the ACL ever let the call through (`forbidden_hard_delete`). */
+const HANDLER_REFUSAL = 'forbidden_command:delete_memory: nothing was deleted.';
+
+function setup(opts: {
+  listFails?: boolean; listPending?: boolean; deleteRefuses?: boolean; pinRefuses?: boolean;
+  deleteOutcome?: 'handler' | 'broken' | 'pending';
+} = {}) {
   const store = [ENTRY];
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'list_memory') {
+      if (opts.listPending) return new Promise(() => {});
       return opts.listFails
         ? Promise.reject(new Error('store_unavailable'))
         : Promise.resolve([...store]);
     }
     if (cmd === 'delete_memory') {
       if (opts.deleteRefuses) return Promise.reject(new Error(DENIAL));
+      if (opts.deleteOutcome === 'handler') return Promise.reject(new Error(HANDLER_REFUSAL));
+      if (opts.deleteOutcome === 'broken') return Promise.reject(new Error('database is locked'));
+      if (opts.deleteOutcome === 'pending') return new Promise(() => {});
       store.length = 0;
       return Promise.resolve(null);
     }
@@ -62,7 +77,7 @@ function setup(opts: { listFails?: boolean; deleteRefuses?: boolean; pinRefuses?
 }
 
 /** The page's polite live region (what a screen-reader user is told). */
-const liveText = () => document.querySelector('.mem-sr-only')?.textContent ?? '';
+const liveText = () => document.querySelector('.v-memory > [role="status"][aria-live="polite"]')?.textContent ?? '';
 
 async function selectTheEntry() {
   await waitFor(() => expect(screen.getAllByText(/Rotate the API key monthly/).length).toBeGreaterThan(0));
@@ -159,6 +174,123 @@ describe('Memory — an ACCEPTED delete reports the real outcome', () => {
 
     await waitFor(() => expect(screen.queryByText(/Rotate the API key monthly/)).not.toBeInTheDocument());
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// The page stored a refused delete as a bare string and showed every refusal the same way, while
+// Library and Research put the same refusal through `classifyDeleteRefusal` and say when it is a
+// standing one. The entry comes back after a refusal; without that sentence the row reads as
+// "press Delete again".
+describe('Memory — a policy refusal of a delete is named as permanent; an unknown failure is not', () => {
+  const PERMANENT = /standing policy refusal.*retrying cannot succeed/i;
+  const refuseWith = async (opts: Parameters<typeof setup>[0]) => {
+    setup(opts);
+    await selectTheEntry();
+    await confirmDeleteDialog();
+    return screen.findByRole('alert');
+  };
+
+  it('the capability wall\'s refusal is a standing one', async () => {
+    expect(await refuseWith({ deleteRefuses: true })).toHaveTextContent(PERMANENT);
+  });
+
+  it('so is the handler\'s own `forbidden_command:` refusal', async () => {
+    const alert = await refuseWith({ deleteOutcome: 'handler' });
+    expect(alert).toHaveTextContent(PERMANENT);
+    expect(alert).toHaveTextContent(/forbidden_command:delete_memory/);
+  });
+
+  it('a failure the page cannot classify is NOT called permanent', async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    try {
+      const alert = await refuseWith({ deleteOutcome: 'broken' });
+      expect(alert).toHaveTextContent('database is locked');
+      expect(alert).toHaveTextContent(/The backend rejected this delete/);
+      expect(alert).not.toHaveTextContent(PERMANENT);
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+
+  it('with no desktop backend at all, no backend is said to have rejected anything', async () => {
+    const alert = await refuseWith({ deleteOutcome: 'broken' });
+    expect(alert).toHaveTextContent('Delete refused — nothing was removed');
+    expect(alert).toHaveTextContent('database is locked');
+    expect(alert).not.toHaveTextContent(/backend rejected/i);
+    expect(alert).not.toHaveTextContent(PERMANENT);
+  });
+
+  it('a refused PIN change is never called a standing refusal — that command is granted', async () => {
+    setup({ pinRefuses: true });
+    await selectTheEntry();
+    fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
+    expect(await screen.findByRole('alert')).not.toHaveTextContent(PERMANENT);
+  });
+});
+
+// The header pill's three states, the refusal title, the standing-refusal sentence, the busy
+// label and "counted from the store" are written once in this page's catalog, once in Knowledge's
+// and — the delete three — once in Library's. They are still separate copies: one shared module
+// would be a new file, and importing another page's catalog makes that page's whole catalog part
+// of this route's download (measured: the bundle budget went RED for Library and Memory). What
+// the copies may not do is disagree, which "counted from the store" already did in Armenian and
+// Russian — so every repeated entry is held to the same words in all three languages.
+describe('Memory — wording repeated across the Memory, Knowledge and Library catalogs reads the same', () => {
+  it.each([
+    ['storeReading', MEM_STR.storeReading, KB_STR.recallReading],
+    ['storeUnavailable', MEM_STR.storeUnavailable, KB_STR.recallUnavailable],
+    ['storeLoaded', MEM_STR.storeLoaded, KB_STR.recallLoaded],
+    ['countedStore', MEM_STR.countedStore, KB_STR.countedFromStore],
+    ['deleteRefusedTitle', MEM_STR.deleteRefusedTitle, KB_STR.deleteRefusedTitle],
+    ['deleteRefusedPermanent', MEM_STR.deleteRefusedPermanent, KB_STR.deleteRefusedPermanent],
+    ['deleting', MEM_STR.deleting, KB_STR.deleting],
+    ['Library deleteRefusedTitle', LIB_STR.deleteRefusedTitle, KB_STR.deleteRefusedTitle],
+    ['Library deleteRefusedPermanent', LIB_STR.deleteRefusedPermanent, KB_STR.deleteRefusedPermanent],
+    ['Library deleting', LIB_STR.deleting, KB_STR.deleting],
+  ] as const)('%s', (_name, here, there) => {
+    expect(here).toEqual(there);
+    expect(Object.keys(here).sort()).toEqual(['en', 'hy', 'ru']);
+  });
+
+  it('the header pill reads "Reading the store…" until the one read answers', async () => {
+    setup({ listPending: true });
+    expect(await screen.findByText('Reading the store…')).toBeInTheDocument();
+    expect(document.querySelector('.pageHead .pill')!.textContent).toBe('Reading the store…');
+  });
+
+  it('the confirm button reads "Deleting…" while the delete is in flight', async () => {
+    setup({ deleteOutcome: 'pending' });
+    await selectTheEntry();
+    await confirmDeleteDialog();
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Deleting…'));
+  });
+
+  it('"counted from the store" is the Knowledge page\'s sentence in Armenian too', async () => {
+    localStorage.setItem('brops.lang', JSON.stringify('hy'));
+    try {
+      setup();
+      await waitFor(() => expect(screen.getAllByText(/Rotate the API key monthly/).length).toBeGreaterThan(0));
+      const note = document.querySelector('.mem-metrics .sec-head .note')!;
+      expect(note.textContent).toMatch(/^պահոցից հաշված · /);
+      expect(note.textContent).not.toMatch(/store-ից/);
+    } finally {
+      localStorage.removeItem('brops.lang');
+    }
+  });
+});
+
+// `.mem-sr-only` was a page-local copy of the shared visually-hidden rule (`.sr-only`,
+// components/ui.css). One rule, one name: the page uses the shared class and ships no copy.
+describe('Memory — the live region uses the shared visually-hidden class', () => {
+  it('is a polite status classed `sr-only`, and the page declares no `.mem-sr-only`', async () => {
+    setup();
+    await waitFor(() => expect(screen.getAllByText(/Rotate the API key monthly/).length).toBeGreaterThan(0));
+    const live = document.querySelector('.v-memory > [role="status"][aria-live="polite"]')!;
+    expect(live).not.toBeNull();
+    expect(live.classList.contains('sr-only')).toBe(true);
+    expect(live.textContent).toBe('1 of 1 memories.');
+    expect(document.querySelector('.v-memory > style')!.textContent).not.toMatch(/\.mem-sr-only\b/);
+    expect(document.querySelector('.mem-sr-only')).toBeNull();
   });
 });
 

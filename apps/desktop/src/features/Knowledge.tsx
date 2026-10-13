@@ -13,6 +13,7 @@ import type { KnowledgeNote } from '../domain/entities';
 import { STR, fmt } from './Knowledge.strings';
 import { STR as RECORD_STR } from './writeRecord.strings';
 import { parseTimestamp } from './timestamps';
+import { classifyDeleteRefusal, type DeleteRefusal } from './researchLibraryDeleteRefusal';
 import {
   WRITE_RECORD_CSS, WriteRecordBadge, WriteRecordNotice, WriteRecordPanel,
   useWriteRecordStates,
@@ -34,8 +35,9 @@ import {
 
 // A "collection" is a real grouping over the notes' `tags` field (there is no
 // separate collection store command). ALL and UNTAGGED are sentinel ids that can
-// never collide with a real tag: ALL is the empty string, UNTAGGED is a control
-// char no tag can contain.
+// never collide with a real tag: ALL is the empty string, and UNTAGGED starts
+// with a space, which no tag can — `parseTags` trims every tag and drops the
+// empty ones.
 const COLLECTION_ALL = '';
 const COLLECTION_UNTAGGED = ' untagged';
 
@@ -177,13 +179,14 @@ export function Knowledge() {
   // not merely the common one: `delete_knowledge` is denied by the window capability set,
   // and behind that the handler takes no database handle and returns
   // `forbidden_hard_delete` unconditionally. So the confirmation says nothing will be
-  // removed, and the refusal must be readable on screen, never swallowed.
+  // removed, and the refusal must be readable on screen, never swallowed — CLASSIFIED, as
+  // Library and Research do: the article comes back after a refusal, and a refusal that is
+  // policy has to say so or the row reads as "press Delete again".
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<DeleteRefusal | null>(null);
   const [announce, setAnnounce] = useState('');
 
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
 
   // Data source: the desktop knowledge store. `search_knowledge` drives the
   // article list (server-side search); `list_knowledge` gives a stable, query-
@@ -333,10 +336,10 @@ export function Knowledge() {
         reloadAll();
       })
       .catch((e: unknown) => {
-        const reason = e instanceof Error ? e.message : String(e);
+        const refusal = classifyDeleteRefusal(e, 'delete_knowledge');
         setPendingDelete(null);
-        setDeleteError(reason);
-        setAnnounce(fmt.articleDeleteRefused(lang, title, reason));
+        setDeleteError(refusal);
+        setAnnounce(fmt.articleDeleteRefused(lang, title, refusal.reason));
         // Re-read so the list provably reflects the store, which still holds the row.
         reloadAll();
       })
@@ -382,7 +385,6 @@ export function Knowledge() {
     }
     return (
       <div
-        ref={listRef}
         className="kb-list"
         role="listbox"
         aria-label={L('articlesLabel')}
@@ -595,12 +597,15 @@ export function Knowledge() {
         </div>
       )}
 
-      {/* A REFUSED delete, stated plainly and left on screen until dismissed. */}
+      {/* A REFUSED delete, stated plainly and left on screen until dismissed. Outside the
+          desktop runtime there is no backend to have rejected anything, so that sentence is
+          left out there; the reason is quoted either way. */}
       {deleteError && (
         <div className="kb-delete-error" role="alert">
           <b>{L('deleteRefusedTitle')}</b>
-          <span>{L('deleteRefusedBody')}</span>
-          <span className="mono kb-delete-reason">{deleteError}</span>
+          {deleteError.kind !== 'noBackend' && <span>{L('deleteRefusedBody')}</span>}
+          {deleteError.kind === 'policy' && <span>{L('deleteRefusedPermanent')}</span>}
+          <span className="mono kb-delete-reason">{deleteError.reason}</span>
           <Button small variant="ghost" onClick={() => setDeleteError(null)}>{t('action.close')}</Button>
         </div>
       )}

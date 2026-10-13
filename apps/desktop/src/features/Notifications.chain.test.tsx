@@ -18,6 +18,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Notifications } from './Notifications';
+import { STR as NTF_STR } from './Notifications.strings';
 
 const NOTE = {
   id: 'n-1',
@@ -102,7 +103,9 @@ describe('Notifications — a BLOCKED governance read never lights the engine no
     await settled();
 
     const nodes = chainNodes();
-    expect(nodes[1][0]).toBe('ENGINE · sealed');
+    // "refused" is the word the gate's own title uses for this state. The node said "sealed",
+    // the one word that title was changed to stop using.
+    expect(nodes[1][0]).toBe('ENGINE · refused');
     expect(nodes[1][1]).not.toContain('done');
     expect(nodes[2][1]).not.toContain('done');
 
@@ -274,6 +277,22 @@ describe('Notifications — the gate title names the state the read is actually 
       await waitFor(() => expect(title()).not.toBe(''));
       expect(title()).not.toMatch(/sealed/i);
       unmount();
+    }
+  });
+
+  it.each(['en', 'hy', 'ru'] as const)('nor does the chain under it, for a refused read (%s)', async (lang) => {
+    localStorage.setItem('brops.lang', JSON.stringify(lang));
+    try {
+      mountWithChain({ reply: { state: 'blocked', surface: 'evidenceChain', reason: 'x', authenticated: false } });
+      await settled();
+      const engine = chainNodes()[1][0];
+      expect(engine).toBe(NTF_STR.gateChainEngineRefused[lang]);
+      expect(engine).not.toMatch(/sealed|կնքված|запечатан/i);
+      // The node carries the same root word as the title above it.
+      expect(engine).toMatch({ en: /refused/, hy: /մերժ/, ru: /отклон/ }[lang]);
+      expect(title()).toMatch({ en: /refused/, hy: /մերժ/, ru: /отклон/ }[lang]);
+    } finally {
+      localStorage.removeItem('brops.lang');
     }
   });
 });

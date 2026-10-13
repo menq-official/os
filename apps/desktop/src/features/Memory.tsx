@@ -15,6 +15,7 @@ import {
 } from './Memory.strings';
 import { STR as RECORD_STR } from './writeRecord.strings';
 import { parseTimestamp } from './timestamps';
+import { classifyDeleteRefusal, type DeleteRefusalKind } from './researchLibraryDeleteRefusal';
 import {
   WRITE_RECORD_CSS, WriteRecordBadge, WriteRecordNotice, WriteRecordPanel,
   useWriteRecordStates, type WriteRecordRead,
@@ -321,10 +322,15 @@ export function Memory() {
   const [editing, setEditing] = useState<MemoryEntry | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // A write (delete / pin) is in flight, or the backend REFUSED it. `delete_memory` is
-  // denied by the window capability set today, so the refusal path is the common one —
-  // it must be readable on screen, never swallowed into a silent reload.
+  // denied by the window capability set and its handler refuses unconditionally behind
+  // that, so for a delete the refusal is the only outcome today — it must be readable on
+  // screen, never swallowed into a silent reload. A refused DELETE is also classified
+  // (`refusal`), as Library and Research do: the row comes back, and a refusal that is
+  // policy has to say so. A pin change is a granted command, so it carries no class.
   const [writeBusy, setWriteBusy] = useState(false);
-  const [writeError, setWriteError] = useState<{ kind: 'delete' | 'pin'; reason: string } | null>(null);
+  const [writeError, setWriteError] = useState<
+    { kind: 'delete'; reason: string; refusal: DeleteRefusalKind } | { kind: 'pin'; reason: string } | null
+  >(null);
   const [announce, setAnnounce] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -482,9 +488,9 @@ export function Memory() {
         records.reload();
       })
       .catch((e: unknown) => {
-        const reason = e instanceof Error ? e.message : String(e);
+        const { kind: refusal, reason } = classifyDeleteRefusal(e, 'delete_memory');
         setPendingDelete(null);
-        setWriteError({ kind: 'delete', reason });
+        setWriteError({ kind: 'delete', reason, refusal });
         setAnnounce(deleteRefusedLive(lang, reason));
         s.reload();
       })
@@ -561,11 +567,15 @@ export function Memory() {
         />
       )}
 
-      {/* A REFUSED write, stated plainly and left on screen until dismissed. */}
+      {/* A REFUSED write, stated plainly and left on screen until dismissed. Outside the
+          desktop runtime there is no backend to have rejected a delete, so that sentence is
+          left out there; the reason is quoted either way. */}
       {writeError && (
         <div className="mem-write-error" role="alert">
           <b>{writeError.kind === 'delete' ? L('deleteRefusedTitle') : L('pinRefusedTitle')}</b>
-          <span>{writeError.kind === 'delete' ? L('deleteRefusedBody') : L('pinRefusedBody')}</span>
+          {writeError.kind === 'pin' && <span>{L('pinRefusedBody')}</span>}
+          {writeError.kind === 'delete' && writeError.refusal !== 'noBackend' && <span>{L('deleteRefusedBody')}</span>}
+          {writeError.kind === 'delete' && writeError.refusal === 'policy' && <span>{L('deleteRefusedPermanent')}</span>}
           <span className="mono mem-write-reason">{writeError.reason}</span>
           <Button
             small
@@ -582,7 +592,7 @@ export function Memory() {
           FAILED to read. A read fault must never be mistaken for an empty ledger. */}
       <WriteRecordNotice reads={records.byId} lang={lang} />
 
-      <div className="mem-sr-only" aria-live="polite" role="status">{liveMessage}</div>
+      <div className="sr-only" aria-live="polite" role="status">{liveMessage}</div>
 
       <div className="mboard mem-shell">
         {/* ── Memories browser ─────────────────────────────────────────── */}
@@ -779,8 +789,6 @@ export function Memory() {
 // intentionally NOT rendered (their data is fabricated); these styles dress the
 // real browser · recall-rail · link-graph · honest-metric surfaces only.
 const MEMORY_CSS = `
-.v-memory .mem-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .v-memory .mem-shell { align-items: start; }
 .v-memory .mem-browser, .v-memory .mem-graph, .v-memory .mem-metrics { padding: var(--s5); }
 .v-memory .mem-browser { display: grid; gap: var(--s4); }

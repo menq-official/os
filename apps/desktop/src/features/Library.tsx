@@ -122,9 +122,10 @@ function CreateDialog(
 }
 
 // ── Live preview panel — the opened "codex" (labeled, announces selection) ────
-function PreviewPanel({ item, label, previewLabelFor, L, panelRef, onEscape }: {
-  item: LibraryItem | null;
-  label: string;
+// `item` is never absent: the one call site sits behind the `filtered.length === 0` return and
+// passes `filtered[sel]` with `sel` clamped into the list.
+function PreviewPanel({ item, previewLabelFor, L, panelRef, onEscape }: {
+  item: LibraryItem;
   previewLabelFor: (title: string) => string;
   L: Localize;
   /** §D binds `Enter` to "open". On this page the preview was ALREADY showing whatever the
@@ -140,7 +141,7 @@ function PreviewPanel({ item, label, previewLabelFor, L, panelRef, onEscape }: {
       className="lib-codex surface soft"
       role="region"
       aria-live="polite"
-      aria-label={item ? previewLabelFor(item.title) : label}
+      aria-label={previewLabelFor(item.title)}
       // -1: reachable by the Enter handoff and by a screen reader, without adding a tab stop
       // that a mouse user would have to Tab past on every visit to the page.
       tabIndex={-1}
@@ -148,23 +149,17 @@ function PreviewPanel({ item, label, previewLabelFor, L, panelRef, onEscape }: {
         if (e.key === 'Escape') { e.preventDefault(); onEscape(); }
       }}
     >
-      {!item ? (
-        <div className="lib-codex-empty micro">{label}</div>
-      ) : (
-        <>
-          <div className="lib-codex-head">
-            <span className="eyebrow">{kindLabel(L, item.kind)}</span>
-            <h3 className="lib-codex-title">{item.title}</h3>
-          </div>
-          <div className="lib-codex-body">
-            <pre aria-label={previewLabelFor(item.title)}>{item.body || '—'}</pre>
-          </div>
-          {parseTags(item.tags).length > 0 && (
-            <div className="lib-tags" aria-label={L('tags')}>
-              {parseTags(item.tags).map((tg) => <span key={tg} className="tag">{tg}</span>)}
-            </div>
-          )}
-        </>
+      <div className="lib-codex-head">
+        <span className="eyebrow">{kindLabel(L, item.kind)}</span>
+        <h3 className="lib-codex-title">{item.title}</h3>
+      </div>
+      <div className="lib-codex-body">
+        <pre aria-label={previewLabelFor(item.title)}>{item.body || '—'}</pre>
+      </div>
+      {parseTags(item.tags).length > 0 && (
+        <div className="lib-tags" aria-label={L('tags')}>
+          {parseTags(item.tags).map((tg) => <span key={tg} className="tag">{tg}</span>)}
+        </div>
       )}
     </section>
   );
@@ -340,7 +335,7 @@ export function Library() {
 
   const renderResults = () => {
     if (loading) return <Skeleton rows={5} />;
-    if (s.error) return <ErrorState message={s.error || L('loadFailed')} onRetry={s.reload} retryLabel={t('action.retry')} />;
+    if (s.error) return <ErrorState message={s.error} onRetry={s.reload} retryLabel={t('action.retry')} />;
     if (rawItems.length === 0) {
       return <EmptyState glyph="❑" title={L('emptyTitle')} hint={L('emptyHint')} />;
     }
@@ -354,7 +349,7 @@ export function Library() {
         </div>
       );
     }
-    const active = filtered[sel] ?? null;
+    const active = filtered[sel];
     return (
       <div className="lib-layout">
         <ul className="lib-list" role="list" aria-label={L('listLabel')} onKeyDown={onListKeyDown}>
@@ -394,7 +389,6 @@ export function Library() {
         </ul>
         <PreviewPanel
           item={active}
-          label={L('previewEmpty')}
           previewLabelFor={previewLabelFor}
           L={L}
           panelRef={previewRef}
@@ -424,11 +418,13 @@ export function Library() {
         </div>
       </header>
 
-      {/* A REFUSED delete, stated plainly and left on screen until dismissed. */}
+      {/* A REFUSED delete, stated plainly and left on screen until dismissed. Outside the
+          desktop runtime (`noBackend`) there is no backend to have rejected anything, so that
+          sentence is left out there; the reason is quoted either way. */}
       {deleteError && (
         <div className="lib-delete-error" role="alert">
           <b>{L('deleteRefusedTitle')}</b>
-          <span>{L('deleteRefusedBody')}</span>
+          {deleteError.kind !== 'noBackend' && <span>{L('deleteRefusedBody')}</span>}
           {deleteError.kind === 'policy' && <span>{L('deleteRefusedPermanent')}</span>}
           <span className="mono lib-delete-reason">{deleteError.reason}</span>
           <Button small variant="ghost" onClick={() => setDeleteError(null)}>{t('action.close')}</Button>
@@ -583,7 +579,6 @@ const LIBRARY_CSS = `
 .v-library .lib-del:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
 
 .v-library .lib-codex { position: sticky; top: 0; padding: var(--s5); min-height: 180px; }
-.v-library .lib-codex-empty { color: var(--ink-muted); padding: var(--s3) 0; }
 .v-library .lib-codex-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--s4); }
 .v-library .lib-codex-title { margin: 0; font-family: var(--f-display); font-weight: 800;
   font-size: var(--t-h2); letter-spacing: -.01em; }

@@ -276,13 +276,17 @@
       ]
     },
     "frontend_tests": {
-      "value": 1294,
+      "value": 1328,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-14",
-        "head": "c49f041",
+        "head": "8be96f8",
         "environments": {
+          "Debian 13 (trixie) native @ 8be96f8 + four more groups of the cockpit read; Knowledge and Memory say when a refused delete is a standing one": {
+            "ran": 1328,
+            "skipped": 0
+          },
           "Debian 13 (trixie) native @ c49f041 + four more groups of the cockpit read; Handoffs shows a measured zero after an ask that ran": {
             "ran": 1294,
             "skipped": 0
