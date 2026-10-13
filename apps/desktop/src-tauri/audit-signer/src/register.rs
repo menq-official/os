@@ -126,7 +126,13 @@ elevation rewrites the anchor, and no second principal here stands above it.";
 /// The complete elevated plan: the specification's steps, then this crate's.
 pub fn install_plan(paths: &spec::SignerPaths, app_sid: &str) -> Vec<String> {
     let mut steps = spec::install_steps(paths, app_sid);
-    steps.extend(crate::additional_install_steps(paths, app_sid));
+    // This crate's steps go BEFORE the start: the signer reads its peer allowlist when it
+    // starts and refuses to serve without one, and `apply()` writes that file before it
+    // registers the service at all. Appended after
+    // `sc.exe start`, the plan as written started a service that had nothing to read. If the
+    // specification ever stops ending in a start, they go last, which is where they were.
+    let start = steps.iter().position(|s| s.starts_with("sc.exe start")).unwrap_or(steps.len());
+    steps.splice(start..start, crate::additional_install_steps(paths, app_sid));
     steps.push(format!(
         "# then, UNELEVATED and after the service's first start, on the app's FIRST launch: \
          read {} and pass it to brops_provision::provision_with_anchor() so the anchor's \

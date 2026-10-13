@@ -548,6 +548,28 @@ mod tests {
         );
     }
 
+    /// Cockpit read R3-0112. The other half, which nothing reached: with the membership clause
+    /// deleted every test in this module stayed green (measured 2026-10-13), because each case
+    /// that used a label outside the set also made the two labels differ. Here the row and the
+    /// caller AGREE — on a value neither may use — which is the case the clause is for.
+    #[test]
+    fn readback_rejects_a_label_outside_the_set_even_when_the_row_and_the_caller_agree() {
+        let body = "reply";
+        let good = sha256_hex(body.as_bytes());
+        for label in ["unverified", "development_untrusted", "", "TRUSTED_VERIFIED"] {
+            assert!(!COMMITTABLE_TRUST_STATES.contains(&label), "the fixture must be outside the set");
+            assert_eq!(
+                verify_readback(body, &good, label, body, &good, label),
+                Err(TurnReason::CommitReadbackMismatch),
+                "`{label}` was committed because both sides said it"
+            );
+        }
+        // and every label inside the set, agreed on, passes — so the refusal above is the set's
+        for label in COMMITTABLE_TRUST_STATES {
+            assert_eq!(verify_readback(body, &good, label, body, &good, label), Ok(()));
+        }
+    }
+
     /// `committed_label` is the only door from a resolved state to a stored string, so the closed
     /// set it can produce is what the CHECK constraint and the readback are allowed to accept.
     #[test]

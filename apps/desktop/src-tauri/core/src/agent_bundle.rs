@@ -195,6 +195,22 @@ pub const GRANT_WRITER: &str = "brops_core::agent_bundle::write_grant";
 /// added optional field, and an old flow still parses and is still refused,
 /// now by name rather than by kind.
 pub const GRANT_SCHEMA: u32 = 2;
+/// The other two files' schema numbers and all three `artifact_type`s, as [`build`] writes them
+/// and [`verify`] requires them. They were literals at the writing sites and read nowhere.
+pub const FLOW_SCHEMA: u32 = 1;
+pub const MANIFEST_SCHEMA: u32 = 1;
+pub const GRANT_TYPE: &str = "brops.agent-grant.v1";
+pub const FLOW_TYPE: &str = "brops.agent-flow.v1";
+pub const BUNDLE_TYPE: &str = "brops.agent-bundle.v1";
+/// The most steps the runtime runs. A flow's own `max_steps` can lower this and cannot raise
+/// it: a bound the bounded file sets on itself is not a bound.
+pub const MAX_FLOW_STEPS: u32 = 8;
+
+/// The one step-count rule, asked by [`build`] before it writes and by [`verify`] before it
+/// loads, so the builder cannot produce what the verifier always refuses.
+fn step_count_allowed(steps: usize, file_max: u32) -> bool {
+    steps >= 2 && steps as u64 <= u64::from(file_max.min(MAX_FLOW_STEPS))
+}
 
 impl Grant {
     /// Written by the runtime from values it holds. There is no parameter here
@@ -202,7 +218,7 @@ impl Grant {
     pub fn for_local_only(expires_at_epoch: i64) -> Self {
         Grant {
             schema: GRANT_SCHEMA,
-            artifact_type: "brops.agent-grant.v1".into(),
+            artifact_type: GRANT_TYPE.into(),
             capabilities: vec!["READ_LOCAL".into(), "WRITE_LOCAL".into()],
             egress: Vec::new(),
             credential_slots: Vec::new(),
@@ -525,6 +541,10 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
 
     let manifest: Manifest =
         serde_json::from_slice(&manifest_bytes).map_err(|_| Refusal::ManifestUnparseable)?;
+    // A file of another schema or another type is not this object, whatever else it parses as.
+    if manifest.schema != MANIFEST_SCHEMA || manifest.artifact_type != BUNDLE_TYPE {
+        return Err(Refusal::ManifestUnparseable);
+    }
 
     // The file table is TOTAL, checked both ways.
     let on_disk = walk(dir)?;
@@ -576,6 +596,9 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
     }
     let grant: Grant =
         serde_json::from_slice(grant_bytes).map_err(|_| Refusal::GrantUnparseable)?;
+    if grant.schema != GRANT_SCHEMA || grant.artifact_type != GRANT_TYPE {
+        return Err(Refusal::GrantUnparseable);
+    }
     // The allowlist of one (cockpit read R3-0860). This asked only whether the writer LOOKED like
     // prose — a suffix of `.md` or `.txt`, or the word "prompt" — so any other string the grant
     // chose to call itself passed.
@@ -592,7 +615,10 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
 
     let flow_bytes = verified.get(manifest.flow_ref.as_str()).ok_or(Refusal::Unreadable)?;
     let flow: Flow = serde_json::from_slice(flow_bytes).map_err(|_| Refusal::FlowUnparseable)?;
-    if flow.steps.len() < 2 || flow.steps.len() as u32 > flow.max_steps {
+    if flow.schema != FLOW_SCHEMA || flow.artifact_type != FLOW_TYPE {
+        return Err(Refusal::FlowUnparseable);
+    }
+    if !step_count_allowed(flow.steps.len(), flow.max_steps) {
         return Err(Refusal::FlowUnparseable);
     }
     grant.covers(&flow)?;
@@ -624,12 +650,15 @@ pub struct BuildSpec {
 /// named by the digest, so the same spec always lands in the same place and two
 /// versions of one agent cannot collide.
 pub fn build(store_root: &Path, spec: &BuildSpec) -> Result<String, Refusal> {
+    if !step_count_allowed(spec.steps.len(), MAX_FLOW_STEPS) {
+        return Err(Refusal::FlowUnparseable);
+    }
     let flow = Flow {
-        schema: 1,
-        artifact_type: "brops.agent-flow.v1".into(),
+        schema: FLOW_SCHEMA,
+        artifact_type: FLOW_TYPE.into(),
         flow_id: format!("flow-{}-{}", spec.bundle_id, spec.bundle_version),
         entry: spec.steps.first().map(|s| s.id.clone()).ok_or(Refusal::FlowUnparseable)?,
-        max_steps: 8,
+        max_steps: MAX_FLOW_STEPS,
         max_wall_ms: 120_000,
         steps: spec.steps.clone(),
     };
@@ -643,8 +672,8 @@ pub fn build(store_root: &Path, spec: &BuildSpec) -> Result<String, Refusal> {
         FileEntry { path: "grant.json".into(), sha256: sha256_hex(&grant_bytes), bytes: grant_bytes.len() as u64 },
     ];
     let manifest = Manifest {
-        schema: 1,
-        artifact_type: "brops.agent-bundle.v1".into(),
+        schema: MANIFEST_SCHEMA,
+        artifact_type: BUNDLE_TYPE.into(),
         bundle_id: spec.bundle_id.clone(),
         bundle_version: spec.bundle_version,
         display_name: spec.display_name.clone(),
@@ -1136,12 +1165,15 @@ mod tests {
     /// gate's condition 2 has a counterpart the code enforces.
     #[test]
     fn a_single_step_flow_is_unparseable() {
-        let mut s = spec(1_000_000);
-        s.steps.truncate(1);
-        s.steps[0].next = None;
-        let dir = tempfile::tempdir().unwrap();
-        let digest = build(dir.path(), &s).unwrap();
-        assert_eq!(verify(&dir.path().join(&digest), 1_000_000), Err(Refusal::FlowUnparseable));
+        // Written past `build`, which refuses this flow itself (R3-0104): what is asked here
+        // is what `verify` says about one that is already on disk.
+        let (dir, digest) = built(1_000_000);
+        let verdict = rewrite_json(dir.path(), &digest, "flow.json", |v| {
+            let steps = v["steps"].as_array_mut().unwrap();
+            steps.truncate(1);
+            steps[0].as_object_mut().unwrap().remove("next");
+        });
+        assert_eq!(verdict.map(|_| ()), Err(Refusal::FlowUnparseable));
     }
 
     /// Every refusal string is distinct and stable: they reach
@@ -1164,6 +1196,122 @@ mod tests {
         }
         assert_eq!(seen.len(), Refusal::ALL.len());
         assert_eq!(Refusal::ALL.len(), 21, "a new reason is a deliberate act; count it here");
+    }
+
+    /// Replace one file of a built bundle with `edit` applied to its JSON, re-point the file
+    /// table at the new bytes and rename the directory to the new manifest digest — so only
+    /// the rule under test can answer.
+    fn rewrite_json(
+        root: &std::path::Path,
+        digest: &str,
+        name: &str,
+        edit: impl FnOnce(&mut serde_json::Value),
+    ) -> Result<VerifiedBundle, Refusal> {
+        let bundle = root.join(digest);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(bundle.join(name)).unwrap()).unwrap();
+        edit(&mut value);
+        let body = serde_json::to_vec_pretty(&value).unwrap();
+        std::fs::write(bundle.join(name), &body).unwrap();
+        let renamed = rewrite_manifest(root, digest, |m| {
+            for f in m.files.iter_mut().filter(|f| f.path == name) {
+                f.sha256 = sha256_hex(&body);
+                f.bytes = body.len() as u64;
+            }
+        });
+        verify(&renamed, 1_000_000)
+    }
+
+    /// Cockpit read R3-0102. `GRANT_SCHEMA` is 2 "because a v1 and a v2 grant are different
+    /// objects", and `verify` never read the number: a grant, a flow or a manifest could state
+    /// any schema and any `artifact_type` and load. Each is held to the one this build writes.
+    #[test]
+    fn r3_0102_a_file_of_another_schema_or_type_is_not_loaded() {
+        // the control: rewriting a file to itself still verifies, so the helper refuses nothing
+        let (dir, digest) = built(1_000_000);
+        assert!(rewrite_json(dir.path(), &digest, "grant.json", |_| {}).is_ok());
+
+        type Edit = fn(&mut serde_json::Value);
+        let cases: [(&str, Edit, Refusal); 4] = [
+            ("grant.json", |v| v["schema"] = 1.into(), Refusal::GrantUnparseable),
+            ("grant.json", |v| v["artifact_type"] = "brops.agent-flow.v1".into(), Refusal::GrantUnparseable),
+            ("flow.json", |v| v["schema"] = 2.into(), Refusal::FlowUnparseable),
+            ("flow.json", |v| v["artifact_type"] = "brops.agent-grant.v1".into(), Refusal::FlowUnparseable),
+        ];
+        for (name, edit, refusal) in cases {
+            let (dir, digest) = built(1_000_000);
+            assert_eq!(rewrite_json(dir.path(), &digest, name, edit).map(|_| ()), Err(refusal), "{name}");
+        }
+        for edit in [
+            (|m: &mut Manifest| m.schema = 2) as fn(&mut Manifest),
+            |m: &mut Manifest| m.artifact_type = "brops.agent-flow.v1".into(),
+        ] {
+            let (dir, digest) = built(1_000_000);
+            let renamed = rewrite_manifest(dir.path(), &digest, edit);
+            assert_eq!(verify(&renamed, 1_000_000).map(|_| ()), Err(Refusal::ManifestUnparseable));
+        }
+    }
+
+    /// Cockpit read R3-0103. The step ceiling was the flow file's own `max_steps`: a flow that
+    /// wrote 100 there was bounded by 100. The runtime's ceiling is compiled in, and the file
+    /// can only lower it.
+    #[test]
+    fn r3_0103_a_flow_cannot_raise_its_own_step_ceiling() {
+        let nine_steps = |v: &mut serde_json::Value| {
+            let branch = serde_json::json!({
+                "id": "x", "kind": "branch",
+                "requires": { "capabilities": [], "credential_slots": [] }
+            });
+            let steps = v["steps"].as_array_mut().unwrap();
+            while steps.len() < 9 {
+                let mut extra = branch.clone();
+                extra["id"] = format!("extra-{}", steps.len()).into();
+                steps.push(extra);
+            }
+        };
+        // the control: nine steps under the file's own word, as it used to be judged
+        let (dir, digest) = built(1_000_000);
+        assert_eq!(
+            rewrite_json(dir.path(), &digest, "flow.json", |v| {
+                nine_steps(v);
+                v["max_steps"] = 100.into();
+            })
+            .map(|_| ()),
+            Err(Refusal::FlowUnparseable),
+            "nine steps loaded because the file said a hundred were allowed"
+        );
+        // and the file may still lower it
+        let (dir, digest) = built(1_000_000);
+        assert_eq!(
+            rewrite_json(dir.path(), &digest, "flow.json", |v| v["max_steps"] = 1.into()).map(|_| ()),
+            Err(Refusal::FlowUnparseable)
+        );
+    }
+
+    /// Cockpit read R3-0104. `build` answered `Ok(digest)` for a flow `verify` always refuses,
+    /// so the refusal arrived later and somewhere else. It is the same rule in both places.
+    #[test]
+    fn r3_0104_build_refuses_a_flow_verify_would_refuse() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut one = spec(1_000_000);
+        one.steps.truncate(1);
+        one.steps[0].next = None;
+        assert_eq!(build(dir.path(), &one), Err(Refusal::FlowUnparseable));
+
+        let mut nine = spec(1_000_000);
+        let last = nine.steps[1].clone();
+        while nine.steps.len() < 9 {
+            let mut extra = last.clone();
+            extra.id = format!("extra-{}", nine.steps.len());
+            nine.steps.push(extra);
+        }
+        assert_eq!(build(dir.path(), &nine), Err(Refusal::FlowUnparseable));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "a refused build wrote a bundle");
+
+        // eight is the most the runtime runs, and it builds and verifies
+        nine.steps.pop();
+        let digest = build(dir.path(), &nine).expect("eight steps is inside the ceiling");
+        assert!(verify(&dir.path().join(&digest), 1_000_000).is_ok());
     }
 
     /// Re-point one manifest field, keep everything else, and rename the

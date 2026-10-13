@@ -442,7 +442,23 @@ fn the_install_plan_names_the_peer_allowlist_the_specification_left_out() {
         Path::new("C:\\Users\\x\\AppData\\Local\\BroPS"),
         Path::new("C:\\Program Files\\BroPS"),
     );
-    let plan = register::install_plan(&paths, APP).join("\n");
+    let steps = register::install_plan(&paths, APP);
+    // The ORDER (cockpit read R3-0085). The signer refuses to serve without its allowlist, so
+    // the file is written — and the restart policy set — before the service is started
+    // (`apply()` writes the file before it registers the service at all). The plan printed
+    // them after `sc.exe start`: followed as written, the first start had no allowlist to read.
+    let at = |needle: &str| {
+        steps.iter().position(|s| s.starts_with(needle)).unwrap_or_else(|| panic!("no step starts `{needle}`"))
+    };
+    let (create, mkdir, start) = (at("sc.exe create"), at("mkdir"), at("sc.exe start"));
+    let (allowlist, failure) = (at("echo "), at("sc.exe failure"));
+    assert!(steps[allowlist].contains(register::ALLOWED_APP_SID_FILE));
+    assert!(mkdir < allowlist, "the allowlist is written into a directory that exists");
+    assert!(allowlist < start, "the service is started before its allowlist is written");
+    assert!(create < failure && failure < start, "the restart policy is set before the first start");
+    assert!(steps.last().unwrap().starts_with("# then, UNELEVATED"), "the app's own step stays last");
+
+    let plan = steps.join("\n");
     assert!(plan.contains("sc.exe create"), "the SCM steps are still there");
     assert!(plan.contains(register::ALLOWED_APP_SID_FILE), "the peer allowlist file is named");
     assert!(plan.contains(APP), "the app SID the signer will accept is named");

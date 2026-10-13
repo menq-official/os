@@ -84,17 +84,20 @@ there; that is not written.
 
 ## Operator runbook (the infrastructure only you can stand up)
 
-1. **Custody** — NOT runnable for production until `T-131`: `win_provision` compares
+*(Order corrected 2026-10-13, cockpit read R3-0189: the build was step 2 and the provisioning that
+needs its output — `--executor-path`, and `win_provision` itself — was step 1.)*
+
+1. **Build the kit's bins** (`cargo build --release --bin win_provision --bin win_authority
+   --bin win_supervisor --bin win_signer --bin win_executor --bin win_live_turn
+   --bin win_tcb_pin`). Step 2 runs `win_provision` and pins the `win_executor.exe` built here.
+2. **Custody** — NOT runnable for production until `T-131`: `win_provision` compares
    `--root-key` against the compiled pin, whose private half nobody holds. The shape, for when the
    pin is install-minted:
    `win_provision --root-dir <deploy> --root-key <offline seed> --root-provenance external
-   --allowed-broker-sid <SID> --executor-path <path to the rebuilt win_executor.exe>
+   --allowed-broker-sid <SID> --executor-path <path to the win_executor.exe built in step 1>
    --challenge-account <acct> --supervisor-account <acct> --signer-account <acct>`.
    `--root-provenance` is the custody DECLARATION and has no default: nothing in the tool can
    tell where the seed it was handed came from, and only `external` can ever render production.
-2. **Build the sidecar bins** (`cargo build --release --bin win_authority --bin win_supervisor
-   --bin win_signer --bin win_executor --bin win_live_turn --bin win_tcb_pin`) and record the
-   win_executor SHA into provisioning (step 1's `--executor-path`).
 3. **Measure the deployment (§2.5 TCB integrity floor)** — run elevated, after provisioning and
    before anything starts: `win_tcb_pin --root-dir <deploy> --bin-dir <bins> --out
    <deploy>\tcb-pin.json`. It pins the five binaries and the four steering files, locks the

@@ -794,13 +794,9 @@ mod linux {
             Some(m) => m,
             None => return setup_blocked(&evidence, expect, "manifest_unreadable", &manifest_path),
         };
-        let root_sig_b64 = match s(&cfg, &["trust", "manifest_sig_path"])
-            .and_then(|p| std::fs::read_to_string(p).ok())
-        {
-            Some(sig) => sig.trim().to_string(),
-            None => {
-                return setup_blocked(&evidence, expect, "manifest_sig_unreadable", &manifest_path)
-            }
+        let root_sig_b64 = match manifest_signature(&cfg) {
+            Ok(sig) => sig,
+            Err((name, detail)) => return setup_blocked(&evidence, expect, name, &detail),
         };
         let floor_path = match s(&cfg, &["trust", "floor_path"]) {
             Some(p) => PathBuf::from(p),
@@ -1032,6 +1028,53 @@ mod linux {
             return finish(&evidence, expect, "blocked:custody_row_mismatch", facts);
         }
         finish(&evidence, expect, "committed", facts)
+    }
+
+    /// The manifest's detached signature, or the setup refusal `(name, detail)`.
+    ///
+    /// Two refusals, because they are two repairs: a config with no `trust.manifest_sig_path`
+    /// is `config_missing`, like its neighbours, and a path that cannot be read is
+    /// `manifest_sig_unreadable` naming THAT path. Both used to be the second, with the
+    /// manifest's own path as the detail — a file that had just been read successfully.
+    fn manifest_signature(cfg: &Value) -> Result<String, (&'static str, String)> {
+        let path = s(cfg, &["trust", "manifest_sig_path"])
+            .ok_or(("config_missing", "trust.manifest_sig_path".to_string()))?;
+        match std::fs::read_to_string(&path) {
+            Ok(sig) => Ok(sig.trim().to_string()),
+            Err(_) => Err(("manifest_sig_unreadable", path)),
+        }
+    }
+
+    #[cfg(test)]
+    mod signature_tests {
+        use super::*;
+
+        #[test]
+        fn a_missing_signature_key_and_an_unreadable_signature_file_are_two_refusals() {
+            let dir = std::env::temp_dir().join(format!("ladder-sig-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            let sig_path = dir.join("manifest.sig").to_string_lossy().into_owned();
+
+            // the key is not in the config at all
+            assert_eq!(
+                manifest_signature(&json!({ "trust": {} })),
+                Err(("config_missing", "trust.manifest_sig_path".to_string()))
+            );
+            // the key is there and the file it names is not
+            assert_eq!(
+                manifest_signature(&json!({ "trust": { "manifest_sig_path": sig_path } })),
+                Err(("manifest_sig_unreadable", sig_path.clone())),
+                "the detail is the file that could not be read, not the manifest beside it"
+            );
+            // and the ordinary case, trimmed
+            std::fs::write(&sig_path, "c2ln\n").expect("write");
+            assert_eq!(
+                manifest_signature(&json!({ "trust": { "manifest_sig_path": sig_path } })),
+                Ok("c2ln".to_string())
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     #[cfg(test)]
