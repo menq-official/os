@@ -21,8 +21,9 @@
 //!
 //! * [`SidecarTrust::Provisioned`] holds a [`TrustEnvironment`], whose only constructor is
 //!   [`crate::engine_trust::apply`]. There is no `Default`, no public field, no second way to make
-//!   one. A caller that wants to drive `bridge.task-request` or the `governance.read` op — the two
-//!   shapes that reach `bro_signature.load_trusted_keys`, and through it O-3 — has nothing else to
+//!   one. A caller that wants to drive `bridge.task-request` or an op (`governance.read`,
+//!   `approval.request`) — every shape that is not a relay frame, and so every shape that reaches
+//!   `bro_signature.load_trusted_keys`, and through it O-3 — has nothing else to
 //!   pass and does not compile. That is unchanged, and deliberately: it is a different guarantee
 //!   from the shape before it, where `engine_trust::apply(&mut cmd)?` was a LINE, and deleting a
 //!   line compiles.
@@ -42,7 +43,8 @@
 //!
 //! For a long time this builder was `Command::new(python)` and nothing else, so the sidecar ran as
 //! **whatever principal called it**. For the desktop that is correct and is the only thing available:
-//! the app is one process and the governed read/pull it drives is its own. For the BROKER it is a
+//! the app is one process, and the governed turn, the governance read and the approval-request
+//! write it drives are its own (it sends neither relay frame). For the BROKER it is a
 //! defect with a name. §2.6 requires the seven runtime principals to be pairwise distinct, the live
 //! kit provisions `brops-sidecar` as a seventh account for exactly that reason, and every supervisor
 //! surface the §4.10(g) ladder knocks on — `governed_turn_open`, staging upload, evidence-request and
@@ -179,12 +181,18 @@ fn env_nonempty(key: &str) -> Option<String> {
 /// # Why this is not one requirement for every spawn
 ///
 /// It used to be. Both constructors took a [`TrustEnvironment`] outright, which is correct about
-/// the DESKTOP and wrong about which SPAWN needs what. `bridge/engine_sidecar.py` serves four
-/// disjoint request shapes, and only two of them ever reach a reader of the provisioned set:
+/// the DESKTOP and wrong about which SPAWN needs what. `bridge/engine_sidecar.py`'s `_dispatch`
+/// recognises four disjoint request shapes — the two relay protocols, an `op`, and the
+/// task-request — and the rule is: everything that is NOT a relay frame reaches a reader of the
+/// provisioned set. Today that is three requests, two of them the rows of `_OPS`:
 ///
 /// * `bridge.task-request` (no `protocol`, no `op`) — `_governed_turn` → `_real_callables`, the
 ///   frozen governed-turn path that ends at the engine.
-/// * `op: governance.read` — `_op_governance_read` → `_governance_runtime`, which calls
+/// * `op: approval.request` (protocol `brops.approval-request.v1`) — `_op_approval_request` →
+///   the same `_governance_runtime` as the read below. This list named the read alone (cockpit
+///   read R3-0975), while the desktop sends this op through the provisioned arm.
+/// * `op: governance.read` (protocol `brops.governance-read.v1`) — `_op_governance_read` →
+///   `_governance_runtime`, which calls
 ///   `bro_signature.load_trusted_keys`. That function reads `BRO_TRUSTED_REGISTRY_ROOT` (through
 ///   `resolve_registry_root`), `BRO_OPERATOR_ROOT_PUBKEY_FILE` and `BRO_OPERATOR_REGISTRY_MIN_FILE`
 ///   (through `_resolve_operator_root_pin` / `resolve_registry_floor`), and the `bro_control_room_api`
@@ -220,7 +228,10 @@ fn env_nonempty(key: &str) -> Option<String> {
 /// * A task-request body with a relay `protocol` bolted on is not a smuggled task-request either —
 ///   the child routes it by that same field, to the relay handler, which is the handler that reads
 ///   nothing.
-/// * A `governance.read` op carries no `protocol` and is refused here for the same reason.
+/// * An op is refused here whichever way it is spelled. As the desktop sends them, `governance.read`
+///   and `approval.request` each name a protocol of their own (`brops.governance-read.v1`,
+///   `brops.approval-request.v1`), and neither is one of [`RELAY_PROTOCOLS`]; with no `protocol` at
+///   all an op is refused for the same reason a task-request is.
 ///
 /// There is therefore no request that this door admits and the child then executes on a path that
 /// reads the provisioned set. The remaining strength is stated honestly rather than overclaimed: the
@@ -230,8 +241,9 @@ fn env_nonempty(key: &str) -> Option<String> {
 /// anything the caller separately asserts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SidecarTrust {
-    /// The provisioned set, whole. Required for `bridge.task-request` and for the governance read
-    /// op, and harmless on a relay frame — carrying material the path does not read costs nothing.
+    /// The provisioned set, whole. Required for `bridge.task-request` and for both ops (the
+    /// governance read and the approval-request write), and harmless on a relay frame — carrying
+    /// material the path does not read costs nothing.
     ///
     /// The inner value can only have come from [`crate::engine_trust::apply`]: [`TrustEnvironment`]
     /// has no `Default`, no public field and no other constructor, so this variant cannot be spelled
@@ -243,8 +255,8 @@ pub enum SidecarTrust {
     /// not for want of provisioning: `BRO_CONDUCTOR_SESSION_TOKEN` binds `agent_id: "bro-000"`,
     /// `role: "bro"` — the CONDUCTOR's identity. A broker that never claims it holds an inert file;
     /// a broker that claims it has made the trusted broker service the conductor. No second token
-    /// can be minted (the operator root signs one offline and the key is zeroized inside the
-    /// minting scope), and the 0700 tree holding it also holds eight retained private authority
+    /// can be minted (the operator root signs one in memory, once, during provisioning, and the
+    /// key is zeroized inside the minting scope), and the 0700 tree holding it also holds eight retained private authority
     /// seeds, so no grant yields one without the others.
     RelayFramesOnly,
 }
@@ -577,14 +589,16 @@ pub struct GovernedSidecar {
 impl GovernedSidecar {
     /// Configure the seam to run the sidecar as THIS process's own principal.
     ///
-    /// The DESKTOP's constructor, and correct there: the app is one principal and the governed read
-    /// and §4.10(f) pull it drives are its own. It is the wrong constructor for the broker, and the
+    /// The DESKTOP's constructor, and correct there: the app is one principal and the three
+    /// requests it drives — the governed turn, the governance read and the approval-request write
+    /// — are its own. It drives no §4.10(f) pull: the app-crate pull was deleted on 2026-09-20 and
+    /// the broker's ladder runs that loop. It is the wrong constructor for the broker, and the
     /// name is what makes that visible at the call site — this used to be `new`, which named nothing
     /// and read as the default.
     ///
     /// `trust` is a [`SidecarTrust`], and the desktop's is
-    /// [`SidecarTrust::Provisioned`] — it drives `bridge.task-request` and the governance read op,
-    /// both of which reach `bro_signature.load_trusted_keys`. The inner value can only have come
+    /// [`SidecarTrust::Provisioned`] — it drives `bridge.task-request` and the two ops, none of
+    /// which is a relay frame, so each reaches a reader of the provisioned set. The inner value can only have come
     /// from [`crate::engine_trust::apply`], so that arm is still a compile-time requirement rather
     /// than a line somebody could delete.
     pub fn as_calling_principal(
@@ -847,19 +861,18 @@ impl GovernedSidecar {
 /// The §4.10(g) submit hop's production transport — the same spawn, reached through the seam the
 /// writer was always designed to be handed.
 ///
-/// This closes `governed_submit`'s "**No production code implements it**".
-///
 /// RETRACTED 2026-09-20. This comment used to continue: "What it does NOT do is give
 /// `governed_turn_submit_prepared` a CALLER: the writer stays declared unreachable in
 /// `config/reachability-declarations.json`, because wiring it would move the shipped broker off its
 /// fail-closed executor — a decision for the owner". Both halves are HISTORY. The writer IS called,
-/// from `broker/src/ladder_executor.rs:389`, and carries `must_have_caller` in that file; and the
-/// Owner took the executor decision on 2026-09-19, so `broker/src/main.rs:566` serves
-/// `ChainExecutor::with_custody` over the `LadderChain` this transport belongs to.
+/// from `LadderChain::run_verified` in `broker/src/ladder_executor.rs`, and carries
+/// `must_have_caller` in that declarations file; and the Owner took the executor decision on 2026-09-19, so
+/// `build_governed_executor` in `broker/src/main.rs` serves `ChainExecutor::with_custody` over
+/// the `LadderChain` this transport belongs to.
 ///
 /// What still holds the line is narrower, and is not about this impl: `$BROPS_BROKER_CONFIG` is
 /// absent on every shipped install, so `build_governed_executor` returns `UpstreamBlockedExecutor`
-/// (`broker/src/main.rs:268-270`) and none of this is reachable by a user.
+/// (its `fail_closed` closure) and none of this is reachable by a user.
 impl SubmitTransport for GovernedSidecar {
     fn call(&self, frame: &Value) -> Result<Value, String> {
         let body = serde_json::to_string(frame)
@@ -1110,7 +1123,10 @@ mod tests {
             if accept { verdicts.0 += 1 } else { verdicts.1 += 1 }
         }
         // A table of one verdict proves nothing about the other, and an empty one proves nothing.
-        assert!(verdicts.0 >= 4 && verdicts.1 >= 15, "the table lost cases: {verdicts:?}");
+        // The counts are EXACT (cockpit read R3-1231): this was a floor of 4 and 15 under a table
+        // of 4 and 17, so two refusals could be deleted with this test green. A case added to
+        // the table moves this line with it, on purpose.
+        assert_eq!(verdicts, (4, 17), "the table's (accept, refuse) counts changed");
     }
 
     /// A child this process may not signal and that never exits: what `sudo -u <other account>`
@@ -1192,12 +1208,25 @@ mod tests {
         .to_string()
     }
 
-    /// A `governance.read` op — the other shape that reaches `bro_signature.load_trusted_keys`.
+    /// A `governance.read` op, spelled the way the desktop sends it (`governance_request` in the
+    /// app crate): it names a protocol of its own, which is not a relay one.
     fn governance_read_op() -> String {
         serde_json::json!({
+            "protocol": "brops.governance-read.v1",
             "op": "governance.read",
             "surface": "decisionLedger",
             "read_only": true,
+        })
+        .to_string()
+    }
+
+    /// An `approval.request` op — the second row of the child's `_OPS`, and the third request the
+    /// desktop sends. `_op_approval_request` opens the same `_governance_runtime` the read does.
+    fn approval_request_op() -> String {
+        serde_json::json!({
+            "protocol": crate::approval_request::APPROVAL_REQUEST_PROTOCOL,
+            "op": crate::approval_request::APPROVAL_REQUEST_OP,
+            "request_id": "ask-1",
         })
         .to_string()
     }
@@ -1245,24 +1274,32 @@ mod tests {
         }
     }
 
-    /// The set is exported WHOLE. A loop that stopped early — or a `command()` that exported the
-    /// registry root and dropped the session token — is the half-wired state `engine_trust`'s own
-    /// docs call worse than no export at all, and a test that only looked for the interesting
-    /// variable would have passed for the wrong reason.
+    /// The set is exported WHOLE and ALONE. A loop that stopped early — or a `command()` that
+    /// exported the registry root and dropped the session token — is the half-wired state
+    /// `engine_trust`'s own docs call worse than no export at all.
+    ///
+    /// The other direction is what this test adds to the one above (cockpit read R3-1232): it
+    /// used to count the pairs present and compare the count with the set's length, which is the
+    /// sibling's predicate again, and neither looked for a variable the builder set that the
+    /// provisioned set does not hold. Here everything the command SETS is compared with the set,
+    /// name for name and value for value. The three governance paths are left out because the
+    /// builder overrides a relative one from this process's environment, which another test in
+    /// this binary sets.
     #[test]
     fn the_exported_set_is_whole_rather_than_its_most_interesting_member() {
         let s = sidecar();
         let got = envs(&s.command().expect("the calling-principal arm cannot fail"));
-        let exported = s
-            .trust
-            .pairs()
-            .iter()
-            .filter(|(name, value)| {
-                got.iter().any(|(k, v)| k == name && v.as_deref() == Some(value.as_str()))
-            })
-            .count();
-        assert!(s.trust.pairs().len() > 1, "a one-element set cannot detect a partial export");
-        assert_eq!(exported, s.trust.pairs().len(), "a proper subset was exported: {got:?}");
+        let mut set: Vec<(String, String)> = got
+            .into_iter()
+            .filter(|(k, _)| !GOVERNANCE_PATH_VARS.contains(&k.as_str()))
+            .filter_map(|(k, v)| v.map(|v| (k, v)))
+            .collect();
+        set.sort();
+        let mut provisioned: Vec<(String, String)> =
+            s.trust.pairs().iter().map(|(name, value)| (name.to_string(), value.clone())).collect();
+        provisioned.sort();
+        assert!(provisioned.len() > 1, "a one-element set cannot detect a partial export");
+        assert_eq!(set, provisioned, "what the command sets is not the provisioned set");
     }
 
     /// The self-test activator is REMOVED, not merely unset — `env_remove` on a command that
@@ -1716,13 +1753,23 @@ mod tests {
     /// holds, the failure names the refusal and no process was ever created.
     const UNSPAWNABLE: &str = "brops-no-such-interpreter-does-not-exist";
 
+    /// The reference block with a program no host has in the invoker's first place. The tests
+    /// below call `round_trip` on this seam, and under a distinct principal the program that is
+    /// started is the INVOKER, not [`UNSPAWNABLE`]: with the reference `/usr/bin/sudo` there, an
+    /// admitted frame ran the host's real `sudo` (cockpit read R3-1233).
     fn relay_seam() -> GovernedSidecar {
+        let block = serde_json::json!({
+            "principal": "brops-sidecar",
+            "invoker": [
+                "/brops-no-such-invoker-does-not-exist", "-n", "-u", "brops-sidecar", "/usr/bin/env"
+            ],
+        });
         GovernedSidecar::as_distinct_principal(
             UNSPAWNABLE,
             distinct_script().to_str().expect("temp path is UTF-8"),
             std::env::temp_dir(),
             SidecarTrust::RelayFramesOnly,
-            principal(),
+            SidecarPrincipal::from_config(Some(&block)).expect("well-formed"),
         )
     }
 
@@ -1750,8 +1797,8 @@ mod tests {
         );
     }
 
-    /// The other trust-reading shape, and it is a different branch of the child's dispatch: an `op`
-    /// carries no `protocol` at all, so it falls through to `_OPS` and `_op_governance_read` ->
+    /// Another trust-reading shape, and it is a different branch of the child's dispatch: an `op`
+    /// names no RELAY protocol, so it falls through to `_OPS` and `_op_governance_read` ->
     /// `_governance_runtime` -> `load_trusted_keys`. A door that only knew about task-requests would
     /// pass this one.
     #[test]
@@ -1766,38 +1813,72 @@ mod tests {
         );
     }
 
+    /// And the other row of `_OPS` (cockpit read R3-0975): `approval.request` reaches the same
+    /// `_governance_runtime`, and the argument above this type did not name it. It carries a
+    /// `protocol` — its own — so a door that admitted "anything with a protocol" would pass it.
+    #[test]
+    fn an_approval_request_op_cannot_be_driven_through_the_trust_free_arm() {
+        let err = relay_seam()
+            .round_trip(&approval_request_op())
+            .expect_err("an approval request went out through a sidecar carrying no trust environment");
+        assert!(err.contains(RELAY_ONLY_NAME), "{err}");
+        assert!(err.contains(crate::approval_request::APPROVAL_REQUEST_PROTOCOL), "{err}");
+        assert!(
+            !err.contains("Could not run the governed engine sidecar"),
+            "the op reached a spawn before it was refused: {err}"
+        );
+    }
+
     /// Both relay frames ARE admitted — so the tests above cannot pass by the arm refusing
     /// everything, which is a refusal that would look identical from a distance.
     ///
-    /// The second half deliberately does NOT assert which transport error fires. It used to assert
-    /// "Could not run the governed engine sidecar", and that passed on Windows and failed on Linux
-    /// CI: Windows has no `sudo`, so the distinct-principal invoker cannot start; Linux has one, so
-    /// it starts and dies at `unknown user brops-sidecar` — a CRASH rather than a spawn failure.
-    /// Same admission, different transport error. What this test owns is that the DOOR let the frame
-    /// through, so all that is asserted is that the refusal is not the door's — the same shape the
-    /// sibling test above already uses in the other direction.
+    /// The second half is a round trip, so it reaches a SPAWN — and the seam's program is one no
+    /// host has (cockpit read R3-1233). It used to be the reference invoker, `/usr/bin/sudo`: this
+    /// unit test ran the host's real `sudo -n -u brops-sidecar …` twice, and what came back
+    /// depended on the box. Windows has no `sudo`, so the spawn failed; Linux has one, so it
+    /// started and died at `unknown user brops-sidecar` — a CRASH rather than a spawn failure —
+    /// which is why this test could not say which transport error fires. With a program that
+    /// exists nowhere it is a spawn failure everywhere, and it is asserted.
     #[test]
     fn both_relay_frames_are_admitted_by_the_trust_free_arm() {
         for frame in [submit_frame(), output_read_frame()] {
             SidecarTrust::RelayFramesOnly
                 .admits(&frame)
                 .unwrap_or_else(|e| panic!("a relay frame was refused by the relay arm: {e}"));
-            // And it got past the door: whatever failed next, it was the transport, not `admits`.
-            let err = relay_seam().round_trip(&frame).expect_err("the interpreter cannot start");
+            let seam = relay_seam();
+            let program =
+                seam.command().expect("the reference shape builds").get_program().to_os_string();
+            assert!(
+                !std::path::Path::new(&program).exists(),
+                "this round trip would run the host's own {program:?}, so its outcome would depend \
+                 on the host's accounts and sudoers"
+            );
+            // And it got past the door: what failed next was the transport, not `admits`.
+            let err = seam.round_trip(&frame).expect_err("the invoker cannot start");
             assert!(
                 !err.contains(RELAY_ONLY_NAME),
                 "a relay frame was refused by the door rather than reaching the transport: {err}"
             );
+            assert!(
+                err.contains("Could not run the governed engine sidecar"),
+                "the frame was admitted, but what failed next was not the spawn: {err}"
+            );
         }
     }
 
-    /// The provisioned arm admits every shape, including the relay frames. Carrying material a path
-    /// does not read costs nothing, and the desktop legitimately drives all four through one seam.
+    /// The provisioned arm ADMITS every shape, including the relay frames: carrying material a path
+    /// does not read costs nothing. That is a statement about the door, not about a caller — the
+    /// desktop, the one caller of this arm, sends the task-request and the two ops and neither
+    /// relay frame.
     #[test]
     fn the_provisioned_arm_admits_every_request_shape() {
-        for request in
-            [task_request(), governance_read_op(), submit_frame(), output_read_frame()]
-        {
+        for request in [
+            task_request(),
+            governance_read_op(),
+            approval_request_op(),
+            submit_frame(),
+            output_read_frame(),
+        ] {
             trust().admits(&request).unwrap_or_else(|e| {
                 panic!("the provisioned arm refused a request it carries the material for: {e}")
             });
@@ -1820,6 +1901,15 @@ mod tests {
     fn every_near_miss_is_refused_rather_than_relayed() {
         let cases = [
             ("no protocol key", serde_json::json!({ "task_id": "t" })),
+            ("an op with no protocol key", serde_json::json!({ "op": "governance.read" })),
+            (
+                "the governance read under its own protocol",
+                serde_json::from_str(&governance_read_op()).expect("the fixture is JSON"),
+            ),
+            (
+                "the approval request under its own protocol",
+                serde_json::from_str(&approval_request_op()).expect("the fixture is JSON"),
+            ),
             ("a null protocol", serde_json::json!({ "protocol": serde_json::Value::Null })),
             ("a non-string protocol", serde_json::json!({ "protocol": 7 })),
             ("an empty protocol", serde_json::json!({ "protocol": "" })),

@@ -4,9 +4,9 @@
 > [`docs/archive/TASKS_ARCHIVE_2026-08.md`](docs/archive/TASKS_ARCHIVE_2026-08.md).
 
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #457 · branch `ck-m54`** (base `main`, tip `7b668ed`, task T-145).
+> **⏭️ CURRENT ACTIVE: PR #458 · branch `ck-m56`** (base `main`, tip `c49f041`, task T-145).
 >
-> cockpit read, governed-turn core
+> cockpit read, governed sidecar
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
@@ -18,7 +18,7 @@ Status: `Todo` · `In-Progress` · `Review` · `Done` · `Blocked`. ◑ the Buil
 
 | ID | Task | Claimed by | Status | Branch / PR |
 |----|------|-----------|--------|-------------|
-| **T-145** | **The whole repository, read file by file** — three records, all findings OPEN unless struck: [first read](docs/WHOLE_REPO_READ_2026-10-01.md) 932 (682 fixed, 87 open, 36 wait on the Owner §8); [engine, tools, documents](docs/WHOLE_REPO_READ_2026-10-02.md) 1226; [the cockpit](docs/WHOLE_REPO_READ_2026-10-02_COCKPIT.md) 1370 (456 closed, 2 half, 29 wait, 1 partly refuted, 1 already covered — all marked in the record; +1 by CI), where the readers left 168 files unfinished ◑ | Bro | In-Progress | `#332` |
+| **T-145** | **The whole repository, read file by file** — three records, all findings OPEN unless struck: [first read](docs/WHOLE_REPO_READ_2026-10-01.md) 932 (682 fixed, 87 open, 36 wait on the Owner §8); [engine, tools, documents](docs/WHOLE_REPO_READ_2026-10-02.md) 1226; [the cockpit](docs/WHOLE_REPO_READ_2026-10-02_COCKPIT.md) 1370 (467 closed, 2 half, 29 wait, 1 partly refuted, 1 already covered — all marked in the record; +1 by CI), where the readers left 168 files unfinished ◑ | Bro | In-Progress | `#332` |
 | **T-169** | **The owner-command path** — [design](docs/design/OWNER_COMMAND_PATH_DESIGN.md) **REJECTED** in [review](docs/design/OWNER_COMMAND_PATH_REVIEW.md); redesign owed | — | Todo | — |
 | **T-170** | **Audits** — ledger; open `K-01`, `K-07`, `K-09`, `L-*` (12th; 20 of 43 ◑; 20 repro) | — | Todo | — |
 | **T-171** | **Standard 2.1.0 everywhere** — OS adopted, one `sync_facts`; rest next | — | In-Progress | — |
