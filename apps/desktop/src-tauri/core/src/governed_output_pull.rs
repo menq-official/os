@@ -115,7 +115,11 @@
 //! a live turn — not a missing caller.
 //!
 //! The dependency is therefore made **typed** rather than described: [`OutputStreamCapability`] cannot be
-//! built without a verified envelope and a well-formed token, so the day a §4.6 frame delivers one the
+//! built without an envelope and a well-formed token — and the production entry,
+//! [`pull_verified_output`], takes a `VerifiedEnvelope`, which only signature verification can build.
+//! (Until 2026-10-13 this sentence said "a verified envelope" of a type that accepted any
+//! `ReceiptEnvelope`, and the one production caller pulled before any signature was checked: cockpit
+//! read R3-0040.) So the day a §4.6 frame delivers one the
 //! compiler names every place it has to reach. `config/reachability-declarations.json` carries the
 //! matching `rust_symbols` entry, which FLIPPED from `declared_unreachable` to `must_have_caller` on
 //! 2026-08-12 — on the gate's own instruction, since it now has a named caller. The flip is not a claim
@@ -277,8 +281,13 @@ impl PullError {
 ///
 /// That sentence is the whole reason this type has no field-by-field constructor.
 /// [`from_envelope`](OutputStreamCapability::from_envelope) is the only way to build one, and it takes
-/// the envelope, so the two identity values can only ever be the signed ones. A sidecar that swapped in
-/// another turn's token would have to also produce that turn's envelope, which it cannot sign.
+/// the envelope, so the two identity values can only ever be the ENVELOPE's — never the transport's
+/// echo of them.
+///
+/// Whether that envelope has been VERIFIED is not something this type knows: it takes a
+/// `ReceiptEnvelope`, which anyone can build. "Authenticated" is established one level up, by
+/// [`pull_verified_output`] taking a `VerifiedEnvelope`. The raw [`pull_output`] stays for the proof
+/// driver that presents a deliberately wrong envelope to show the supervisor refuses it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputStreamCapability<'a> {
     output_stream_id: &'a str,
@@ -575,7 +584,25 @@ fn transport_failure_from_reply(reply: &Value) -> Option<PullError> {
     Some(PullError::Transport(detail.to_string()))
 }
 
-/// Drive a whole §4.10(f) pull synchronously and return the exact output bytes.
+/// The §4.10(f) pull for a turn the broker intends to ACCEPT: the envelope's two signatures and its
+/// binding to this turn were checked before the first request is built, because a
+/// [`VerifiedEnvelope`](crate::governed_verification::VerifiedEnvelope) cannot exist otherwise.
+/// This is the entry the broker's ladder calls. Design §4.10(f): the ids presented to the supervisor
+/// are "authenticated values, not transport claims".
+pub fn pull_verified_output(
+    verified: &crate::governed_verification::VerifiedEnvelope,
+    output_stream_id: &str,
+    fetch: impl FnMut(&Value) -> Result<Value, PullError>,
+) -> Result<Vec<u8>, PullError> {
+    pull_output(verified.envelope(), output_stream_id, fetch)
+}
+
+/// Drive a whole §4.10(f) pull synchronously and return the exact output bytes — over ANY envelope.
+///
+/// This function authenticates nothing: it reads the length, the digest and the two ids off whatever
+/// `ReceiptEnvelope` it is given. A caller that will accept the result uses
+/// [`pull_verified_output`]. This one is for `ladder_output_pull`, the driver that presents an
+/// envelope it knows to be wrong.
 ///
 /// `fetch` performs ONE desktop→sidecar round trip: it is handed a request from
 /// [`OutputPull::next_request`] and returns the parsed reply document, or a [`PullError::Transport`]

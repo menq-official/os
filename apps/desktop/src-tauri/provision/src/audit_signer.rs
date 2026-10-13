@@ -1479,6 +1479,16 @@ pub fn check_anchor_payload(payload: &Value, expected_key_id: &str) -> Result<An
 /// * The `previous_anchor_sha256` the engine measured must be the digest of the anchor this
 ///   signer last emitted. Removing or replacing the anchor file to escape the check is
 ///   therefore itself refused.
+///
+/// **A known lockout, not yet decided (cockpit read R3-0008).** The third rule has no way back
+/// from one ordinary failure. The signer saves its state before replying and the engine installs
+/// the anchor file after receiving the reply; a reply lost between the two leaves this signer
+/// expecting an anchor the disk never got, and every later request — naming the older anchor
+/// that IS on disk — is `AnchorChainBroken`. No branch here accepts it and no reset exists in
+/// this crate or in `audit-signer` (searched both for `reset`: one hit, an `sc.exe failure`
+/// restart policy). `provision/tests/audit_signer.rs` holds the lockout as a test,
+/// `a_reply_lost_after_the_state_was_saved_leaves_the_ledger_refused_for_good`. The remedy
+/// changes what the anti-rollback rule accepts, so it waits on the Owner.
 pub fn check_monotonic(fields: &AnchorFields, last: Option<&AnchorState>) -> Result<(), SignRefusal> {
     let Some(prev) = last else {
         // First anchor for this ledger. `previous_anchor_sha256` must be absent: a value there

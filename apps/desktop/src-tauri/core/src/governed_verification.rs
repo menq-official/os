@@ -916,6 +916,32 @@ fn check_receipt_freshness(envelope: &ReceiptEnvelope, freshness: &Freshness) ->
     Ok(())
 }
 
+/// An envelope that passed §7.1 steps 1 to 4c for ONE turn: both signatures verified under the
+/// pinned keys, the request binding recomputed from the broker's own Expected, the run identity
+/// compared, and the attestation parsed and bound to this turn.
+///
+/// The field is private and [`verify_envelope`] is the only constructor, so holding one is
+/// holding the fact. It exists for the §4.10(f) pull (cockpit read R3-0040): the design has the
+/// pull present `receipt_id` and `execution_attempt_id` as "authenticated values, not transport
+/// claims", and until this type the only function that authenticated them also needed the
+/// output — so the ladder pulled first and verified afterwards.
+///
+/// NOT yet accepted: freshness, the output digest and the one-time ledger claim are
+/// [`accept_verified`]'s, and nothing may be committed or rendered on this witness alone.
+#[derive(Debug)]
+pub struct VerifiedEnvelope<'e> {
+    envelope: &'e ReceiptEnvelope<'e>,
+    ctx: &'e BrokerContext<'e>,
+}
+
+impl<'e> VerifiedEnvelope<'e> {
+    /// The envelope that was verified. The same borrow, not a copy: there is no second set of
+    /// fields that could disagree with the signed ones.
+    pub fn envelope(&self) -> &'e ReceiptEnvelope<'e> {
+        self.envelope
+    }
+}
+
 /// The broker's FINAL ACCEPTANCE predicate (§6.1 step 14, §7.1). Pure over the injected inputs — no
 /// socket, store, or clock. On success returns the [`AcceptedOutput`] to hand to
 /// `governed_message_store::persist_committed`; on any failure returns a [`TurnReason`] and **consumes
@@ -928,6 +954,11 @@ fn check_receipt_freshness(envelope: &ReceiptEnvelope, freshness: &Freshness) ->
 /// `output` is the exact reassembled reply bytes (§4.10(f) pull); `ctx` is the broker-owned message
 /// identity; `ledger` is the one-time nonce + receipt-id replay store; `freshness` carries the broker's
 /// wall-clock reading for THIS acceptance (§7.1 — the module is still clock-free, the clock is injected).
+///
+/// It is [`verify_envelope`] followed by [`accept_verified`], in that order and with nothing
+/// between them, so the sequence of checks is the one this function has always run. A caller that
+/// must authenticate the envelope BEFORE it has the output — the ladder, whose pull names the
+/// envelope's ids — calls the two halves itself.
 #[allow(clippy::too_many_arguments)]
 pub fn verify_and_accept(
     expected: &IssuedRequest,
@@ -940,6 +971,20 @@ pub fn verify_and_accept(
     ledger: &mut dyn AcceptanceLedger,
     freshness: &Freshness,
 ) -> Result<AcceptedOutput, TurnReason> {
+    let verified = verify_envelope(expected, envelope, envelope_signature_b64, attestation, keys, ctx)?;
+    accept_verified(&verified, output, ledger, freshness)
+}
+
+/// §7.1 steps 1 to 4c: everything that can be decided about the envelope WITHOUT the output and
+/// without a clock. Consumes nothing — no nonce, no receipt id.
+pub fn verify_envelope<'e>(
+    expected: &IssuedRequest,
+    envelope: &'e ReceiptEnvelope<'e>,
+    envelope_signature_b64: &str,
+    attestation: &SupervisorAttestation,
+    keys: &PinnedKeys,
+    ctx: &'e BrokerContext<'e>,
+) -> Result<VerifiedEnvelope<'e>, TurnReason> {
     // 1. Envelope identity: frozen artifact type + pinned key ids. Refused before any signature check.
     if envelope.artifact_type != RECEIPT_ENVELOPE_ARTIFACT_TYPE {
         return Err(TurnReason::UpstreamBlocked);
@@ -1004,6 +1049,22 @@ pub fn verify_and_accept(
     //     parser only ever runs on supervisor-authenticated input.
     let attested = AttestedEvidence::parse(attestation.evidence_jcs)?;
     bind_attested_evidence(&attested, envelope, expected, ctx)?;
+
+    Ok(VerifiedEnvelope { envelope, ctx })
+}
+
+/// §7.1 steps 4d to 7, over an envelope [`verify_envelope`] already passed: freshness at THIS
+/// moment, the output against the signed length and digest, and the one-time ledger claim.
+///
+/// The envelope and the broker's message identity are the ones the witness was built from; this
+/// function takes neither again, so it cannot be handed a different pair.
+pub fn accept_verified(
+    verified: &VerifiedEnvelope,
+    output: &[u8],
+    ledger: &mut dyn AcceptanceLedger,
+    freshness: &Freshness,
+) -> Result<AcceptedOutput, TurnReason> {
+    let (envelope, ctx) = (verified.envelope, verified.ctx);
 
     // 4d. FRESHNESS (§7.1). Every check above is time-free: a signature that verified when it was
     //     minted verifies forever, and the identity/binding equalities hold forever too. So until

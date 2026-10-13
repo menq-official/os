@@ -322,6 +322,16 @@ pub fn apply(paths: &spec::SignerPaths, app_sid: &str) -> Result<spec::ReadbackP
     // The plans are built (and self-checked) before anything is created, so a refusal costs
     // nothing and leaves no half-provisioned directory behind.
     let key_plan = spec::key_dacl_plan(app_sid, &signer_sid)?;
+    // BUILT, SELF-CHECKED, AND NEVER APPLIED (cockpit read R3-0006). Nothing below hands this
+    // plan to `apply_dacl`: the only non-test `apply_dacl` calls in the tree are the signer
+    // directory (step 4 here) and `provision/src/anchor.rs`. The consequence is in
+    // `spec::verify_installed`: it reads back `paths.ledger_dir` and refuses a directory that is
+    // not DACL-protected, and no installed directory was ever made so — that step cannot pass on
+    // a real install. The directory is `%LOCALAPPDATA%\<app>\audit`, in the APP user's profile,
+    // while this function runs elevated: whether it exists yet, and whose profile "local app
+    // data" names under an elevated token, has to be settled before a call is added here. The
+    // Windows test `the_ledger_directory_really_excludes_the_signer_when_locked` applies the
+    // plan to a temporary directory of its own, which is the whole of where it is applied today.
     let _ledger_plan = spec::ledger_dacl_plan(app_sid, &signer_sid)?;
 
     // 1. The service first: a virtual account's SID does not resolve until the service exists, so

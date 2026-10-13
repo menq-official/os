@@ -958,6 +958,44 @@ fn removing_the_anchor_file_does_not_escape_the_rollback_check() {
     ));
 }
 
+/// **A DEFECT, asserted rather than smoothed over** (cockpit read R3-0008).
+///
+/// The signer saves its state BEFORE it replies (`audit-signer/src/lib.rs`), and the engine
+/// signs and THEN installs the anchor file (`bro_audit_log.py`). If the reply is lost between
+/// the two, the signer remembers an anchor the disk never received. The engine's next request
+/// names the older anchor that IS on disk, and every shape that request can take is refused:
+/// the same count, a higher count, the same head or a new one. Nothing in this function accepts
+/// it and nothing in either crate resets the state, so that ledger gets no anchor again.
+///
+/// It is left as it is because the remedy is a choice about the anti-rollback rule itself — keep
+/// the digest the last anchor was chained FROM and accept a request naming it — and that is the
+/// Owner's. When it is decided, this test is the line that has to change.
+#[test]
+fn a_reply_lost_after_the_state_was_saved_leaves_the_ledger_refused_for_good() {
+    const ON_DISK: &str = "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3";
+    // What the signer saved: count 41, head H1, the anchor it emitted (H2) — which never landed.
+    let state = AnchorState {
+        ledger: LEDGER.to_string(),
+        count: 41,
+        last_hash: H1.to_string(),
+        anchor_sha256: H2.to_string(),
+    };
+    for (what, count, head) in [
+        ("the same request again", 41, H1),
+        ("after one more record", 42, H2),
+        ("after many more records", 4100, H2),
+    ] {
+        let fields = anc::check_anchor_payload(&payload(count, head, Some(ON_DISK)), KEY_ID).unwrap();
+        match anc::check_monotonic(&fields, Some(&state)) {
+            Err(SignRefusal::AnchorChainBroken { expected, got, .. }) => {
+                assert_eq!(expected.as_deref(), Some(H2), "{what}");
+                assert_eq!(got.as_deref(), Some(ON_DISK), "{what}");
+            }
+            other => panic!("{what}: the lockout is gone — update this test and R3-0008: {other:?}"),
+        }
+    }
+}
+
 #[test]
 fn a_first_anchor_may_not_claim_a_predecessor_this_signer_never_wrote() {
     let fields = anc::check_anchor_payload(&payload(1, H1, Some(H2)), KEY_ID).unwrap();

@@ -63,6 +63,24 @@ pub enum StepKind {
     Branch,
 }
 
+impl StepKind {
+    /// The capability a step of this kind USES, whatever its `requires` says.
+    ///
+    /// `requires` is written by whoever wrote the flow, so on its own it is a self-declaration:
+    /// a `store` step that declared nothing passed a grant withholding `WRITE_LOCAL`, and the
+    /// runner's `store` arm writes without asking (cockpit read R3-0057). The kind is what the
+    /// runner dispatches on, so the kind is what [`Grant::covers`] holds the grant to.
+    ///
+    /// `Call` is absent on purpose: its authority is the egress table, decided on the run path
+    /// where the decision is recorded. `Model` is refused outright and `Branch` does nothing.
+    pub fn implied_capability(self) -> Option<&'static str> {
+        match self {
+            StepKind::Store => Some("WRITE_LOCAL"),
+            StepKind::Model | StepKind::Call | StepKind::Branch => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Requires {
     #[serde(default)]
@@ -247,9 +265,16 @@ impl Grant {
     /// Every capability a flow's steps require must be inside the grant. Checked
     /// at LOAD time, not only at build time: a build-time-only check is a check
     /// the builder can skip.
+    ///
+    /// "Require" is what a step DECLARES and what its kind USES
+    /// ([`StepKind::implied_capability`]). This is the one place the second is enforced, and it
+    /// is on the run path: the runner calls [`verify`] before every run, and `verify` ends here.
+    /// A second copy in the runner's `store` arm would sit behind this refusal and be reachable
+    /// by no test.
     pub fn covers(&self, flow: &Flow) -> Result<(), Refusal> {
         for step in &flow.steps {
-            for cap in &step.requires.capabilities {
+            let declared = step.requires.capabilities.iter().map(String::as_str);
+            for cap in declared.chain(step.kind.implied_capability()) {
                 if !self.capabilities.iter().any(|c| c == cap) {
                     return Err(Refusal::CapabilitiesExceedGrant);
                 }
@@ -1015,6 +1040,34 @@ mod tests {
         let d = allow.authorize_ref("anything");
         assert!(!d.allowed());
         assert!(d.reason.contains("names no row"), "{}", d.reason);
+    }
+
+    /// Cockpit read R3-0057. The capability a step USES is decided by what it is, not by what
+    /// it says it needs: a `store` step writes, and it used to pass a grant that withholds
+    /// `WRITE_LOCAL` simply by declaring nothing — and the runner's `store` arm asks nothing.
+    #[test]
+    fn a_store_step_needs_write_local_whatever_it_declares() {
+        let mut s = spec(1_000_000);
+        s.steps[0].requires.capabilities.clear();
+        let flow = Flow {
+            schema: 1,
+            artifact_type: "brops.agent-flow.v1".into(),
+            flow_id: "f".into(),
+            entry: "a".into(),
+            max_steps: 8,
+            max_wall_ms: 1000,
+            steps: s.steps.clone(),
+        };
+        let mut read_only = Grant::for_local_only(1_000_000 + 3600);
+        read_only.capabilities = vec!["READ_LOCAL".into()];
+        assert_eq!(read_only.covers(&flow), Err(Refusal::CapabilitiesExceedGrant));
+        // The same flow under a grant that does carry it is covered: the rule is about the
+        // grant, not about the declaration being empty.
+        assert_eq!(Grant::for_local_only(1_000_000 + 3600).covers(&flow), Ok(()));
+        // And a flow that stores nothing is not asked for a capability it does not use.
+        let mut branches_only = flow.clone();
+        branches_only.steps[0].kind = StepKind::Branch;
+        assert_eq!(read_only.covers(&branches_only), Ok(()));
     }
 
     #[test]

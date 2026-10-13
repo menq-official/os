@@ -31,10 +31,12 @@
 //!  4. **submit** — `governed_turn_submit_prepared` over a [`SubmitTransport`]; production is
 //!     `brops_core::governed_sidecar::GovernedSidecar`, the tree's one bridge spawn. The four §4.10(g)
 //!     cross-bindings are asserted inside it, before a frame exists.
-//!  5. **§4.10(f) pull** — `governed_output_pull::pull_output` through fresh one-shot sidecars. The
-//!     length+digest gate is aimed at the SIGNED envelope by that function's own API.
-//!  6. **§7.1 acceptance** — `verify_and_accept` over the broker's OWN pinned keys and the prepared
-//!     object's `IssuedRequest`.
+//!  5. **§7.1 verification** — `verify_envelope`: both signatures under the broker's OWN pinned keys
+//!     and the binding to the prepared object's `IssuedRequest`. BEFORE the pull, since 2026-10-13.
+//!  6. **§4.10(f) pull** — `governed_output_pull::pull_verified_output` through fresh one-shot
+//!     sidecars. It takes the witness step 5 returns. The length+digest gate is aimed at the SIGNED
+//!     envelope by that function's own API.
+//!  7. **§7.1 acceptance** — `accept_verified`: freshness, the output digest, the one-time claim.
 //!
 //! # Fail-closed, with no fallback anywhere
 //!
@@ -59,7 +61,7 @@ use std::sync::{Arc, Mutex};
 
 use brops_core::governed_bridge_result::SignedTurnResult;
 use brops_core::governed_message_store::AcceptedOutput;
-use brops_core::governed_output_pull::{pull_output, PullError};
+use brops_core::governed_output_pull::{pull_verified_output, PullError};
 use brops_core::governed_prepare::{
     prepare_governed_turn_v1b, resolve_governed_generation_config_v1b, GovernedChatMsg,
     history_role_for_stored, PreparedGovernedTurnV1B,
@@ -69,8 +71,8 @@ use brops_core::governed_submit::{
 };
 use brops_core::governed_turn_ipc::{TurnReason, ValidatedRequest};
 use brops_core::governed_verification::{
-    verify_and_accept, AcceptanceLedger, BrokerContext, Freshness, OwnedReceiptEnvelope, PinnedKeys,
-    SupervisorAttestation,
+    accept_verified, verify_envelope, AcceptanceLedger, BrokerContext, Freshness,
+    OwnedReceiptEnvelope, PinnedKeys, SupervisorAttestation, VerifiedEnvelope,
 };
 
 use crate::chain_executor::{
@@ -317,14 +319,16 @@ impl LadderChain {
     }
 
     /// §4.10(f): pull the output back through fresh one-shot sidecars and let
-    /// [`pull_output`] gate it against the SIGNED envelope. A local transport failure is
-    /// [`PullError::Transport`] and never a stream verdict — the distinction §4.10(f) P1-5 fixes.
+    /// [`pull_verified_output`] gate it against the SIGNED envelope. It takes the WITNESS, not the
+    /// envelope, so this cannot be called before the signatures were checked. A local transport
+    /// failure is [`PullError::Transport`] and never a stream verdict — the distinction §4.10(f)
+    /// P1-5 fixes.
     fn pull(
         &self,
-        envelope: &brops_core::governed_verification::ReceiptEnvelope,
+        verified: &VerifiedEnvelope,
         signed: &SignedTurnResult,
     ) -> Result<Vec<u8>, TurnReason> {
-        pull_output(envelope, signed.output_stream_id(), |request| {
+        pull_verified_output(verified, signed.output_stream_id(), |request| {
             self.transport.call(request).map_err(PullError::Transport)
         })
         .map_err(|_| TurnReason::UpstreamBlocked)
@@ -396,14 +400,16 @@ impl GovernedTurnChain for LadderChain {
         // spends a round trip per chunk.
         signed.check_echoes(&envelope)?;
 
-        // (6) §4.10(f) egress. The bytes are gated against the SIGNED length and digest by
-        //     `pull_output`'s own API, which takes no expected-length parameter precisely so that no
-        //     caller (including this one) can aim it at the §4.10(e) transport echo.
-        let output = self.pull(&envelope, &signed)?;
-
-        // (7) §7.1 acceptance over the broker's OWN pinned keys and the prepared object's Expected.
-        //     Nothing here is read off the wire: the keys came from the root-signed manifest, and
-        //     every one of the eight request fields came from `prepared`.
+        // (6) §7.1 steps 1 to 4c, BEFORE the pull (cockpit read R3-0040). Both signatures under the
+        //     broker's OWN pinned keys, the request binding recomputed from the prepared object's
+        //     Expected, the run identity, and the attestation's account of this turn. Nothing here
+        //     is read off the wire: the keys came from the root-signed manifest, and every one of
+        //     the eight request fields came from `prepared`.
+        //
+        //     This used to run after the pull, in one call with acceptance. So the pull presented
+        //     `receipt_id` and `execution_attempt_id` from an envelope no key had vouched for —
+        //     design §4.10(f) calls them "authenticated values, not transport claims" — and a
+        //     forged envelope cost a sidecar round trip per chunk before it was refused.
         let message_id = format!("m-{broker_turn_id}");
         let pinned = PinnedKeys {
             isolated_signer_key_id: &keys.isolated_signer_key_id,
@@ -427,21 +433,28 @@ impl GovernedTurnChain for LadderChain {
             // independent attempt id; the alternative is comparing the envelope against itself.
             expected_execution_attempt_id: None,
         };
-        // The clock is read HERE, at acceptance, not at turn start: the receipt ages while the ladder
-        // runs, and the question §7.1 asks is how old it is when it is committed.
-        let accept_ms = self.clock.now_ms().ok_or(TurnReason::UpstreamBlocked)?;
-        let mut ledger = self.ledger.lock().map_err(|_| TurnReason::UpstreamBlocked)?;
-        verify_and_accept(
+        let verified = verify_envelope(
             &expected,
             &envelope,
             signed.envelope_signature_b64(),
             &attestation,
             &pinned,
-            &output,
             &ctx,
-            ledger.as_mut(),
-            &Freshness::at(accept_ms),
-        )
+        )?;
+
+        // (7) §4.10(f) egress, for the envelope that was just verified. The bytes are gated against
+        //     the SIGNED length and digest by the pull's own API, which takes no expected-length
+        //     parameter precisely so that no caller (including this one) can aim it at the §4.10(e)
+        //     transport echo.
+        let output = self.pull(&verified, &signed)?;
+
+        // (8) §7.1 steps 4d to 7: freshness, the output against the signed digest, the one-time
+        //     claim. The clock is read HERE, at acceptance, not at turn start: the receipt ages
+        //     while the ladder runs, and the question §7.1 asks is how old it is when it is
+        //     committed.
+        let accept_ms = self.clock.now_ms().ok_or(TurnReason::UpstreamBlocked)?;
+        let mut ledger = self.ledger.lock().map_err(|_| TurnReason::UpstreamBlocked)?;
+        accept_verified(&verified, &output, ledger.as_mut(), &Freshness::at(accept_ms))
     }
 }
 
@@ -1094,6 +1107,10 @@ mod tests {
         EnvelopeWithAnAddedMember,
         /// The envelope bytes name another run in front of the signed one; the signature is genuine.
         EnvelopeWithASecondRunId,
+        /// A well-formed envelope whose signature was made by a key that is not the pinned signer's.
+        EnvelopeSignedByAnotherKey,
+        /// A genuine envelope beside an attestation the supervisor's pinned key did not sign.
+        AttestationSignedByAnotherKey,
     }
 
     /// The one-shot sidecar and everything behind it: on a submit frame it plays the supervisor and
@@ -1147,7 +1164,11 @@ mod tests {
                 evidence.insert(k.to_string(), json!(v));
             }
             let evidence_jcs = serde_json::to_vec(&Value::Object(evidence)).unwrap();
-            let evidence_sig = URL_SAFE_NO_PAD.encode(supervisor_key().sign(&evidence_jcs).to_bytes());
+            let evidence_signer = match self.behaviour {
+                Sidecar::AttestationSignedByAnotherKey => SigningKey::from_bytes(&[0x77; 32]),
+                _ => supervisor_key(),
+            };
+            let evidence_sig = URL_SAFE_NO_PAD.encode(evidence_signer.sign(&evidence_jcs).to_bytes());
 
             let mut envelope = serde_json::Map::new();
             for (k, v) in [
@@ -1182,7 +1203,11 @@ mod tests {
                 envelope.insert(k.to_string(), json!(v));
             }
             let envelope_jcs = serde_json::to_vec(&Value::Object(envelope)).unwrap();
-            let envelope_sig = URL_SAFE_NO_PAD.encode(signer_key().sign(&envelope_jcs).to_bytes());
+            let envelope_signer = match self.behaviour {
+                Sidecar::EnvelopeSignedByAnotherKey => SigningKey::from_bytes(&[0x66; 32]),
+                _ => signer_key(),
+            };
+            let envelope_sig = URL_SAFE_NO_PAD.encode(envelope_signer.sign(&envelope_jcs).to_bytes());
             // What travels as the envelope. The signature above is over the canonical bytes in every
             // case — the two altered forms are those bytes with something the signer never saw.
             let canonical_text = String::from_utf8(envelope_jcs.clone()).unwrap();
@@ -1374,6 +1399,27 @@ mod tests {
         }
     }
 
+    /// Cockpit read R3-0040. The pull presents `receipt_id` and `execution_attempt_id` to the
+    /// supervisor as "authenticated values, not transport claims" (design §4.10(f)), and §6.1
+    /// step 14 verifies the frame and THEN drives the pull. The ladder pulled first: an envelope
+    /// no pinned key had signed still cost a round trip per chunk, each naming ids nobody had
+    /// authenticated. Both signatures are checked before any output-read is sent.
+    #[test]
+    fn an_envelope_no_pinned_key_signed_is_refused_before_the_pull() {
+        for forged in [Sidecar::EnvelopeSignedByAnotherKey, Sidecar::AttestationSignedByAnotherKey] {
+            let (chain, wire) = whole_ladder(forged, &FRESH);
+            assert_eq!(
+                chain.run_verified(&req("c1"), "bt-1", "n").err(),
+                Some(TurnReason::UpstreamBlocked)
+            );
+            assert_eq!(
+                wire.borrow().sidecar_protocols,
+                [BRIDGE_SUBMIT_PROTOCOL],
+                "an output-read was sent for an envelope whose signatures had not been verified"
+            );
+        }
+    }
+
     /// Rung 6: bytes of the right length that are not the signed output are refused by the pull's
     /// gate against the SIGNED digest, and nothing is accepted.
     #[test]
@@ -1394,6 +1440,33 @@ mod tests {
     /// runtime, so the scanner's own literals cannot satisfy it either. The first version of this test
     /// failed against itself, which is the cheapest available demonstration that a source scan must
     /// exclude its own text.
+    /// The ladder reaches the output only through the entry that takes the verification witness
+    /// (cockpit read R3-0040). The raw `pull_output` accepts any envelope; naming it here again
+    /// would compile, and would put the pull back in front of the signatures.
+    #[test]
+    fn the_ladder_pulls_only_through_the_entry_that_takes_the_witness() {
+        let whole = include_str!("ladder_executor.rs");
+        let production = whole.split("#[cfg(te").next().expect("split always yields a head");
+        let code: String = production
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let witnessed = format!("pull_{}_output(", "verified");
+        assert_eq!(code.matches(&witnessed).count(), 1, "exactly one pull, through the witness");
+        let raw = format!("{}_output(", "pull");
+        assert_eq!(
+            code.replace(&witnessed, "").matches(&raw).count(),
+            0,
+            "the ladder calls the pull that authenticates nothing"
+        );
+        // And the order, in the one function that runs the turn.
+        let verify = code.find(&format!("verify_{}(", "envelope")).expect("no verification");
+        let pull = code.find("self.pull(&verified, &signed)").expect("the pull does not take the witness");
+        let accept = code.find(&format!("accept_{}(", "verified")).expect("no acceptance");
+        assert!(verify < pull && pull < accept, "verify, then pull, then accept");
+    }
+
     #[test]
     fn the_ladder_has_no_arm_that_reaches_the_direct_chain() {
         let whole = include_str!("ladder_executor.rs");
