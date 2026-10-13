@@ -1583,10 +1583,12 @@ pub(crate) fn conversation_turn_context(
     // Authority guard: the reply's attributed author MUST be a real agent — a compromised
     // renderer cannot mint a reply "from" an arbitrary identity (which would then be hashed
     // into history). An unknown name falls back to Bro rather than being trusted verbatim.
-    let author = if repo::agents::list(conn)
-        .map(|v| v.iter().any(|a| a.display_name == requested_author))
-        .unwrap_or(false)
-    {
+    //
+    // "Unknown" means the agent table was READ and the name is not in it. A read that failed is
+    // not that: it used to be folded into `false`, so a database error attributed the reply to
+    // Bro and said nothing.
+    let agents = repo::agents::list(conn).map_err(|e| e.to_string())?;
+    let author = if agents.iter().any(|a| a.display_name == requested_author) {
         requested_author.to_string()
     } else {
         "Bro".to_string()
@@ -1605,7 +1607,8 @@ pub(crate) fn conversation_turn_context(
         })
         .collect();
     // Roster-aware prompt (#5): name who else is present so the agent can address the room.
-    let roster = repo::chat::list_participants(conn, conversation_id).unwrap_or_default();
+    // Read, or the turn is not assembled: an unreadable roster is not an empty room.
+    let roster = repo::chat::list_participants(conn, conversation_id).map_err(|e| e.to_string())?;
     let room = room_clause(&roster);
     let rule = crate::ai::TRANSCRIPT_TURN_RULE;
     let system = format!(
@@ -2957,6 +2960,29 @@ mod tests {
             .expect("post message");
         }
         (conn, conv.id)
+    }
+
+    /// R3-0172: two reads here turned a database error into a quiet default. When the agent
+    /// table could not be read, the reply was attributed to `Bro` whoever had been asked for;
+    /// when the room's roster could not be read, the prompt was built as if the room were
+    /// empty. Both shape the system prompt whose hash the receipt binds, so a failed read must
+    /// fail the turn, not change what it says.
+    #[test]
+    fn a_turn_is_not_assembled_from_a_read_that_failed() {
+        let (conn, conv) = seeded_room(&[("Gev", "hello")]);
+        conn.execute_batch("ALTER TABLE agents RENAME TO agents_gone").expect("break the agents read");
+        let refused = conversation_turn_context(&conn, &conv, "Bro");
+        assert!(refused.is_err(), "an unreadable agent table produced a turn: author {:?}", refused.map(|c| c.author));
+        conn.execute_batch("ALTER TABLE agents_gone RENAME TO agents").expect("restore");
+
+        conn.execute_batch("ALTER TABLE conversation_participants RENAME TO participants_gone")
+            .expect("break the roster read");
+        let refused = conversation_turn_context(&conn, &conv, "Bro");
+        assert!(refused.is_err(), "an unreadable roster produced a turn");
+        conn.execute_batch("ALTER TABLE participants_gone RENAME TO conversation_participants").expect("restore");
+
+        // And with both readable the turn is assembled as before.
+        assert!(conversation_turn_context(&conn, &conv, "Bro").is_ok());
     }
 
     /// THE REPRODUCTION. One message, from Alice, whose body carries a forged `Gev:` turn.

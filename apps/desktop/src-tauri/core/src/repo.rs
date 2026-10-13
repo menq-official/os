@@ -1738,22 +1738,32 @@ pub mod knowledge {
 
     /// Case-insensitive substring search over title, body, and tags. An empty
     /// query returns everything (same as `list`).
+    ///
+    /// Case-insensitive in every script, which is why the comparison is done HERE and not by
+    /// SQLite: `LIKE` (and `lower()`) fold case for ASCII only, so a note titled in Armenian or
+    /// Russian was not found by the same word typed in the other case. `LIKE '%…%'` scanned
+    /// every row too; this reads them and compares with Unicode lower-casing. The query is
+    /// matched literally — there are no wildcards to escape any more.
     pub fn search(conn: &Connection, query: &str) -> CoreResult<Vec<KnowledgeNote>> {
         let q = query.trim();
         if q.is_empty() {
             return list(conn);
         }
-        // Escape LIKE wildcards so a literal % or _ in the query matches itself
-        // instead of acting as a wildcard.
-        let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-        let like = format!("%{escaped}%");
-        let mut s = conn.prepare(
-            "SELECT * FROM knowledge_notes \
-             WHERE title LIKE ?1 ESCAPE '\\' OR body LIKE ?1 ESCAPE '\\' OR tags LIKE ?1 ESCAPE '\\' \
-             ORDER BY updated_at DESC LIMIT ?2",
-        )?;
-        let rows = s.query_map(rusqlite::params![like, super::MAX_PAGE], map)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let needle = q.to_lowercase();
+        let mut s = conn.prepare("SELECT * FROM knowledge_notes ORDER BY updated_at DESC")?;
+        let rows = s.query_map([], map)?;
+        let mut found = Vec::new();
+        for row in rows {
+            let note = row?;
+            let hit = [&note.title, &note.body, &note.tags].iter().any(|f| f.to_lowercase().contains(&needle));
+            if hit {
+                found.push(note);
+                if found.len() >= super::MAX_PAGE as usize {
+                    break;
+                }
+            }
+        }
+        Ok(found)
     }
 
     pub fn delete(conn: &Connection, id: &str, actor: audit::Actor<'_>) -> CoreResult<()> {

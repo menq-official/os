@@ -1491,6 +1491,31 @@ mod tests {
         assert!(!sec.sensitive_events.is_empty());
     }
 
+    // R3-0128: the search was documented case-insensitive and used SQLite `LIKE`, which folds
+    // case for ASCII only. A note titled in Armenian or Russian could not be found by the same
+    // word typed in the other case — in the owner's own language.
+    #[test]
+    fn knowledge_search_is_case_insensitive_outside_ascii_too() {
+        let c = conn();
+        let note = |title: &str, body: &str| {
+            repo::knowledge::create(&c, NewKnowledgeNote { title: title.into(), body: body.into(), source: "".into(), tags: "".into() }, crate::repo::audit::Actor::local_operator()).unwrap();
+        };
+        note("Որոշումների մատյան", "ինչ է որոշվել");
+        note("Журнал Решений", "что решено");
+        note("Release notes", "100% done_here");
+
+        let titles = |q: &str| repo::knowledge::search(&c, q).unwrap().into_iter().map(|n| n.title).collect::<Vec<_>>();
+        assert_eq!(titles("որոշումների"), vec!["Որոշումների մատյան"], "Armenian, lower case typed");
+        assert_eq!(titles("ՈՐՈՇՈՒՄՆԵՐԻ"), vec!["Որոշումների մատյան"], "Armenian, upper case typed");
+        assert_eq!(titles("решений"), vec!["Журнал Решений"], "Russian");
+        assert_eq!(titles("RELEASE"), vec!["Release notes"], "ASCII still folds");
+        // A literal `%` or `_` in the query still matches only itself.
+        assert_eq!(titles("100%"), vec!["Release notes"]);
+        assert_eq!(titles("done_here"), vec!["Release notes"]);
+        assert!(titles("doneXhere").is_empty(), "`_` is not a wildcard");
+        assert!(titles("%").len() == 1, "`%` is not a wildcard: only the note that contains one");
+    }
+
     #[test]
     fn knowledge_search_matches_title_body_tags() {
         let c = conn();

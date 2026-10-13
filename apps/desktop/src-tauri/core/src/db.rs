@@ -77,6 +77,20 @@ pub fn migrate(conn: &Connection) -> CoreResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
     )?;
+    // A database a NEWER build migrated is refused here, before anything runs against it. It
+    // used to open without a word: every migration this build knows was already applied, so the
+    // loop below did nothing, and this build's queries then ran against tables and constraints
+    // it has never seen. `SCHEMA_VERSION` and `current_version` were read only by tests.
+    let applied = current_version(conn)?;
+    if applied > SCHEMA_VERSION {
+        return Err(crate::domain::CoreError::Invalid {
+            field: "schema_version",
+            value: format!(
+                "{applied} — this build knows the schema up to {SCHEMA_VERSION}; the database \
+                 was migrated by a newer build and is not opened by an older one"
+            ),
+        });
+    }
     for (version, sql) in [
         (1, MIGRATION_0001),
         (2, MIGRATION_0002),

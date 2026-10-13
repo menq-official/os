@@ -807,3 +807,30 @@ fn migration_0026_creates_the_credential_binding_store_keyed_on_the_digest() {
     )
     .unwrap();
 }
+
+/// Cockpit read R3-0110: a database a NEWER build has migrated opened here without a word.
+/// This build would then run its queries against tables and constraints it has never seen —
+/// `SCHEMA_VERSION` and `current_version` existed and only tests read them.
+#[test]
+fn a_database_migrated_by_a_newer_build_is_refused_not_opened() {
+    let c = db::open_in_memory().expect("open and migrate");
+    c.execute(
+        "INSERT INTO _migrations(version, applied_at) VALUES (?1, 'by-a-newer-build')",
+        rusqlite::params![db::SCHEMA_VERSION + 1],
+    )
+    .expect("stand in for a newer build's migration");
+
+    let refused = db::migrate(&c).expect_err("a newer schema must be refused");
+    let said = refused.to_string();
+    assert!(said.contains("schema_version"), "the refusal names what it is about: {said}");
+    assert!(said.contains(&(db::SCHEMA_VERSION + 1).to_string()), "and the version found: {said}");
+    assert!(said.contains(&db::SCHEMA_VERSION.to_string()), "and the one this build knows: {said}");
+}
+
+/// The other side: the version this build writes is, of course, one it opens.
+#[test]
+fn a_database_at_this_builds_own_version_migrates_again_as_a_no_op() {
+    let c = db::open_in_memory().expect("open and migrate");
+    db::migrate(&c).expect("a second migrate of the same version is a no-op");
+    assert_eq!(db::current_version(&c).unwrap(), db::SCHEMA_VERSION);
+}
