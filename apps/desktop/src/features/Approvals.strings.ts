@@ -46,8 +46,6 @@ export const STR = {
   approved:          { en: 'Approved',        hy: 'Հաստատված',        ru: 'Одобрено' },
   denied:            { en: 'Denied',          hy: 'Մերժված',          ru: 'Отклонено' },
   escalatedA3:       { en: 'Escalated · A3',  hy: 'Փոխանցված · A3',   ru: 'Передано · A3' },
-  expiredHeld:       { en: 'Expired · held',  hy: 'Ժամկետանց · պահված', ru: 'Истекло · удержано' },
-  broReviewing:      { en: 'Bro reviewing',   hy: 'Bro վերլուծում է',  ru: 'Bro проверяет' },
   awaitingDecision:  { en: 'Awaiting decision', hy: 'Սպասում է որոշման', ru: 'Ожидает решения' },
   // `consumed` is a real backend status: a grant that has been spent against its action. It
   // used to fall through to "Awaiting decision".

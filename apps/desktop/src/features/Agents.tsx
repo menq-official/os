@@ -23,13 +23,22 @@ type LFn = (k: keyof typeof STR) => string;
 // mockup's chrome — `.lattice-panel .surface .cut .hud` (brackets/ticks/eyebrow/
 // legend/census) + a `.dossier .surface .soft` rail — but drives EVERY node from the
 // REAL `list_agents` Tauri command (services/desktop → domain Agent) laid out on the
-// shared, deterministic `ringPositions` lattice geometry. No fabricated roster.
+// shared, deterministic `ringPositions` lattice geometry. The page invents no agent;
+// the ROWS it reads are the startup seed's. `list_agents` is `repo::agents::list` over
+// the local SQLite table, `agents::create` is called only from `repo::seed`, and the
+// one statement that sets a status other than `idle` is the seed's own
+// `UPDATE agents SET status`. No runtime path moves a status, so every phase, census
+// count and "N active" figure below is a count of those fixed seed values.
 //
-// HONEST DATA. The mockup's fuller dossier (per-guild SKILLS, guild MATES, a live
-// telemetry sparkline, a current-task line) has NO backing in the real `Agent`
+// WHAT THE DOSSIER SHOWS. The mockup's fuller dossier (per-guild SKILLS, guild MATES, a
+// live telemetry sparkline, a current-task line) has NO backing in the real `Agent`
 // entity, so those fields are OMITTED rather than invented; the telemetry block
-// renders an explicit "governed telemetry pending" note. What the entity really
-// carries — displayName, role, status, model, slug, id — is all that is shown.
+// renders an explicit "governed telemetry pending" note. From the entity it shows
+// displayName, role, status, model, slug and id. Two things on it are NOT entity
+// fields: the "Bro · conductor" line, printed again as the Owner fact, is a hard-coded
+// structural label that is the same for every agent (`Agent` has no owner field); and
+// the Grant block (`Grant`, above `Dossier`) shows constants from
+// `services/agentsDispatch` plus a live channel probe, none of it read from the agent.
 
 // The five per-agent phases, derived from the real AgentStatus string.
 type Phase = 'idle' | 'flowing' | 'throttled' | 'blocked' | 'completed';
@@ -251,7 +260,8 @@ export function Agents() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const threadsRef = useRef<SVGSVGElement | null>(null);
 
-  // Roster state census — a real, live count per phase over the actual agents.
+  // Roster state census — a count per phase over the rows `list_agents` returned. The rows
+  // are the seed's and nothing updates their status (see the header), so it is not live.
   const counts = useMemo(() => {
     const c: Record<Phase, number> = { idle: 0, flowing: 0, throttled: 0, blocked: 0, completed: 0 };
     for (const a of agents) c[phaseOf(a.status)] += 1;
@@ -397,8 +407,10 @@ export function Agents() {
       </div>
       {agents.length > 0 && (
         <div className="right">
-          {/* Green/`live` is earned by a real active count. "0 active" rendered green
-              is a live indicator that is always on — bind it to the number it states. */}
+          {/* The pill is green only when the count it states is above zero: "0 active"
+              rendered green was an indicator that is always on. The count itself is of
+              seeded statuses that no runtime path updates (see the header), so green here
+              means "the seed marked some agents working", not that anything is running. */}
           <span className={`pill ${active > 0 ? 'live' : 'off'}`}>{active} {L('activeWord')}</span>
           <span className="pill info">{agents.length} {L('agentWord')}</span>
         </div>
@@ -455,7 +467,7 @@ export function Agents() {
       <style>{AG_CSS}</style>
       {header}
 
-      <span className="ag-sr" aria-live="polite">{announcement}</span>
+      <span className="sr-only" aria-live="polite">{announcement}</span>
 
       <div className="ros-wrap">
         {/* ── HERO · the roster lattice ─────────────────────────────────────── */}
@@ -603,9 +615,8 @@ export function Agents() {
 // chrome (surface/cut/hud/bracket/ticks/eyebrow/lat-top/lat-legend/lg-key/census/
 // cseg/lat-foot/dossier/dos-*/pill/micro/eyebrow) is the shared aios.css. Colours
 // resolve through the `--st-rgb` phase token; motion honours prefers-reduced-motion.
+// The focus announcer is hidden by the shared `.sr-only` (components/ui.css), not a local copy.
 const AG_CSS = `
-.v-agents .ag-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-
 .v-agents .ag-stage{position:relative;width:100%;min-height:440px;margin:var(--s4) 0 var(--s5)}
 .v-agents .ag-links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
 .v-agents .ag-link{stroke:rgb(var(--st-rgb)/.42);stroke-width:1.4;fill:none;transition:opacity var(--slow)}

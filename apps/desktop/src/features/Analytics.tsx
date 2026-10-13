@@ -9,6 +9,7 @@ import type { Metric } from '../domain/entities';
 import type { Lang } from '../domain/enums';
 import { metricLabel } from '../domain/statusLabels';
 import { STR } from './Analytics.strings';
+import { localize as chartLabel } from '../components/charts/Chart.strings';
 
 // ---------------------------------------------------------------------------
 // analytics ◈ Վերլուծություն — §D page, re-dressed into the AI-OS "Signal Deck".
@@ -19,11 +20,13 @@ import { STR } from './Analytics.strings';
 // `BarChart`, wrapped in the mockup's `.an-deck .surface .lg .hud` framing) and
 // the deck foot's live total.
 //
-// The engine does NOT (yet) expose a geographic/district aggregate, an autonomy
-// split, or a per-channel split. Per the spec's honesty rule we never fabricate
-// any of them: the `.an-districts` panel and both `.an-side` panels (`.an-auto`,
-// `.an-chan`) render their honest `empty` state, naming the missing engine
-// aggregate instead of inventing districts, an autonomy ring, or a channel mix.
+// `get_analytics` is `repo::analytics::metrics`: row counts over the desktop's own
+// SQLite tables. No engine is asked. That backend computes no geographic/district
+// aggregate, no autonomy split and no per-channel split, and per the spec's honesty
+// rule we never fabricate any of them: the `.an-districts` panel and both `.an-side`
+// panels (`.an-auto`, `.an-chan`) render their honest `empty` state, naming the
+// aggregate the desktop backend lacks instead of inventing districts, an autonomy
+// ring, or a channel mix.
 // ---------------------------------------------------------------------------
 
 // Trilingual translator: resolves a STR key to the active language (en fallback).
@@ -58,7 +61,11 @@ function DeckChrome() {
 // --- the distribution plot: the shared accessible BarChart over real metrics --
 // Delegates to the library `BarChart` (horizontal bars + focusable legend + share%
 // + accessible one-line summary + <details> table fallback). This page only maps
-// the real `Metric[]` to the primitive's data shape and supplies bilingual labels.
+// the real `Metric[]` to the primitive's data shape and supplies the labels that say
+// "node" where the chart says "series". The four it does not pass — the hidden word,
+// the Value and Share headers and the table toggle — are the chart catalog's own
+// (`Chart.strings.ts`); this page's catalog used to repeat them, and the Armenian
+// table toggle had drifted between the two.
 function AnPlot(
   { metrics, hidden, onToggle, tr, lang }:
   { metrics: Metric[]; hidden: ReadonlySet<string>; onToggle: (key: string) => void; tr: Tr; lang: Lang },
@@ -84,13 +91,9 @@ function AnPlot(
       legendLabel={tr('toggleNodes')}
       showLabel={tr('showNode')}
       hideLabel={tr('hideNode')}
-      hiddenWord={tr('hiddenWord')}
       allHiddenNote={tr('allNodesHidden')}
       totalLabel={tr('totalAcrossNodes')}
       nodeHeader={tr('nodeHeader')}
-      valueHeader={tr('value')}
-      shareHeader={tr('share')}
-      tableToggle={tr('showDataTable')}
     />
   );
 }
@@ -100,7 +103,7 @@ function AnPlot(
 //
 // WHAT IT SCRUBS, and why it is not a timeline. `get_analytics` returns one ALL-TIME
 // aggregate with no time dimension anywhere in it. A time scrubber would therefore be
-// drawing an axis the engine does not expose — the exact fabrication this page refuses
+// drawing an axis the read does not have — the exact fabrication this page refuses
 // three times over in `AnHonest`, where the districts, autonomy and channel panels
 // render an honest empty instead of inventing a split. So the scrub is over the one
 // ordering the data really has: RANK. It moves the cut-off — how far down the ranked
@@ -185,14 +188,16 @@ function AnScrub(
   );
 }
 
-// --- honest empty panel: the engine exposes no such split aggregate yet -------
+// --- honest empty panel: the desktop backend computes no such split aggregate --
 // Names what's missing (with a keyboard-reachable <details> table) instead of
 // fabricating a breakdown. Reused for the districts, autonomy and channel panels.
+// `valLabel` and `tableToggle` are the chart catalog's strings, the same ones the
+// plot's own table shows above.
 function AnHonest(
-  { panelClass, title, note, glyph, hint, tableHint, segLabel, valLabel, i, tr }:
+  { panelClass, title, note, glyph, hint, tableHint, segLabel, valLabel, tableToggle, i, tr }:
   {
     panelClass: string; title: string; note?: string; glyph: string; hint: string;
-    tableHint: string; segLabel: string; valLabel: string; i: number; tr: Tr;
+    tableHint: string; segLabel: string; valLabel: string; tableToggle: string; i: number; tr: Tr;
   },
 ) {
   return (
@@ -203,9 +208,9 @@ function AnHonest(
       </div>
       <EmptyState glyph={glyph} title={tr('noBreakdown')} hint={hint} />
       <details className="an-table">
-        <summary>{tr('showDataTable')}</summary>
+        <summary>{tableToggle}</summary>
         <table>
-          <caption className="an-sr">{title}</caption>
+          <caption className="sr-only">{title}</caption>
           <thead>
             <tr>
               <th scope="col">{segLabel}</th>
@@ -297,7 +302,7 @@ export function Analytics() {
               <div className="an-blocked-glyph" aria-hidden="true">⛒</div>
               <div className="empty-title">{t('state.permissionDenied')}</div>
               <p className="muted" style={{ maxWidth: 460, margin: '4px auto 0' }}>
-                {Lz('governedBlocked')}
+                {Lz('readRefusedBody')}
               </p>
               <p className="micro mono an-blocked-reason">{s.error}</p>
               <div style={{ marginTop: 12 }}>
@@ -360,7 +365,7 @@ export function Analytics() {
           </div>
         </section>
 
-        {/* ── LOWER BOARD · honest empties for aggregates the engine lacks ───── */}
+        {/* ── LOWER BOARD · honest empties for aggregates the desktop backend lacks ── */}
         <div className="an-lower">
           <AnHonest
             panelClass="an-districts"
@@ -370,7 +375,8 @@ export function Analytics() {
             hint={Lz('districtHint')}
             tableHint={Lz('districtTableHint')}
             segLabel={Lz('district')}
-            valLabel={Lz('value')}
+            valLabel={chartLabel(lang, 'valueHeader')}
+            tableToggle={chartLabel(lang, 'showDataTable')}
             i={3}
             tr={Lz}
           />
@@ -383,7 +389,8 @@ export function Analytics() {
               hint={Lz('autonomyHint')}
               tableHint={Lz('autonomyTableHint')}
               segLabel={Lz('segment')}
-              valLabel={Lz('value')}
+              valLabel={chartLabel(lang, 'valueHeader')}
+              tableToggle={chartLabel(lang, 'showDataTable')}
               i={4}
               tr={Lz}
             />
@@ -394,7 +401,8 @@ export function Analytics() {
               hint={Lz('channelHint')}
               tableHint={Lz('channelTableHint')}
               segLabel={Lz('channel')}
-              valLabel={Lz('value')}
+              valLabel={chartLabel(lang, 'valueHeader')}
+              tableToggle={chartLabel(lang, 'showDataTable')}
               i={5}
               tr={Lz}
             />
@@ -425,7 +433,7 @@ export function Analytics() {
       </header>
 
       {/* aria-live status: announces the current data state */}
-      <div className="an-sr" role="status" aria-live="polite">{liveMsg}</div>
+      <div className="sr-only" role="status" aria-live="polite">{liveMsg}</div>
 
       {renderBody()}
     </div>
@@ -433,12 +441,10 @@ export function Analytics() {
 }
 
 // Page-scoped styles — only the bits the shared aios.css / ui.css don't cover:
-// the visually-hidden helper, the governed-wall block, and the honest-empty
-// <details> data tables. Everything else resolves through the design tokens.
+// the rank scrubber, the honest-empty <details> data tables, and the refused-read
+// block. Everything else resolves through the design tokens; the visually-hidden
+// text uses the shared `.sr-only` (ui.css), which replaced this page's own copy.
 const ANALYTICS_CSS = `
-.v-analytics .an-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-
 /* ── the rank scrubber ─────────────────────────────────────────────────────── */
 .v-analytics .an-scrub { display: grid; grid-template-columns: auto 1fr auto; align-items: center;
   gap: var(--s3); margin-top: var(--s4); }
@@ -471,7 +477,7 @@ const ANALYTICS_CSS = `
   border-bottom: 1px solid rgb(var(--line-rgb)/.8); font-variant-numeric: tabular-nums; }
 .v-analytics .an-table thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); }
 
-/* governed-wall block (denied) */
+/* refused-read block (denied) */
 .v-analytics .an-blocked { text-align: center; padding: 34px 18px; }
 .v-analytics .an-blocked-glyph { font-size: 30px; color: var(--warning); }
 .v-analytics .an-blocked-reason { margin-top: 8px; color: var(--ink-muted); word-break: break-word; }

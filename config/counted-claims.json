@@ -276,13 +276,17 @@
       ]
     },
     "frontend_tests": {
-      "value": 1250,
+      "value": 1270,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-14",
-        "head": "85a73f3",
+        "head": "42feb8f",
         "environments": {
+          "Debian 13 (trixie) native @ 42feb8f + four more groups of the cockpit read; Agents, Analytics and Approvals say where their data comes from": {
+            "ran": 1270,
+            "skipped": 0
+          },
           "Debian 13 (trixie) native @ 85a73f3 + the broker executors group + Async and DataTable take their empty title from the caller or the dictionary": {
             "ran": 1250,
             "skipped": 0

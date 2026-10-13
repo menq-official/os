@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 // Mock the Tauri IPC boundary with a call-tracking spy so the tests can assert
 // BOTH what the page renders AND — the cardinal invariant — which backend commands
@@ -67,8 +68,11 @@ function setup(approvals: unknown[] = [PENDING]) {
 
 beforeEach(() => invokeMock.mockReset());
 
-describe('Approvals — mirror-never-decide honesty invariants', () => {
-  it('renders the real pending approval seated from the engine queue', async () => {
+/** The page's own source, for the checks about what it no longer carries a private copy of. */
+const PAGE_SRC = readFileSync(resolve(process.cwd(), 'src/features/Approvals.tsx'), 'utf8');
+
+describe('Approvals — the gate drives the local ledger\'s own commands', () => {
+  it('renders the real pending approval seated from the local ledger (list_approvals)', async () => {
     setup();
     // The seated gate + queue row both show the real target/action from list_approvals.
     await waitFor(() => expect(screen.getAllByText('vendor@example.com').length).toBeGreaterThan(0));
@@ -153,11 +157,13 @@ describe('Approvals — mirror-never-decide honesty invariants', () => {
     // Positive control: the unmodified key still works, so this is a modifier guard and not a
     // test that would pass against a build where `g` stopped doing anything at all.
     //
-    // The keypress is RETRIED rather than fired once. This test was flaky — twice in a full-suite
-    // run, never in ten isolated runs — because a single `fireEvent` races the page's own async
-    // load: the handler closes over `data` and the selected row, and under load a re-render can
-    // land between the guard presses and this one. The race is the test's, not the product's, so
-    // the fix is to keep asking rather than to assume the first ask arrived.
+    // The keypress is RETRIED rather than fired once. The retry was added when this test was
+    // flaky — twice in a full-suite run, never in ten isolated runs — and the handler then closed
+    // over `data` and the selected row, so a keypress could be read against a stale, empty list.
+    // The page no longer has that closure: it reads `dataRef` / `selectedRef`, which are assigned
+    // during render (Approvals.tsx, "WHAT THE KEY HANDLER READS"). Whether a single press would
+    // now always arrive has not been measured, so the retry stays; it is no longer explained by a
+    // closure the handler does not have.
     await waitFor(() => {
       fireEvent.keyDown(window, { key: 'g' });
       expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -174,7 +180,7 @@ describe('Approvals — mirror-never-decide honesty invariants', () => {
     // Commit the deny (confirm button = shared action.reject label).
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
 
-    // The real fail-safe engine reject command is sent for this exact approval id.
+    // The local ledger's fail-safe `reject_approval` command is sent for this exact approval id.
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith('reject_approval', expect.objectContaining({ id: 'ap-1' })),
     );
@@ -233,6 +239,20 @@ describe('Approvals — a row claims only what its record establishes', () => {
     expect(document.querySelector('.seal-lock .stamp')).toBeNull();
   });
 
+  it('`expired` and `reviewing` have no arm of their own — no backend writer produces either', async () => {
+    // The approval writers in repo.rs set `pending`, `approved`, `rejected`, `consumed` and
+    // `escalated`, and nothing else. A row carrying either string is one this build cannot
+    // explain, and is shown as that rather than as "Expired · held" or "Bro reviewing".
+    expect(classifyApproval({ ...PENDING, status: 'expired' }).state).toBe('unknown');
+    expect(classifyApproval({ ...PENDING, status: 'reviewing' }).state).toBe('unknown');
+    expect(Object.keys(STR)).not.toContain('expiredHeld');
+    expect(Object.keys(STR)).not.toContain('broReviewing');
+    setup([{ ...PENDING, status: 'expired' }, { ...PENDING, id: 'ap-2', status: 'reviewing' }]);
+    await waitFor(() => expect(pillOf()).toBe('Unknown status · expired'));
+    expect(screen.getAllByText('Unknown status · reviewing').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Deny — reject this action' })).toBeDisabled();
+  });
+
   it('the stats strip accounts for every row', async () => {
     setup([
       PENDING,
@@ -256,7 +276,8 @@ describe('Approvals — a row claims only what its record establishes', () => {
 });
 
 describe('Approvals — the outcome announced is the one the reply carries', () => {
-  const live = () => document.querySelector('.ap-sr')?.textContent ?? '';
+  const live = () =>
+    document.querySelector('.v-approvals > [role="status"][aria-live="assertive"]')?.textContent ?? '';
   async function grantWith(reply: () => Promise<unknown>) {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'list_approvals') return Promise.resolve([PENDING]);
@@ -323,11 +344,40 @@ describe('Approvals — Enter on the dialog\'s Cancel button cancels', () => {
     expect(invokeMock).not.toHaveBeenCalledWith('reject_approval', expect.anything());
   });
 
-  it('Enter anywhere else still commits (§D: "Enter confirm")', async () => {
-    await stageDeny();
-    fireEvent.keyDown(window, { key: 'Enter' });
+  it('a real Enter right after the dialog opens lands on Cancel, and cancels', async () => {
+    // This test used to fire Enter at `window` and assert a commit. No real keypress has that
+    // target while the dialog is open: `Modal` moves focus to its first button, Cancel, so the key
+    // is dispatched THERE, the page handler stands aside, and the button's own click cancels.
+    const user = userEvent.setup();
+    const dialog = await stageDeny();
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 30));
+    expect(invokeMock).not.toHaveBeenCalledWith('reject_approval', expect.anything());
+  });
+
+  it('Enter commits only from inside the dialog but off its buttons (§D: "Enter confirm")', async () => {
+    // The one place the commit branch is reachable by a real key: focus on the dialog panel
+    // itself, which is focusable (`tabIndex={-1}`) and is where a click on the dialog's text
+    // leaves focus. The event is dispatched on the element that has focus, as a keypress is.
+    const dialog = await stageDeny();
+    dialog.focus();
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith('reject_approval', expect.objectContaining({ id: 'ap-1' })));
+  });
+
+  it('Escape closes the dialog and decides nothing — through the dialog\'s own handler, the only one', async () => {
+    // The page had a second Escape handler on `window` doing what `Modal` already does through
+    // `onCancel`. With it gone, this passes only if the dialog is really wired to the page's cancel.
+    await stageDeny();
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 30));
+    expect(invokeMock).not.toHaveBeenCalledWith('reject_approval', expect.anything());
+    expect(PAGE_SRC).not.toMatch(/key === 'Escape'/);
   });
 });
 
@@ -452,8 +502,39 @@ describe('approvalsAuthority — what counts as a grant', () => {
 
   it('names the enforcement tokens the renderer never receives', () => {
     expect([...WITHHELD_MARKERS]).toEqual(['confirmation_digest', 'nonce']);
-    // …and the Approval type really does not carry them.
-    expect(Object.keys(GRANTED)).not.toEqual(expect.arrayContaining([...WITHHELD_MARKERS]));
+  });
+
+  it('the backend withholds each of them, and the Approval type has no field for either', () => {
+    // This used to be `Object.keys(GRANTED)` — a literal declared in this file — under a comment
+    // saying "the Approval type really does not carry them". A fixture's keys establish nothing
+    // about the type or the serialiser, and the negated `arrayContaining` held with one of the two
+    // tokens present. What is read here is the Rust struct the backend serialises and the
+    // TypeScript interface the renderer types a row against.
+    /** The body of the declaration that starts with `opener`, up to its closing brace. */
+    const block = (src: string, opener: string) => {
+      const from = src.indexOf(opener);
+      expect(from, opener).toBeGreaterThan(-1);
+      const to = src.indexOf('}', from);
+      expect(to, opener).toBeGreaterThan(from);
+      return src.slice(from, to);
+    };
+    /** Is `field` declared directly under `#[serde(skip_serializing)]` in this struct body? */
+    const withheld = (body: string, field: string) =>
+      new RegExp(`#\\[serde\\(skip_serializing\\)\\]\\s*pub ${field}:`).test(body);
+    const camel = (name: string) => name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+    const rust = block(readFileSync(resolve(process.cwd(), 'src-tauri/core/src/domain.rs'), 'utf8'), 'pub struct Approval {');
+    const tsType = block(readFileSync(resolve(process.cwd(), 'src/domain/entities.ts'), 'utf8'), 'export interface Approval {');
+    for (const marker of WITHHELD_MARKERS) {
+      expect(withheld(rust, marker), `${marker} is skip_serializing in domain.rs`).toBe(true);
+      expect(tsType, `${marker} is not a field of the Approval type`)
+        .not.toMatch(new RegExp(`^\\s*(${marker}|${camel(marker)})\\??:`, 'm'));
+    }
+    // The other answer: a field the backend DOES serialise is not reported as withheld, and the
+    // interface check does see a field that is there.
+    expect(withheld(rust, 'confirmation_method')).toBe(false);
+    expect(withheld('pub struct Approval {\n    pub nonce: Option<String>,\n', 'nonce')).toBe(false);
+    expect(tsType).toMatch(/^\s*confirmationMethod\??:/m);
   });
 });
 
@@ -484,6 +565,79 @@ describe('approvalsAuthority — the page is wired to the commands it names, and
     expect(capabilities).toContain(`"deny-${kebab(DENIED_DECIDE_COMMAND)}"`);
     expect(page).not.toContain(DENIED_DECIDE_COMMAND);
     expect(page).not.toMatch(new RegExp(`\\.${camel(DENIED_DECIDE_COMMAND)}\\s*\\(`));
+  });
+});
+
+// Four things the page carried a private copy of, each of which the shared code already had.
+describe('Approvals — the page uses the shared parser, hook and class instead of its own copies', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const meta = () => document.querySelector('.g-authbar .ab-meta')?.textContent ?? '';
+  const clock = () => document.querySelector('.sla-read .sla-time')?.textContent ?? '';
+
+  it('`requestedAt` is read by `parseTimestamp`: epoch text and ISO give the same instant', async () => {
+    expect(PAGE_SRC).not.toMatch(/function parseWhen/);
+    expect(PAGE_SRC).toMatch(/parseTimestamp\(seated\.requestedAt\)/);
+    expect(PAGE_SRC).toMatch(/parseTimestamp\(a\.requestedAt\)/);
+
+    const epoch = setup([{ ...PENDING, requestedAt: '1700000000000' }]);
+    await waitFor(() => expect(meta()).toMatch(/^Requested /));
+    const fromEpoch = meta();
+    // Formatted, not echoed — and the pending clock is counting from it.
+    expect(fromEpoch).not.toContain('1700000000000');
+    expect(clock()).toMatch(/^\d+h \d\dm$/);
+    // The queue row's own waiting cell goes through the same parser.
+    expect(document.querySelector('.q-row .q-sla b')?.textContent).toMatch(/^\d+h \d\dm$/);
+    epoch.unmount();
+
+    setup([{ ...PENDING, requestedAt: '2023-11-14T22:13:20.000Z' }]);
+    await waitFor(() => expect(meta()).toMatch(/^Requested /));
+    expect(meta()).toBe(fromEpoch);
+  });
+
+  it('an unparseable `requestedAt` is shown as written, with no clock invented for it', async () => {
+    setup([{ ...PENDING, requestedAt: 'not-a-date' }]);
+    await waitFor(() => expect(meta()).toMatch(/^Requested not-a-date · /));
+    expect(clock()).toBe('·');
+    expect(document.querySelector('.q-row .q-sla b')?.textContent).toBe('—');
+  });
+
+  function media(reduce: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-reduced-motion') ? reduce : false,
+      media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {},
+      addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    }));
+  }
+  const ring = () => document.querySelector<SVGCircleElement>('.sla-ring .sr-val');
+
+  it('the hold ring does not sweep under reduced motion, read through `usePrefersReducedMotion`', async () => {
+    expect(PAGE_SRC).not.toMatch(/matchMedia/);
+    media(true);
+    setup();
+    await waitFor(() => expect(ring()).not.toBeNull());
+    expect(ring()!.style.transition).toBe('none');
+  });
+
+  it('…and does sweep when motion is allowed', async () => {
+    media(false);
+    setup();
+    await waitFor(() => expect(ring()).not.toBeNull());
+    expect(ring()!.style.transition).toContain('stroke-dashoffset');
+  });
+
+  it('the verdict announcer is `sr-only`, and the page ships no rule for an element it does not render', async () => {
+    setup();
+    await waitFor(() => expect(screen.getAllByText('vendor@example.com').length).toBeGreaterThan(0));
+    const live = document.querySelector('.v-approvals > [role="status"][aria-live="assertive"]')!;
+    expect(live).not.toBeNull();
+    expect(live.classList.contains('sr-only')).toBe(true);
+    const css = document.querySelector('.v-approvals > style')!.textContent ?? '';
+    expect(css).not.toMatch(/\.ap-sr\b/);
+    expect(document.querySelector('.ap-sr')).toBeNull();
+    // `.ap-blocked` holds one `span.muted`; these three styled children it has not had.
+    expect(css).not.toMatch(/ap-blocked-glyph|ap-blocked-body|\.ap-blocked \.empty-title/);
+    for (const cls of ['ap-blocked-glyph', 'ap-blocked-body']) expect(PAGE_SRC).not.toContain(cls);
   });
 });
 

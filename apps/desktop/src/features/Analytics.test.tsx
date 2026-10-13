@@ -11,6 +11,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Analytics } from './Analytics';
+import { STR as AN_STR } from './Analytics.strings';
+import { STR as CHART_STR } from '../components/charts/Chart.strings';
 
 function setup() {
   invokeMock.mockImplementation((cmd: string) => {
@@ -33,9 +35,9 @@ describe('Analytics — mirrors the real get_analytics store', () => {
 });
 
 // §D: "scrubber (anScrub) … Keyboard: scrubber is a slider (role=slider, arrows)".
-// The page had no scrubber at all. What it scrubs is the RANK cut-off, not time: the
-// engine returns one all-time aggregate with no time dimension, and drawing an axis the
-// data does not have is what this page refuses to do in its other three panels.
+// The page had no scrubber at all. What it scrubs is the RANK cut-off, not time:
+// `get_analytics` returns one all-time aggregate with no time dimension, and drawing an axis
+// the data does not have is what this page refuses to do in its other three panels.
 function withNodes(n: number) {
   const data = Array.from({ length: n }, (_, i) => ({
     key: `node_${i}`, label: `Node ${i}`, value: (n - i) * 10,
@@ -138,12 +140,91 @@ describe('Analytics — the rank scrubber', () => {
     const user = userEvent.setup();
     withNodes(3);                     // values 30, 20, 10 → 60 whole, 50 at top-2
     await waitFor(() => expect(slider()).toBeInTheDocument());
-    await waitFor(() => expect(screen.getAllByText('60').length).toBeGreaterThan(0));
+    // The DECK's own figures, by their own elements. This used to be `getAllByText('60')` and
+    // `getAllByText(/2/)`: BarChart prints its own total of the already-cut metrics
+    // (`.barchart-total-value`) and a bar value of 20, so both held with a deck total that
+    // ignored the cut — the very thing the test is named for.
+    const deckTotal = () => document.querySelector('.an-deck-foot .an-foot-r .mono')?.textContent;
+    const subsetNote = () => document.querySelector('.an-deck-foot > .micro.muted')?.textContent ?? null;
+    const deckCount = () => document.querySelector('.an-deck-foot .capsule b')?.textContent;
+    // The total counts up over 900 ms, so it is waited for longer than the default second.
+    await waitFor(() => expect(deckTotal()).toBe('60'), { timeout: 4000 });
+    expect(deckCount()).toBe('3');
+    expect(subsetNote()).toBeNull();
     slider().focus();
     await user.keyboard('{ArrowLeft}');
-    await waitFor(() => expect(screen.getAllByText('50').length).toBeGreaterThan(0));
+    await waitFor(() => expect(deckTotal()).toBe('50'), { timeout: 4000 });
     // And it says that it is showing a subset, rather than a count that quietly means
     // "some of them".
-    expect(screen.getAllByText(/2/).length).toBeGreaterThan(0);
+    expect(deckCount()).toBe('2');
+    expect(subsetNote()).toBe('top 2 of 3');
+  });
+});
+
+// `get_analytics` is `repo::analytics::metrics`: seventeen `SELECT COUNT(*)` over the desktop's own
+// SQLite tables. The three empty panels told the reader that "the engine" does not expose the
+// missing aggregate — an engine this read never asks.
+describe('Analytics — the empty panels name the desktop backend, not the engine', () => {
+  const KEYS = [
+    'districtHint', 'districtTableHint', 'autonomyHint', 'autonomyTableHint', 'channelHint', 'channelTableHint',
+  ] as const;
+
+  it.each(['en', 'hy', 'ru'] as const)('no panel blames the engine for a local read (%s)', (lang) => {
+    for (const k of KEYS) {
+      expect(AN_STR[k][lang], k).not.toMatch(/engine|շարժիչ|движ/i);
+      expect(AN_STR[k][lang], k).toMatch(/desktop|десктоп/i);
+    }
+  });
+
+  it('the page renders that wording', async () => {
+    withNodes(2);
+    await waitFor(() =>
+      expect(screen.getByText(/The desktop backend does not expose a per-district aggregate/)).toBeInTheDocument());
+    expect(screen.queryByText(/engine/i)).toBeNull();
+  });
+});
+
+// `.an-sr` was a page-local copy of the shared visually-hidden rule, the one components/ui.css says
+// `.sr-only` was introduced to replace.
+describe('Analytics — hidden text uses the shared visually-hidden class', () => {
+  it('the live status and the three empty-panel captions are `sr-only`, and no `.an-sr` is declared', async () => {
+    withNodes(2);
+    await waitFor(() => expect(screen.getByRole('slider')).toBeInTheDocument());
+    const live = document.querySelector('.v-analytics > [role="status"][aria-live="polite"]')!;
+    expect(live).not.toBeNull();
+    expect(live.classList.contains('sr-only')).toBe(true);
+    const captions = Array.from(document.querySelectorAll('.v-analytics .an-table caption'));
+    expect(captions).toHaveLength(3);
+    for (const c of captions) expect(c.classList.contains('sr-only')).toBe(true);
+    expect(document.querySelector('.v-analytics > style')!.textContent).not.toMatch(/\.an-sr\b/);
+    expect(document.querySelector('.an-sr')).toBeNull();
+  });
+});
+
+// Four chart labels were kept twice — in this page's catalog and in the chart's own — and the
+// Armenian "Show data table" had already drifted between the two. The chart catalog is the one copy.
+describe('Analytics — chart labels have one copy, the chart catalog\'s', () => {
+  it('the page catalog no longer repeats them', () => {
+    for (const k of ['hiddenWord', 'value', 'share', 'showDataTable']) {
+      expect(Object.keys(AN_STR), k).not.toContain(k);
+    }
+  });
+
+  it.each(['en', 'hy', 'ru'] as const)('every table toggle and header on the page reads the chart catalog (%s)', async (lang) => {
+    localStorage.setItem('brops.lang', JSON.stringify(lang));
+    try {
+      withNodes(2);
+      await waitFor(() => expect(screen.getByRole('slider')).toBeInTheDocument());
+      const text = (sel: string) => Array.from(document.querySelectorAll(sel)).map((el) => el.textContent);
+      // One toggle under the plot and one under each of the three empty panels.
+      expect(text('.v-analytics details > summary')).toEqual(Array(4).fill(CHART_STR.showDataTable[lang]));
+      expect(text('.v-analytics details thead th:nth-child(2)')).toEqual(Array(4).fill(CHART_STR.valueHeader[lang]));
+      expect(text('.v-analytics .chart-table thead th:nth-child(3)')).toEqual([CHART_STR.shareHeader[lang]]);
+      // The legend's "hidden" marker, once a node is switched off.
+      fireEvent.click(document.querySelector('.barchart-legend-item')!);
+      expect(document.querySelector('.barchart-legend-state')?.textContent).toBe(` · ${CHART_STR.hiddenWord[lang]}`);
+    } finally {
+      localStorage.removeItem('brops.lang');
+    }
   });
 });

@@ -23,27 +23,28 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Approvals } from './Approvals';
+import { POPULATED } from './pages.fixtures';
 
-const PENDING = {
-  id: 'ap-1',
-  actionType: 'Send external email',
-  target: 'vendor@example.com',
-  level: 'A3',
-  riskLevel: 'high',
-  status: 'pending',
-  requestedBy: 'A3',
-  decisionNote: null,
-  entityType: null,
-  entityId: null,
-  requestedAt: '1700000000000',
-  decidedAt: null,
-};
+// The local ledger this page is mounted over is the shared populated fixture. These specs are
+// about the ENGINE section and assert nothing on a local row; they used to carry a field-for-field
+// copy of `Approvals.test.tsx`'s PENDING approval to have something for `list_approvals` to return.
+const LOCAL_LEDGER = POPULATED.list_approvals;
 
-/** A queue read the engine actually served, with one task and the state it holds it in. */
+/**
+ * A queue read in the shape the engine publishes it, with one task and the state it holds it in.
+ *
+ * `approval_inbox` (engine/runtime/bro_control_room_api.py) lists a task only while its state is
+ * `awaiting-approval` or `waiting-approval`, and the published record is that item plus
+ * `id = task_id`. The Rust mirror (`governance.rs :: parse_identified_record`) refuses a record
+ * without a non-empty `id`. This fixture used to be `{ task_id, state: 'awaiting-owner-approval' }`
+ * — a state no engine runtime file writes and a record the mirror would have turned away; the
+ * mocked `invoke` let it through.
+ */
+const ENGINE_TASK_STATE = 'awaiting-approval';
 const QUEUE_OK = {
   state: 'ok',
   surface: 'approvalQueue',
-  records: [{ task_id: 'task-0001', state: 'awaiting-owner-approval' }],
+  records: [{ id: 'task-0001', task_id: 'task-0001', state: ENGINE_TASK_STATE }],
   authenticated: false,
   engine: null,
 };
@@ -60,7 +61,7 @@ const RECORDED = {
 
 function setup(queue: unknown, outcome: unknown = RECORDED) {
   invokeMock.mockImplementation((cmd: string) => {
-    if (cmd === 'list_approvals') return Promise.resolve([PENDING]);
+    if (cmd === 'list_approvals') return Promise.resolve(LOCAL_LEDGER);
     if (cmd === 'read_engine_approval_queue') {
       return queue instanceof Error ? Promise.reject(queue) : Promise.resolve(queue);
     }
@@ -86,6 +87,17 @@ async function fillAndAsk() {
 beforeEach(() => invokeMock.mockReset());
 
 describe('the engine REQUEST section', () => {
+  it('is mounted over a local ledger that has rows, and offers the engine task in the state published', async () => {
+    setup(QUEUE_OK);
+    await waitFor(() => expect(screen.getByLabelText(/Engine task/i)).toBeTruthy());
+    // The local list rendered (so the section is being tested beside a populated gate, as before)…
+    expect(Array.isArray(LOCAL_LEDGER) && LOCAL_LEDGER.length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.queue .q-row')).toHaveLength((LOCAL_LEDGER as unknown[]).length);
+    // …and the one option is the engine's task with the engine's state, not a local approval.
+    const options = Array.from((screen.getByLabelText(/Engine task/i) as HTMLSelectElement).options);
+    expect(options.map((o) => o.textContent)).toEqual([`task-0001 · ${ENGINE_TASK_STATE}`]);
+  });
+
   it('cannot be used when the engine queue is not readable, and says so', async () => {
     setup(new Error('broker_unavailable'));
     await waitFor(() =>
@@ -103,7 +115,7 @@ describe('the engine REQUEST section', () => {
     expect(args).toMatchObject({
       taskId: 'task-0001',
       requestedCommand: 'approve',
-      expectedTaskState: 'awaiting-owner-approval',
+      expectedTaskState: ENGINE_TASK_STATE,
       requestedBy: 'gev',
     });
   });

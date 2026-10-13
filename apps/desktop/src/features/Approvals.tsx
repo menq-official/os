@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import type { ApprovalRequestOutcome, RequestableCommand }
   from '../services/approvalRequest';
 import { useApp } from '../app/store';
-import { Card, Button, Skeleton, ErrorState, EmptyState, ConfirmDialog } from '../components/ui';
+import { Card, Button, Skeleton, ErrorState, EmptyState, ConfirmDialog, usePrefersReducedMotion } from '../components/ui';
 import { Mark } from '../components/Ambient';
 import { useAsync } from '../hooks/useAsync';
 import { useToast } from '../components/toast';
@@ -10,6 +10,7 @@ import { desktop, hasBackend } from '../services/desktop';
 import { riskLabel } from '../domain/statusLabels';
 import type { Approval } from '../domain/entities';
 import { STR } from './Approvals.strings';
+import { parseTimestamp } from './timestamps';
 import {
   canAct, classifyApproval, countQueue, readRejection, readReply,
   type ApprovalState, type Classification,
@@ -68,7 +69,9 @@ const HOLD_MS = 1100;          // deliberate press-and-hold duration to grant
  *     fell through to the default, so a spent approval was shown as "Awaiting decision";
  *   * so did every status this build does not know: "unknown" and "pending" shared one arm;
  *   * `granted` / `confirmed` were treated as approved although no backend writer produces
- *     either string;
+ *     either string — and `expired` / `reviewing` had arms of their own on the same footing.
+ *     The approval writers in repo.rs set pending, approved, rejected, consumed and escalated;
+ *     all four of the others now read as `unknown`;
  *   * `approved` alone lit the green tone, the live mark and the APPROVED seal. The backend
  *     honours a grant only with its native-confirmation provenance, and this page now does
  *     too: an `approved` row without it is `unconfirmed`, and says so.
@@ -81,27 +84,12 @@ function statusMeta(c: Classification, L: L) {
     denied: { gate: 'st-denied', pill: 'off', mark: 'alert', face: 'blocked', lbl: L('denied') },
     escalated: { gate: 'st-escalated', pill: 'info', mark: 'thinking', face: 'collaborating', lbl: L('escalatedA3') },
     consumed: { gate: 'st-expired', pill: 'off', mark: 'idle', face: 'completed', lbl: L('consumedSpent') },
-    expired: { gate: 'st-expired', pill: 'off', mark: 'idle', face: 'blocked', lbl: L('expiredHeld') },
-    reviewing: { gate: 'st-reviewing', pill: 'info', mark: 'thinking', face: 'thinking', lbl: L('broReviewing') },
     // Awaiting a human decision. Amber, idle — never green.
     pending: { gate: 'st-waiting', pill: 'warn', mark: 'idle', face: 'waiting', lbl: L('awaitingDecision') },
     // A status this build cannot name is shown AS that: verbatim, toneless, not actionable.
     unknown: { gate: 'st-expired', pill: 'off', mark: 'idle', face: 'blocked', lbl: `${L('unknownStatus')}${c.raw || '—'}` },
   };
   return by[c.state];
-}
-
-/** The row nothing is seated for — the same presentation a pending row gets. */
-const NO_ROW: Classification = {
-  state: 'pending', raw: 'pending', missing: [], authorized: false, actionable: false,
-};
-
-/** Parse a `requestedAt` that may be an epoch-millis string or an ISO instant. */
-function parseWhen(raw: string): Date | null {
-  const s = (raw ?? '').trim();
-  if (!s) return null;
-  const d = new Date(isNaN(Number(s)) ? s : Number(s));
-  return isNaN(d.getTime()) ? null : d;
 }
 
 /** Human elapsed span for the live waiting clock. */
@@ -182,9 +170,11 @@ export function Approvals() {
   const [holding, setHolding] = useState(false);
   const [verdict, setVerdict] = useState('');
   const [now, setNow] = useState(() => Date.now());
-  const [reduced, setReduced] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  );
+  // The OS reduced-motion setting, through the shared hook: the hold ring fill (and the shared
+  // grant-bar fill) become instant rather than sweeping across HOLD_MS — the deliberate press is
+  // still required, only the continuous animation is dropped. The page used to keep its own
+  // state and `change` listener for this.
+  const reduced = usePrefersReducedMotion();
   const holdTimer = useRef<number | null>(null);
 
   const items = useMemo(() => data ?? [], [data]);
@@ -221,16 +211,6 @@ export function Approvals() {
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, []);
-
-  // Honor the OS reduced-motion setting: the hold ring fill (and the shared
-  // grant-bar fill) become instant rather than sweeping across HOLD_MS — the
-  // deliberate press is still required, only the continuous animation is dropped.
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const on = () => setReduced(mq.matches);
-    mq.addEventListener?.('change', on);
-    return () => mq.removeEventListener?.('change', on);
   }, []);
 
   const onError = (e: unknown) => {
@@ -346,9 +326,11 @@ export function Approvals() {
     // listener is registered once per staged-state and is never a commit behind the data.
   }, [staged]);
 
-  // While a confirm dialog is open: Esc cancels, and Enter commits ONLY when focus is outside the
-  // dialog's buttons. In practice that is almost never: `Modal` puts focus on its first button,
-  // which is Cancel, so `g` then Enter CANCELS. That is the safe default for a gate, and it is
+  // While a confirm dialog is open, Enter commits ONLY when focus is outside the dialog's
+  // buttons. (Esc is not handled here: `ConfirmDialog` is a `Modal`, whose own key handler calls
+  // `onCancel` — this listener used to repeat it.) In practice that is almost never: `Modal`
+  // puts focus on its first button, which is Cancel, so `g` then Enter CANCELS. That is the
+  // safe default for a gate, and it is
   // left exactly so; whether Enter should confirm is the Owner's decision, not a comment's. This
   // line used to say "Enter commits" (`R3-0221`).
   //
@@ -365,7 +347,7 @@ export function Approvals() {
         if (el?.tagName === 'BUTTON' && el.closest('[role="dialog"]')) return;
         e.preventDefault();
         commit();
-      } else if (e.key === 'Escape') { e.preventDefault(); setStaged(null); }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -403,7 +385,7 @@ export function Approvals() {
 
   // Verdict announcer — always mounted so grant/deny/escalate results are read out.
   const liveRegion = (
-    <div className="ap-sr" role="status" aria-live="assertive" aria-atomic="true">{verdict}</div>
+    <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{verdict}</div>
   );
 
   const frame = (children: ReactNode) => (
@@ -502,7 +484,9 @@ export function Approvals() {
   }
 
   // ── empty — gate clear, nothing awaiting authority ─────────────────────────
-  if (items.length === 0) {
+  // `seated` is null exactly when the list is empty (`sel` is clamped into range above), so this
+  // one test is the empty branch and leaves `seated` a row for everything below.
+  if (!seated) {
     return frame(
       <>
         <section className="gate surface soft lg hud reveal st-approved" style={{ '--i': 1 } as CSSProperties} role="status" aria-live="polite">
@@ -522,18 +506,18 @@ export function Approvals() {
 
   // ── default: the seated gate + queue + real-derived stats strip ────────────
   const stagedItem = staged ? items.find((a) => a.id === staged.id) ?? null : null;
-  const seatedClass = seated ? classifyApproval(seated) : NO_ROW;
+  const seatedClass = classifyApproval(seated);
   const meta = statusMeta(seatedClass, L);
-  const when = seated ? parseWhen(seated.requestedAt) : null;
+  const when = parseTimestamp(seated.requestedAt);
   const isPending = seatedClass.actionable;
   // The seal opens — green ring, APPROVED stamp — only for a grant the page could corroborate.
   const opened = seatedClass.authorized;
-  const pushed = seatedClass.state === 'denied' || seatedClass.state === 'expired';
+  const pushed = seatedClass.state === 'denied';
 
   // Hold-fill ring (decorative, aria-hidden with the whole seal): a pending gate
   // shows an empty track that a deliberate press-and-hold sweeps full over HOLD_MS,
   // reinforcing the grant bar; approved/active gates show the tone ring resolved,
-  // denied/expired empty it. Never anticipates the verdict — the ring only fills
+  // a denied one empties it. Never anticipates the verdict — the ring only fills
   // while a real hold is in progress, and the seal/stamp still wait on real data.
   const ringOffset = opened ? 0 : pushed ? CIRC : isPending ? (holding ? 0 : CIRC) : 0;
 
@@ -557,7 +541,7 @@ export function Approvals() {
         className={`gate surface soft lg hud reveal ${meta.gate}`}
         style={{ '--i': 1 } as CSSProperties}
         aria-live="polite"
-        aria-label={seated ? `${L('approvalGatePrefix')}${seated.actionType}, ${meta.lbl}` : undefined}
+        aria-label={`${L('approvalGatePrefix')}${seated.actionType}, ${meta.lbl}`}
       >
         <span className="bracket tl" aria-hidden="true" /><span className="bracket tr" aria-hidden="true" />
         <span className="bracket bl" aria-hidden="true" /><span className="bracket br" aria-hidden="true" />
@@ -566,10 +550,10 @@ export function Approvals() {
         <div className="g-head">
           <div className="gh-title">
             <span className="eyebrow">{L('controlGate')}</span>
-            <h2>{seated?.actionType}</h2>
+            <h2>{seated.actionType}</h2>
           </div>
           <div className="gh-tags">
-            <span className={`tier tier-${seated?.level}`}>{seated?.level}</span>
+            <span className={`tier tier-${seated.level}`}>{seated.level}</span>
             <span className={`pill ${meta.pill}`}>{meta.lbl}</span>
           </div>
         </div>
@@ -582,11 +566,11 @@ export function Approvals() {
             <div className="gr-id">
               <span aria-hidden="true"><Mark state={meta.mark} size={40} /></span>
               <div className="gr-who">
-                <b>{seated?.requestedBy || '—'}</b>
+                <b>{seated.requestedBy || '—'}</b>
                 <span>{L('requester')}</span>
               </div>
             </div>
-            <p className="gr-reason">{seated?.target}</p>
+            <p className="gr-reason">{seated.target}</p>
           </div>
 
           <div className="g-seal">
@@ -609,7 +593,7 @@ export function Approvals() {
                 <span className="keyhole" />
               </div>
               <span className="held" />
-              <span className="tier-ring">{seated?.level}</span>
+              <span className="tier-ring">{seated.level}</span>
               {opened && <span className="stamp">{L('approvedStamp')}</span>}
             </div>
             <div className="sla-read">
@@ -624,23 +608,23 @@ export function Approvals() {
 
           <div className="g-impact">
             <span className="micro">{L('impactScope')}</span>
-            <div className="im-scope"><span className="dot" aria-hidden="true" />{seated?.target}</div>
+            <div className="im-scope"><span className="dot" aria-hidden="true" />{seated.target}</div>
             <div className="im-grid">
               <div className="im-row">
                 <span className="micro">{t('field.level')}</span>
-                <span className="im-v"><b className="mono">{seated?.level}</b></span>
+                <span className="im-v"><b className="mono">{seated.level}</b></span>
               </div>
               <div className="im-row">
                 <span className="micro">{t('field.risk')}</span>
-                <span className="im-v"><b className="mono">{riskLabel((seated?.riskLevel ?? '').toLowerCase(), lang)}</b></span>
+                <span className="im-v"><b className="mono">{riskLabel((seated.riskLevel ?? '').toLowerCase(), lang)}</b></span>
               </div>
               <div className="im-row">
                 <span className="micro">{L('requestedByLabel')}</span>
-                <span className="im-v"><b className="mono">{seated?.requestedBy}</b></span>
+                <span className="im-v"><b className="mono">{seated.requestedBy}</b></span>
               </div>
               <div className="im-row">
                 <span className="micro">{L('requestedAtLabel')}</span>
-                <span className="im-v"><b className="mono">{when ? dateFmt.format(when) : (seated?.requestedAt || '—')}</b></span>
+                <span className="im-v"><b className="mono">{when ? dateFmt.format(when) : (seated.requestedAt || '—')}</b></span>
               </div>
             </div>
           </div>
@@ -650,18 +634,18 @@ export function Approvals() {
         {/* ── AUTHORIZATION BAR — the owner is the key ── */}
         <div className="g-authbar">
           <span className="ab-meta micro">
-            {`${L('requestedWord')} ${when ? dateFmt.format(when) : (seated?.requestedAt || '—')} · `}
-            <b>{seated?.level}</b>{L('levelSuffix')}
+            {`${L('requestedWord')} ${when ? dateFmt.format(when) : (seated.requestedAt || '—')} · `}
+            <b>{seated.level}</b>{L('levelSuffix')}
           </span>
           <div className="ab-actions">
             <button
               type="button" className="ab-btn deny" disabled={!isPending}
-              onClick={() => seated && setStaged({ id: seated.id, kind: 'deny' })}
+              onClick={() => setStaged({ id: seated.id, kind: 'deny' })}
               aria-label={L('denyAria')}
             >✕ {L('deny')}</button>
             <button
               type="button" className="ab-btn escalate" disabled={!isPending}
-              onClick={() => seated && setStaged({ id: seated.id, kind: 'escalate' })}
+              onClick={() => setStaged({ id: seated.id, kind: 'escalate' })}
               aria-label={L('escalateForReview')}
             >↑ {L('escalateA3')}</button>
             <button
@@ -710,7 +694,7 @@ export function Approvals() {
         {items.map((a, i) => {
           const rowClass = classifyApproval(a);
           const m = statusMeta(rowClass, L);
-          const rw = parseWhen(a.requestedAt);
+          const rw = parseTimestamp(a.requestedAt);
           const isSel = i === sel;
           const rowPending = rowClass.state === 'pending';
           return (
@@ -800,21 +784,16 @@ export function Approvals() {
   );
 }
 
-/** Page-local styles for the few classes the design CSS doesn't already provide
- *  (the sr-only verdict region, the keyboard hint, and the blocked/empty panel). */
+/** Page-local styles for the few classes the design CSS doesn't already provide (the keyboard
+ *  hint and the engine-queue notice). The verdict region is hidden by the shared `.sr-only`
+ *  (components/ui.css), not by a copy of it here. */
 function ApprovalsStyle() {
   return (
     <style>{`
-      .v-approvals .ap-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-
       .v-approvals .ap-hint { font-size: 12px; margin: 10px 0 4px; color: var(--ink-muted);
         font-variant-numeric: tabular-nums; }
 
       .v-approvals .ap-blocked { text-align: center; padding: var(--s6) var(--s4); color: var(--ink-muted); }
-      .v-approvals .ap-blocked-glyph { font-size: 30px; }
-      .v-approvals .ap-blocked .empty-title { margin-top: var(--s3); }
-      .v-approvals .ap-blocked-body { max-width: 480px; margin: 6px auto 0; }
 
       /* The grant key is a real hold gesture. Under reduced motion the shared
          aios.css already collapses the grant-fill and SLA-ring transitions to ~0ms,

@@ -60,11 +60,9 @@ export type ApprovalState =
   | 'escalated'
   /** A grant that has already been spent against its gating tuple. */
   | 'consumed'
-  /** Timed out without a decision; authorises nothing. */
-  | 'expired'
-  /** Under engine review. Not a verdict. */
-  | 'reviewing'
-  /** A status string this build does not know. Rendered verbatim, toneless. */
+  /** A status string this build does not know. Rendered verbatim, toneless. `expired` and
+   *  `reviewing` are among them: both had a state of their own here, and no approval writer in
+   *  repo.rs produces either string. */
   | 'unknown';
 
 export interface Classification {
@@ -113,8 +111,6 @@ export function classifyApproval(a: Approval): Classification {
   if (s === 'rejected' || s === 'denied') return { state: 'denied', raw, missing: none, authorized: false, actionable: false };
   if (s === 'escalated') return { state: 'escalated', raw, missing: none, authorized: false, actionable: false };
   if (s === 'consumed') return { state: 'consumed', raw, missing: none, authorized: false, actionable: false };
-  if (s === 'expired') return { state: 'expired', raw, missing: none, authorized: false, actionable: false };
-  if (s === 'reviewing') return { state: 'reviewing', raw, missing: none, authorized: false, actionable: false };
   return { state: 'unknown', raw, missing: none, authorized: false, actionable: false };
 }
 
@@ -141,7 +137,7 @@ export interface QueueCounts {
   denied: number;
   escalated: number;
   consumed: number;
-  /** expired · reviewing · unrecognised — decided nothing, authorises nothing. */
+  /** Every status this build does not recognise — decided nothing, authorises nothing. */
   other: number;
 }
 

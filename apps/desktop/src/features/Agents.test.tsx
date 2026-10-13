@@ -111,3 +111,19 @@ describe('the roster states say where the roster comes from', () => {
     expect(AG_STR.emptyHint[lang]).not.toMatch(/When the conductor dispatches|Երբ դիրիժորը ուղարկի|Когда дирижёр отправит/);
   });
 });
+
+// The focus announcer carried `.ag-sr`, a page-local copy of the shared visually-hidden rule
+// (`.sr-only`, components/ui.css). One rule, one name: the page uses the shared class and ships no
+// copy of its declarations.
+describe('the focus announcer uses the shared visually-hidden class', () => {
+  it('is a polite live region classed `sr-only`, and the page declares no `.ag-sr` of its own', async () => {
+    setup();
+    await waitFor(() => expect(document.querySelector('.dossier .ag-forge')).not.toBeNull());
+    const live = document.querySelector('.v-agents > [aria-live="polite"]')!;
+    expect(live).not.toBeNull();
+    expect(live.classList.contains('sr-only')).toBe(true);
+    expect(live.textContent).toMatch(/Scout · researcher/);
+    expect(document.querySelector('.v-agents style')!.textContent).not.toMatch(/\.ag-sr\b/);
+    expect(document.querySelector('.ag-sr')).toBeNull();
+  });
+});

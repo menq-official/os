@@ -44,11 +44,6 @@ export const STR = {
     hy: 'Թաքցնել հանգույցը',
     ru: 'Скрыть узел',
   },
-  hiddenWord: {
-    en: 'hidden',
-    hy: 'թաքցված',
-    ru: 'скрыто',
-  },
   allNodesHidden: {
     en: 'All nodes hidden — enable one in the legend.',
     hy: 'Բոլոր հանգույցները թաքցված են․ միացրեք որևէ մեկը լեգենդից։',
@@ -64,21 +59,9 @@ export const STR = {
     hy: 'Հանգույց',
     ru: 'Узел',
   },
-  value: {
-    en: 'Value',
-    hy: 'Արժեք',
-    ru: 'Значение',
-  },
-  share: {
-    en: 'Share',
-    hy: 'Բաժին',
-    ru: 'Доля',
-  },
-  showDataTable: {
-    en: 'Show data table',
-    hy: 'Ցուցադրել աղյուսակը',
-    ru: 'Показать таблицу данных',
-  },
+  // The hidden word, the Value and Share headers and the "Show data table" toggle are NOT here:
+  // they are the chart catalog's (`components/charts/Chart.strings.ts`), which the plot falls back
+  // to and the empty panels read directly. Kept here too, the Armenian toggle had drifted.
   noBreakdown: {
     en: 'No breakdown available',
     hy: 'Բաժանում առկա չէ',
@@ -110,7 +93,7 @@ export const STR = {
   // -- a refused read (denied) -------------------------------------------------
   // `get_analytics` counts rows in the desktop's own SQLite tables. Nothing governs that read,
   // so a refusal is reported as a refused read with its reason — not as "blocked at the wall".
-  governedBlocked: {
+  readRefusedBody: {
     en: 'The backend refused this read; nothing was read. It is a local count over the desktop’s own tables, with no approval that would open it. Its reason:',
     hy: 'Backend-ը մերժեց այս ընթերցումը․ ոչինչ չկարդացվեց։ Սա desktop-ի սեփական աղյուսակների տեղային հաշվարկ է, ու այն բացող հաստատում չկա։ Պատճառը՝',
     ru: 'Бэкенд отклонил это чтение; ничего не было прочитано. Это локальный подсчёт по собственным таблицам десктопа, и одобрения, которое бы его открыло, нет. Причина:',
@@ -147,6 +130,9 @@ export const STR = {
   },
 
   // -- honest lower board: districts -----------------------------------------
+  // The three panels below name the DESKTOP BACKEND as what lacks the aggregate. `get_analytics`
+  // counts rows in the desktop's own SQLite tables (see the refused-read note above); they used to
+  // say "the engine", which this read never asks.
   distByDistrict: {
     en: 'Distribution by district',
     hy: 'Բաշխում ըստ շրջանների',
@@ -158,14 +144,14 @@ export const STR = {
     ru: 'маршрутизированные вызовы',
   },
   districtHint: {
-    en: 'The engine does not expose a per-district aggregate yet, so no breakdown is shown.',
-    hy: 'Շարժիչը դեռ չի տրամադրում ըստ շրջանի ագրեգատ, ուստի բաժանում ցուցադրված չէ։',
-    ru: 'Движок пока не предоставляет агрегат по районам, поэтому разбивка не показана.',
+    en: 'The desktop backend does not expose a per-district aggregate yet, so no breakdown is shown.',
+    hy: 'Desktop-ի backend-ը դեռ չի տրամադրում ըստ շրջանի ագրեգատ, ուստի բաժանում ցուցադրված չէ։',
+    ru: 'Бэкенд десктопа пока не предоставляет агрегат по районам, поэтому разбивка не показана.',
   },
   districtTableHint: {
-    en: 'No district aggregate from the engine.',
-    hy: 'Շարժիչից շրջանի ագրեգատ չկա։',
-    ru: 'Нет агрегата по районам от движка.',
+    en: 'No district aggregate from the desktop backend.',
+    hy: 'Desktop-ի backend-ից շրջանի ագրեգատ չկա։',
+    ru: 'Нет агрегата по районам от бэкенда десктопа.',
   },
   district: {
     en: 'District',
@@ -180,14 +166,14 @@ export const STR = {
     ru: 'Автономность',
   },
   autonomyHint: {
-    en: 'The engine does not expose an autonomy-level aggregate yet, so no split is shown.',
-    hy: 'Շարժիչը դեռ չի տրամադրում ինքնավարության մակարդակի ագրեգատ, ուստի բաժանում ցուցադրված չէ։',
-    ru: 'Движок пока не предоставляет агрегат по уровню автономности, поэтому разбивка не показана.',
+    en: 'The desktop backend does not expose an autonomy-level aggregate yet, so no split is shown.',
+    hy: 'Desktop-ի backend-ը դեռ չի տրամադրում ինքնավարության մակարդակի ագրեգատ, ուստի բաժանում ցուցադրված չէ։',
+    ru: 'Бэкенд десктопа пока не предоставляет агрегат по уровню автономности, поэтому разбивка не показана.',
   },
   autonomyTableHint: {
-    en: 'No autonomy aggregate from the engine.',
-    hy: 'Շարժիչից ինքնավարության ագրեգատ չկա։',
-    ru: 'Нет агрегата по автономности от движка.',
+    en: 'No autonomy aggregate from the desktop backend.',
+    hy: 'Desktop-ի backend-ից ինքնավարության ագրեգատ չկա։',
+    ru: 'Нет агрегата по автономности от бэкенда десктопа.',
   },
   segment: {
     en: 'Segment',
@@ -202,14 +188,14 @@ export const STR = {
     ru: 'Разделение по каналам',
   },
   channelHint: {
-    en: 'The engine does not expose a per-channel aggregate yet, so no split is shown.',
-    hy: 'Շարժիչը դեռ չի տրամադրում ըստ ալիքի ագրեգատ, ուստի բաժանում ցուցադրված չէ։',
-    ru: 'Движок пока не предоставляет агрегат по каналам, поэтому разбивка не показана.',
+    en: 'The desktop backend does not expose a per-channel aggregate yet, so no split is shown.',
+    hy: 'Desktop-ի backend-ը դեռ չի տրամադրում ըստ ալիքի ագրեգատ, ուստի բաժանում ցուցադրված չէ։',
+    ru: 'Бэкенд десктопа пока не предоставляет агрегат по каналам, поэтому разбивка не показана.',
   },
   channelTableHint: {
-    en: 'No channel aggregate from the engine.',
-    hy: 'Շարժիչից ալիքի ագրեգատ չկա։',
-    ru: 'Нет агрегата по каналам от движка.',
+    en: 'No channel aggregate from the desktop backend.',
+    hy: 'Desktop-ի backend-ից ալիքի ագրեգատ չկա։',
+    ru: 'Нет агрегата по каналам от бэкенда десктопа.',
   },
   channel: {
     en: 'Channel',
@@ -218,7 +204,7 @@ export const STR = {
   },
 
   // -- rank scrubber (AnScrub) --------------------------------------------------
-  // §D asks for a scrubber. The engine exposes ONE all-time aggregate with no time
+  // §D asks for a scrubber. `get_analytics` returns ONE all-time aggregate with no time
   // dimension, so a TIME scrubber would be inventing an axis — exactly what this page
   // refuses to do in its other three panels. What this one scrubs is real: the rank
   // cut-off, how far down the ranked distribution is shown.
