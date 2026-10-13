@@ -106,6 +106,23 @@ impl Principal {
     }
 }
 
+/// The one stderr line for a principal's typed refusal: who, which op, and its `reason`.
+///
+/// The reason is the PEER's text, so it is bounded and every control character in it is
+/// replaced — a refusal must not be able to write a second, reassuring log line.
+pub fn refusal_log_line(principal: Principal, op: &str, reason: &str) -> String {
+    const SHOWN: usize = 96;
+    let clean = |text: &str| -> String {
+        let mut out: String =
+            text.chars().take(SHOWN).map(|c| if c.is_control() { '?' } else { c }).collect();
+        if text.chars().count() > SHOWN {
+            out.push('…');
+        }
+        out
+    };
+    format!("brops-broker: {} refused `{}`: {}", principal.as_str(), clean(op), clean(reason))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +257,45 @@ mod tests {
         let mut hop = FakeHop { received: vec![], reply: vec![], fail: false };
         assert!(matches!(hop_roundtrip(&mut hop, &big), Err(HopError::Frame(_))));
         assert!(hop.received.is_empty());
+    }
+
+    /// Cockpit read R3-0089. A principal's typed refusal was parsed into `Refused(reason)` and
+    /// then mapped to the one closed renderer reason, and the `reason` went nowhere: an
+    /// operator looking at a blocked turn could not tell `challenge_expired` from
+    /// `principal collapse`. The line the broker now writes says who refused, which op, and
+    /// why — bounded, and with nothing in it that can start a second log line.
+    #[test]
+    fn a_refusal_is_one_bounded_log_line_naming_the_principal_the_op_and_the_reason() {
+        assert_eq!(
+            refusal_log_line(Principal::Supervisor, "accept-open", "challenge_expired"),
+            "brops-broker: supervisor refused `accept-open`: challenge_expired"
+        );
+        // A reason is the peer's text. A newline or an escape in it must not forge a line.
+        let forged = refusal_log_line(Principal::IsolatedSigner, "sign", "x\nbrops-broker: all is well\x1b[2J");
+        assert_eq!(forged.lines().count(), 1, "{forged:?}");
+        assert!(!forged.contains('\x1b'), "{forged:?}");
+        assert!(forged.contains("x?brops-broker: all is well?[2J"), "{forged:?}");
+        // And it is bounded however long the peer's text is.
+        let long = refusal_log_line(Principal::ChallengeAuthority, "issue", &"r".repeat(10_000));
+        assert!(long.chars().count() < 260, "{} characters", long.chars().count());
+        assert!(long.ends_with('…'), "a cut reason says it was cut: {long:?}");
+        // The op is the broker's own string, and is bounded the same way all the same.
+        let odd_op = refusal_log_line(Principal::Supervisor, &"o".repeat(500), "r");
+        assert!(odd_op.chars().count() < 260);
+
+        // And the one hop function writes it for a typed refusal before it collapses the reason.
+        // A text check, and it says so: the line goes to stderr, which a test cannot read back.
+        let source = include_str!("chain_executor.rs");
+        let hop = source
+            .split("pub(crate) fn hop_request<")
+            .nth(1)
+            .expect("hop_request is gone")
+            .split("\n}\n")
+            .next()
+            .unwrap();
+        let logged = hop.find(concat!("refusal_log_", "line(principal, &op, reason)")).expect("not logged");
+        let collapsed = hop.rfind("e.to_turn_reason()").expect("no collapse");
+        assert!(hop.contains("HopError::Refused(reason)") && logged < collapsed);
     }
 
     #[test]

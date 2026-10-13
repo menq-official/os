@@ -380,7 +380,15 @@ pub(crate) fn hop_request<C: HopConnector + ?Sized>(
     let bytes = serde_json::to_vec(request).map_err(|_| TurnReason::UpstreamBlocked)?;
     let mut conn = connector.connect(principal).map_err(|e| e.to_turn_reason())?;
     let reply = hop_roundtrip(conn.as_mut(), &bytes).map_err(|e| e.to_turn_reason())?;
-    parse_reply(&op, &reply).map_err(|e| e.to_turn_reason())
+    parse_reply(&op, &reply).map_err(|e| {
+        // The renderer is told one closed reason whatever the principal said. The operator is
+        // told what it said (cockpit read R3-0089): the typed `reason` used to be parsed and
+        // dropped here, so a blocked turn left nothing to tell one refusal from another.
+        if let crate::chain_hops::HopError::Refused(reason) = &e {
+            eprintln!("{}", crate::chain_hops::refusal_log_line(principal, &op, reason));
+        }
+        e.to_turn_reason()
+    })
 }
 
 /// The turn facts the challenge authority's `create-pending` requires (§2.1 fixed shape).

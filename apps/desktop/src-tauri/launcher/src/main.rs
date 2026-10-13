@@ -1016,6 +1016,13 @@ mod linux {
     /// makes reordering the drop something a test can see, on any machine.
     struct RealDropSyscalls;
 
+    /// What one `prctl(PR_CAPBSET_DROP, cap)` result means: 0 dropped it, `EINVAL` says this kernel
+    /// has no capability of that number (the loop runs to 63 and a kernel defines fewer), and
+    /// anything else — `EPERM` above all — is the drop being refused.
+    fn capbset_drop_succeeded(rc: libc::c_int, errno: i32) -> bool {
+        rc == 0 || (rc == -1 && errno == libc::EINVAL)
+    }
+
     impl DropSyscalls for RealDropSyscalls {
         fn set_groups_empty(&mut self) -> bool {
             // Clear all supplementary groups (must precede the UID drop).
@@ -1030,12 +1037,18 @@ mod linux {
 
         fn drop_bounding_and_ambient_caps(&mut self) -> bool {
             // Drop the capability bounding set (needs CAP_SETPCAP, still root here) and clear ambient.
+            //
+            // Each result is LOOKED AT (cockpit read R3-0147). The loop used to discard all 64 and
+            // let the ambient clear below decide the step — which an unprivileged process can do —
+            // so the journal recorded this step for a drop the kernel had refused. The comment
+            // said a real failure "surfaces at the capget-verify in `verify_final_state`"; that
+            // check reads `/proc/self/status`, and by then the journal already claimed the step.
             for cap in 0..=63i32 {
-                // EINVAL for non-existent cap numbers is benign; a real drop failure surfaces at the
-                // capget-verify in `verify_final_state`.
                 // SAFETY: prctl with constant options and an integer capability number.
-                unsafe {
-                    libc::prctl(libc::PR_CAPBSET_DROP, cap as libc::c_ulong, 0, 0, 0);
+                let rc = unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap as libc::c_ulong, 0, 0, 0) };
+                let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                if !capbset_drop_succeeded(rc, errno) {
+                    return false;
                 }
             }
             // SAFETY: prctl with constant options.
@@ -1177,6 +1190,41 @@ mod linux {
     #[cfg(test)]
     mod syscall_checks {
         use super::*;
+
+        /// Cockpit read R3-0147. The bounding-set drop issued 64 `prctl(PR_CAPBSET_DROP)` calls
+        /// and looked at none of their results, then reported the step done on the strength of
+        /// the ambient clear alone — which an unprivileged process can do. So the journal said
+        /// "bounding and ambient capabilities dropped" for a drop the kernel had refused. Run
+        /// here WITHOUT the privilege the drop needs: every `PR_CAPBSET_DROP` is `EPERM`, and
+        /// the step must say it failed.
+        ///
+        /// What this call does to the test process, named: as a non-root user nothing is
+        /// dropped (that is the point), and the ambient set — empty already — is cleared. It is
+        /// not run as root, where it would strip the test process's own bounding set.
+        #[test]
+        fn a_bounding_set_drop_the_kernel_refused_is_not_reported_as_done() {
+            // SAFETY: geteuid never fails and touches no memory.
+            if unsafe { libc::geteuid() } == 0 {
+                eprintln!("SKIPPED a_bounding_set_drop_the_kernel_refused_is_not_reported_as_done: \
+                           running as root, where the drop would succeed and strip this process");
+                return;
+            }
+            assert!(
+                !RealDropSyscalls.drop_bounding_and_ambient_caps(),
+                "the bounding-set drop was refused by the kernel and the step reported success"
+            );
+        }
+
+        /// The rule the loop applies to each result: 0 is a drop, `EINVAL` is a capability
+        /// number this kernel does not have, and anything else is a failure.
+        #[test]
+        fn only_success_and_an_unknown_capability_number_pass_the_drop() {
+            assert!(capbset_drop_succeeded(0, 0));
+            assert!(capbset_drop_succeeded(-1, libc::EINVAL));
+            assert!(!capbset_drop_succeeded(-1, libc::EPERM));
+            assert!(!capbset_drop_succeeded(-1, 0));
+            assert!(!capbset_drop_succeeded(1, 0), "prctl returns 0 on success, nothing else");
+        }
 
         /// A root-owned, regular, non group/other-writable binary every Linux box has: what `/bin/sh`
         /// resolves to. It stands in for the executor image — the checks under test read its owner, its

@@ -354,6 +354,13 @@ impl KeyResolver for ProductionResolver {
     fn resolve_keys(&self) -> Result<ResolvedKeys, TurnReason> {
         // No manifest provisioned ⇒ fail closed (the shipped default; unchanged behaviour).
         let p = self.inner.as_ref().ok_or(TurnReason::UpstreamBlocked)?;
+        // Nothing from an EARLIER turn survives into this one (cockpit read R3-0091). The
+        // observation below is written only when every check has passed, and it used never to be
+        // taken away: a turn that failed after a successful one left that one's verdict where
+        // the custody resolver reads. Cleared before the first check, so what is there afterwards
+        // is what this turn established or nothing. A lock that cannot be taken is a refusal
+        // (R3-0092) — it was `if let Ok(..)`, which let the turn run on with no observation.
+        *p.custody.lock().map_err(|_| TurnReason::UpstreamBlocked)? = None;
         // Fail-closed, not zero: a clock this host cannot read is a refusal. It used to be
         // `unwrap_or(0)`, which evaluated every key's validity window at the epoch — the shape
         // `chain_executor`'s clock note records as the defect, in the same crate.
@@ -396,9 +403,8 @@ impl KeyResolver for ProductionResolver {
         // Record what this turn established, for the custody resolver to read. Written AFTER every check
         // above has passed, so a turn that failed verification leaves no observation behind for the next
         // one to commit on.
-        if let Ok(mut cell) = p.custody.lock() {
-            *cell = Some((verified, iso.public_key_hex.clone()));
-        }
+        *p.custody.lock().map_err(|_| TurnReason::UpstreamBlocked)? =
+            Some((verified, iso.public_key_hex.clone()));
 
         let f = &p.facts;
         Ok(ResolvedKeys {
@@ -634,6 +640,50 @@ mod tests {
         let custody = r.custody().unwrap();
         assert!(matches!(custody.resolve(), TrustState::NoTrustedManifest(_)));
         assert!(custody.resolve().committed_label().is_none());
+    }
+
+    /// Cockpit read R3-0091. The observation was written after every check passed and never
+    /// taken away again, so a turn that FAILED after an earlier success left the earlier turn's
+    /// verdict for the custody resolver to read. It is cleared before the first check: what is
+    /// there afterwards is what THIS turn established, or nothing.
+    #[test]
+    fn a_turn_that_fails_after_an_earlier_success_leaves_nothing_to_commit_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let (r, _) = demo_resolver(dir.path(), true);
+        r.resolve_keys().expect("the first turn resolves");
+        let custody = r.custody().unwrap();
+        assert_eq!(custody.resolve().committed_label(), Some("demonstration_custody"));
+
+        // Make the anti-rollback persist fail: a non-empty directory stands where the floor file
+        // is renamed to, and a persist that fails refuses the turn.
+        let floor = dir.path().join("floor.json");
+        let _ = std::fs::remove_file(&floor);
+        std::fs::create_dir(&floor).unwrap();
+        std::fs::write(floor.join("in-the-way"), b"x").unwrap();
+        assert!(r.resolve_keys().is_err(), "a floor that cannot be persisted must refuse the turn");
+
+        assert!(
+            matches!(custody.resolve(), TrustState::NoTrustedManifest(_)),
+            "the failed turn still offers the earlier turn's verdict: {:?}",
+            custody.resolve()
+        );
+        assert!(custody.resolve().committed_label().is_none());
+    }
+
+    /// Cockpit read R3-0092. A poisoned custody lock was swallowed — `if let Ok(..)` — and the
+    /// turn went on to return its keys with no observation recorded for it. A lock that cannot
+    /// be taken is a refusal, as the floor's lock two lines above it already is.
+    #[test]
+    fn a_poisoned_custody_lock_refuses_the_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let (r, _) = demo_resolver(dir.path(), true);
+        let cell = Arc::clone(&r.inner.as_ref().expect("provisioned").custody);
+        let _ = std::thread::spawn(move || {
+            let _held = cell.lock().unwrap();
+            panic!("poison the custody lock");
+        })
+        .join();
+        assert_eq!(r.resolve_keys().err(), Some(TurnReason::UpstreamBlocked));
     }
 
     #[test]

@@ -741,23 +741,44 @@ fn check_platform(host: &dyn Host) -> Status {
     }
 }
 
-/// The seven §2.6 principals: the six in the `uids` block plus the sidecar named by
-/// `sidecar.principal`.
-fn uid_set(host: &dyn Host, cfg: &Cfg) -> (BTreeSet<u32>, Option<u32>, usize) {
+/// The six §2.6 principals the `uids` block names by role. The seventh, the sidecar, is named
+/// by ACCOUNT (`sidecar.principal`) and resolved on the machine.
+const NAMED_ROLES: [&str; 6] = ["broker", "challenge", "supervisor", "recorder", "signer", "executor"];
+
+/// Every uid the `uids` block states, the sidecar's, and how many entries the block has.
+///
+/// STRICT, by the broker's own rule ([`crate::tcb_probe::strict_uid`]): an entry that is not a
+/// uid is an `Err` naming it. This used to skip a value that was not a number and narrow a
+/// large one with `as u32` — 5001 + 2^32 became the broker's uid — so the rows built on it
+/// judged a set the broker itself refuses (cockpit read R3-0093, R3-0094).
+fn uid_set(host: &dyn Host, cfg: &Cfg) -> Result<(BTreeSet<u32>, Option<u32>, usize), String> {
     let mut uids = BTreeSet::new();
     let mut declared = 0usize;
     if let Some(map) = cfg.get("uids").and_then(|v| v.as_object()) {
-        for v in map.values() {
+        for (name, v) in map {
             declared += 1;
-            if let Some(u) = v.as_u64() {
-                uids.insert(u as u32);
-            }
+            uids.insert(crate::tcb_probe::strict_uid(v, &format!("`uids.{name}`"))?);
         }
     }
     let sidecar = cfg
         .s(&["sidecar", "principal"])
         .and_then(|a| host.account_uid(&a));
-    (uids, sidecar, declared)
+    Ok((uids, sidecar, declared))
+}
+
+/// The uid of each of the six [`NAMED_ROLES`], looked up BY NAME. `Err` names the first role the
+/// block does not state or states as something that is not a uid.
+fn named_role_uids(cfg: &Cfg) -> Result<Vec<(&'static str, u32)>, String> {
+    let block = cfg.get("uids").and_then(|v| v.as_object());
+    NAMED_ROLES
+        .iter()
+        .map(|role| {
+            let value = block
+                .and_then(|map| map.get(*role))
+                .ok_or_else(|| format!("the `uids` block does not name `uids.{role}`"))?;
+            crate::tcb_probe::strict_uid(value, &format!("`uids.{role}`")).map(|uid| (*role, uid))
+        })
+        .collect()
 }
 
 fn check_seven_accounts(host: &dyn Host, cfg: &Cfg) -> Status {
@@ -770,7 +791,10 @@ fn check_seven_accounts(host: &dyn Host, cfg: &Cfg) -> Status {
     if !cfg.present() {
         return Status::not_met("no readable deployment config, so no principal set is declared");
     }
-    let (mut uids, sidecar, declared) = uid_set(host, cfg);
+    let (mut uids, sidecar, declared) = match uid_set(host, cfg) {
+        Ok(set) => set,
+        Err(why) => return Status::not_met(format!("the `uids` block is not a set of uids: {why}")),
+    };
     let sidecar_uid = match sidecar {
         Some(u) => u,
         None => {
@@ -791,13 +815,30 @@ fn check_seven_accounts(host: &dyn Host, cfg: &Cfg) -> Status {
              number in the `uids` block is not an account; §2.6 needs seven that exist"
         ));
     }
-    if uids.len() == 7 {
-        Status::met(format!("seven distinct uids, each held by an account: {uids:?}"))
+    // The SEVEN, by name — not a count of distinct numbers (cockpit read R3-0095). Counting
+    // let two principals share a uid behind any eighth entry: six distinct numbers and one
+    // spare are seven. Each named role is looked up, the sidecar is added, and every pair is
+    // compared.
+    let mut seven = match named_role_uids(cfg) {
+        Ok(roles) => roles,
+        Err(why) => return Status::not_met(format!("§2.6 needs seven named principals: {why}")),
+    };
+    seven.push(("sidecar", sidecar_uid));
+    let mut shared: Vec<String> = Vec::new();
+    for (i, (a, uid_a)) in seven.iter().enumerate() {
+        for (b, uid_b) in &seven[i + 1..] {
+            if uid_a == uid_b {
+                shared.push(format!("{a} and {b} are both uid {uid_a}"));
+            }
+        }
+    }
+    if shared.is_empty() {
+        Status::met(format!("seven named principals on seven uids, each held by an account: {seven:?}"))
     } else {
         Status::not_met(format!(
-            "§2.6 needs seven pairwise-distinct principals; this deployment resolves {} distinct \
-             uids ({uids:?}) from a `uids` block declaring {declared} entries plus the sidecar",
-            uids.len()
+            "§2.6 needs seven pairwise-distinct principals, and {} (a `uids` block of {declared} \
+             entries plus the sidecar)",
+            shared.join("; ")
         ))
     }
 }
@@ -827,7 +868,10 @@ fn check_floor_covers_sidecar(host: &dyn Host, cfg: &Cfg) -> Status {
     if !host.platform_is_linux() {
         return Status::unmeasurable("no uids on this platform to compare");
     }
-    let (uids, sidecar, declared) = uid_set(host, cfg);
+    let (uids, sidecar, declared) = match uid_set(host, cfg) {
+        Ok(set) => set,
+        Err(why) => return Status::not_met(format!("the `uids` block is not a set of uids: {why}")),
+    };
     let sidecar_uid = match sidecar {
         Some(u) => u,
         None => return Status::not_met("`sidecar.principal` does not resolve to an account"),
@@ -861,13 +905,21 @@ fn check_setuid_launcher(host: &dyn Host, cfg: &Cfg) -> Status {
             ))
         }
     };
-    let path = match pin.artifacts.iter().find(|a| a.logical_name == "privileged-launcher.bin") {
-        Some(a) => a.path.clone(),
-        None => {
+    // ONE entry, by the manifest's own rule (cockpit read R3-0096). This took the first of however
+    // many there were; a role pinned twice has no first that means anything.
+    let path = match pin.sole_artifact("privileged-launcher.bin") {
+        Ok(a) => a.path.clone(),
+        Err(brops_core::tcb_integrity::TcbViolation::MissingRequired { .. }) => {
             return Status::not_met(
                 "the §2.5 pin manifest pins no `privileged-launcher.bin`, so the preflight cannot \
                  find the binary the contained execution is entered through",
             )
+        }
+        Err(why) => {
+            return Status::not_met(format!(
+                "the §2.5 pin manifest does not say WHICH binary the contained execution is \
+                 entered through: {why:?}"
+            ))
         }
     };
     match host.stat(&path) {
@@ -1245,8 +1297,15 @@ fn check_authority_socket(host: &dyn Host, cfg: &Cfg) -> Status {
             "`sockets.authority` names {path}, but this platform has no AF_UNIX socket for it to be"
         ));
     }
+    // A SOCKET, not merely something at the path (cockpit read R3-0099). `S_IFMT` is 0o170000 and
+    // `S_IFSOCK` 0o140000; `Host::stat` reports the whole `st_mode`, type bits included.
     match host.stat(&path) {
-        Some(_) => Status::met(format!("{path} exists")),
+        Some(f) if f.mode & 0o170000 == 0o140000 => Status::met(format!("{path} is a socket")),
+        Some(f) => Status::not_met(format!(
+            "{path} exists and is not a socket (mode {:o}), so the §4.1 challenge hop has nothing \
+             to dial",
+            f.mode
+        )),
         None => Status::not_met(format!(
             "{path} does not exist, so the §4.1 challenge hop has nothing to dial"
         )),
@@ -2344,6 +2403,115 @@ mod tests {
             .contains("principal collapse"));
     }
 
+    /// Cockpit read R3-0095. "Seven distinct uids" was a count of distinct NUMBERS, so two of
+    /// the seven principals sharing one uid were hidden by any eighth entry in the block: six
+    /// distinct numbers plus one spare is seven. The seven are looked up by NAME.
+    #[test]
+    fn two_principals_on_one_uid_are_not_hidden_by_a_spare_entry() {
+        let mut host = provisioned().account("brops-spare", 5999);
+        let mut cfg: Value =
+            serde_json::from_slice(host.files.get("/kit/config.json").unwrap()).unwrap();
+        cfg["uids"]["challenge"] = serde_json::json!(5001); // the broker's
+        cfg["uids"]["spare"] = serde_json::json!(5999);
+        host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
+        let r = evaluate(&host, None);
+        match status_of(&r, "principals.seven_distinct_accounts") {
+            Status::NotMet { because } => {
+                assert!(because.contains("broker") && because.contains("challenge"), "{because}");
+                assert!(because.contains("5001"), "{because}");
+            }
+            other => panic!("the broker and the challenge authority share a uid and the row said {other:?}"),
+        }
+        // Any pair, not only two that stand next to each other in the list — and the sidecar,
+        // which is named by account and not by an entry of the block, is one of the seven. (A
+        // sweep of this rule found both unheld: the first version of this test collapsed two
+        // neighbours and never the sidecar.)
+        for (role, taken_from, other) in [
+            ("executor", 5001, "broker"),     // the last named role onto the first
+            ("supervisor", 5003, "sidecar"),  // a named role onto the sidecar account's uid
+        ] {
+            let mut host = provisioned();
+            let mut cfg: Value =
+                serde_json::from_slice(host.files.get("/kit/config.json").unwrap()).unwrap();
+            cfg["uids"][role] = serde_json::json!(taken_from);
+            host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
+            let r = evaluate(&host, None);
+            match status_of(&r, "principals.seven_distinct_accounts") {
+                Status::NotMet { because } => {
+                    assert!(because.contains(role) && because.contains(other), "{role}/{other}: {because}")
+                }
+                unexpected => panic!("{role} shares uid {taken_from} with {other} and the row said {unexpected:?}"),
+            }
+        }
+        // A role the block does not name at all is named in the refusal too.
+        let mut host = provisioned();
+        let mut cfg: Value =
+            serde_json::from_slice(host.files.get("/kit/config.json").unwrap()).unwrap();
+        cfg["uids"].as_object_mut().unwrap().remove("signer");
+        cfg["uids"]["spare"] = serde_json::json!(5006);
+        host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
+        let r = evaluate(&host, None);
+        match status_of(&r, "principals.seven_distinct_accounts") {
+            Status::NotMet { because } => assert!(because.contains("`uids.signer`"), "{because}"),
+            other => panic!("a `uids` block with no signer met the row: {other:?}"),
+        }
+    }
+
+    /// Cockpit read R3-0093, R3-0094. The preflight's own reading of the `uids` block dropped a
+    /// value that was not a number and narrowed a large one with `as u32` — 5001 + 2^32 became
+    /// the broker's uid — so the rows built on it judged a set the broker would refuse.
+    #[test]
+    fn a_uids_value_that_is_not_a_uid_fails_the_principal_rows_by_name() {
+        for (what, value) in [
+            ("a number past u32", serde_json::json!(4294972297u64)),
+            ("a string", serde_json::json!("5002")),
+            ("a negative number", serde_json::json!(-1)),
+        ] {
+            let mut host = provisioned();
+            let mut cfg: Value =
+                serde_json::from_slice(host.files.get("/kit/config.json").unwrap()).unwrap();
+            cfg["uids"]["challenge"] = value;
+            host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
+            let r = evaluate(&host, None);
+            for row in ["principals.seven_distinct_accounts", "principals.tcb_floor_covers_the_sidecar"] {
+                match status_of(&r, row) {
+                    Status::NotMet { because } => {
+                        assert!(because.contains("`uids.challenge`"), "{what}, {row}: {because}")
+                    }
+                    other => panic!("{what}: {row} said {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// Cockpit read R3-0096. The launcher row took the FIRST pinned `privileged-launcher.bin`
+    /// and judged that one. A manifest pinning the role twice is one the floor's own lookup
+    /// refuses as ambiguous (`sole_artifact`, the rule the anchor row already uses): which of
+    /// the two the execution is entered through is not something the first entry settles.
+    #[test]
+    fn a_launcher_role_pinned_twice_is_ambiguous_and_not_met() {
+        let mut host = provisioned();
+        let mut pin: TcbPinManifest =
+            serde_json::from_slice(host.files.get("/kit/pin.json").unwrap()).unwrap();
+        let mut second = pin
+            .artifacts
+            .iter()
+            .find(|a| a.logical_name == "privileged-launcher.bin")
+            .expect("the fixture pins a launcher")
+            .clone();
+        second.path = "/kit/another-launcher.bin".into();
+        pin.artifacts.push(second);
+        host.files.insert("/kit/pin.json".into(), serde_json::to_vec(&pin).unwrap());
+        let r = evaluate(&host, None);
+        match status_of(&r, "launcher.setuid_root_binary") {
+            Status::NotMet { because } => {
+                assert!(because.contains("AmbiguousRole"), "{because}");
+                assert!(because.contains("/kit/another-launcher.bin"), "{because}");
+            }
+            other => panic!("a launcher role pinned twice met the row on its first entry: {other:?}"),
+        }
+    }
+
     #[test]
     fn a_launcher_without_the_setuid_bit_is_not_met() {
         let host = provisioned().stat("/kit/privileged-launcher.bin", 0, 0o100755, false);
@@ -2553,6 +2721,25 @@ mod tests {
         host.files.insert("/kit/floor.json".into(), b"{}".to_vec());
         let r = evaluate(&host, None);
         assert!(status_of(&r, "trust.floor_path").detail().contains("does not parse"));
+    }
+
+    /// Cockpit read R3-0099. The row said MET for anything that existed at the path — a regular
+    /// file, a directory — and the §4.1 challenge hop dials a socket.
+    #[test]
+    fn something_at_the_authority_path_that_is_not_a_socket_is_not_met() {
+        for (what, mode, is_dir) in [
+            ("a regular file", 0o100660u32, false),
+            ("a directory", 0o040770, true),
+            ("a FIFO", 0o010660, false),
+        ] {
+            let host = provisioned().stat("/kit/authority.sock", 5002, mode, is_dir);
+            let r = evaluate(&host, None);
+            match status_of(&r, "sockets.authority") {
+                Status::NotMet { because } => assert!(because.contains("not a socket"), "{what}: {because}"),
+                other => panic!("{what} at the authority path met the row: {other:?}"),
+            }
+        }
+        assert!(status_of(&evaluate(&provisioned(), None), "sockets.authority").is_met());
     }
 
     #[test]
