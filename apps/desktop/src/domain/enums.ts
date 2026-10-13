@@ -6,7 +6,11 @@ export type TaskStatus = 'inbox' | 'planned' | 'active' | 'blocked' | 'review' |
 export type ProjectStatus = 'planned' | 'active' | 'blocked' | 'completed' | 'archived';
 export type AgentStatus = 'offline' | 'idle' | 'observing' | 'thinking' | 'working' | 'blocked' | 'review' | 'failed' | 'completed';
 export type RunStatus = 'drafted' | 'queued' | 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'succeeded' | 'failed' | 'cancelled';
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled';
+// The set `approvals.status` admits — the guard in `0019_approval_escalated_status.sql`, which
+// `enums.test.ts` reads. `consumed` is a spent grant, `escalated` a pending one routed to A3.
+// (`expired` and `cancelled` were listed here; the database refuses both.)
+export const APPROVAL_STATUSES = ['pending', 'approved', 'rejected', 'consumed', 'escalated'] as const;
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 export type ApprovalLevel = 'A0' | 'A1' | 'A2' | 'A3';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 export type Priority = 'low' | 'normal' | 'high' | 'critical';
@@ -68,9 +72,25 @@ export const statusTone: Record<string, Tone> = {
   working: 'accent',
   // approvals
   pending: 'warning', approved: 'success', rejected: 'danger', expired: 'neutral',
+  consumed: 'neutral', escalated: 'warning',
+  // decisions — the tone of the family `Decisions.status.ts` puts the row in (waiting is
+  // warning, settled is neutral, blocked is danger); `review`, `rejected` and `blocked` are
+  // already above with exactly those tones
+  proposed: 'warning', open: 'warning', accepted: 'neutral', superseded: 'neutral',
+  // run steps
+  skipped: 'neutral',
   // integrations (error tone already defined under severity)
   disconnected: 'neutral', connected: 'success',
   // risk / priority / severity
   low: 'neutral', normal: 'neutral', medium: 'warning', high: 'warning',
   critical: 'danger', info: 'info', success: 'success', warning: 'warning', error: 'danger',
 };
+
+// An event's kind is free text the owner types, and the calendar coloured it from the STATUS
+// table above: an event called `review` was amber, one called `blocked` red, one called `done`
+// green — a state an event does not have. The kinds this app has labels for keep the accent
+// every ordinary event always had; anything else is neutral.
+const EVENT_KIND_TONE: Record<string, Tone> = {
+  event: 'accent', meeting: 'accent', review: 'accent', ops: 'accent', maintenance: 'accent',
+};
+export const eventKindTone = (kind: string): Tone => EVENT_KIND_TONE[kind] ?? 'neutral';

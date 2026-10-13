@@ -138,7 +138,27 @@ export function Async<T>({
   return <>{children(data)}</>;
 }
 
-export function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * One labelled row of a form.
+ *
+ * By default the row IS a `<label>`, which is right for the usual case of one input: the label
+ * names it and a click on the text focuses it. It is wrong for a row that holds BUTTONS — a
+ * label forwards a click on its text to its first control, so clicking the word "Dependencies"
+ * pressed the first Remove, and that first button's accessible name became the whole row.
+ * `group` renders such a row as a named group instead.
+ */
+export function FormRow({ label, children, group = false }: {
+  label: string; children: React.ReactNode; group?: boolean;
+}) {
+  const id = React.useId();
+  if (group) {
+    return (
+      <div className="form-row" role="group" aria-labelledby={id}>
+        <span className="field-label" id={id}>{label}</span>
+        {children}
+      </div>
+    );
+  }
   return (
     <label className="form-row">
       <span className="field-label">{label}</span>
@@ -482,7 +502,8 @@ export function DataTable<T>({
                 tabIndex={i === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
                 onFocus={() => setFocusIdx(i)}
                 onClick={onActivateRow ? () => onActivateRow(row, i) : undefined}
-                aria-label={onActivateRow ? caption : undefined}
+                // No `aria-label`: a row is named by its own cells. It used to carry the
+                // table's caption, so every activatable row announced the same name.
               >
                 {columns.map((c) => (
                   <td key={c.key} className={c.numeric ? 'dt-num' : undefined}>
@@ -626,6 +647,11 @@ export function RailSection({ title, children }: { title: string; children: Reac
 export function TileGroup({ label, children }: { label: string; children: React.ReactNode }) {
   const [focus, setFocus] = useState(0);
   const items = React.Children.toArray(children);
+  // The roving stop goes to an ACTIONABLE tile. Counting every child put `tabIndex=0` on a
+  // plain <div> tile whenever one came first, and then nothing in the group could be tabbed to.
+  const actionable = items.map((child) =>
+    React.isValidElement(child) && typeof (child.props as StatTileProps).onActivate === 'function');
+  const stop = actionable[focus] ? focus : actionable.indexOf(true);
   return (
     <div
       className="tile-group grid grid-3"
@@ -637,7 +663,7 @@ export function TileGroup({ label, children }: { label: string; children: React.
         React.isValidElement(child)
           ? React.cloneElement(child as React.ReactElement<StatTileProps>, {
             key: i,
-            tabIndex: i === focus ? 0 : -1,
+            tabIndex: i === stop ? 0 : -1,
             onFocusCapture: () => setFocus(i),
           })
           : child,

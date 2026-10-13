@@ -6,7 +6,7 @@ import {
 } from '../components/ui';
 import { desktop } from '../services/desktop';
 import { useAsync } from '../hooks/useAsync';
-import { statusTone, type Tone } from '../domain/enums';
+import { eventKindTone, type Tone } from '../domain/enums';
 import { kindLabel } from '../domain/statusLabels';
 import type { CalendarEvent } from '../domain/entities';
 import { STR } from './Calendar.strings';
@@ -53,7 +53,7 @@ const TONE_VAR: Record<Tone, string> = {
   accent: 'var(--cyan)',
   neutral: 'var(--ink-muted)',
 };
-const toneOf = (kind: string): Tone => statusTone[kind] ?? 'accent';
+const toneOf = eventKindTone;
 const toneVar = (kind: string): string => TONE_VAR[toneOf(kind)];
 
 // Per-view CSS that isn't already in the global aios.css theme. The daygrid /

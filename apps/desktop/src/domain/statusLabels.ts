@@ -40,6 +40,11 @@ const STATUS: Record<string, { en: string; hy: string; ru: string }> = {
   denied: { en: 'Denied', hy: 'Մերժված', ru: 'Отказано' },
   proposed: { en: 'Proposed', hy: 'Առաջարկված', ru: 'Предложено' },
   accepted: { en: 'Accepted', hy: 'Ընդունված', ru: 'Принято' },
+  open: { en: 'Open', hy: 'Բաց', ru: 'Открыто' },
+  superseded: { en: 'Superseded', hy: 'Փոխարինված', ru: 'Заменено' },
+  expired: { en: 'Expired', hy: 'Ժամկետանց', ru: 'Истекло' },
+  consumed: { en: 'Consumed', hy: 'Օգտագործված', ru: 'Использовано' },
+  escalated: { en: 'Escalated', hy: 'Փոխանցված վերև', ru: 'Эскалировано' },
 };
 
 /** Humanize an unknown status: `awaiting_approval` → `Awaiting approval`. */

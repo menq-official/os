@@ -58,15 +58,22 @@ interface Options {
   onRun?: 'ok' | 'refuse';
   /** How `create_automation` answers. */
   onCreate?: 'ok' | 'refuse';
+  /** What a rejected `run_automation` says, when it is not the ACL's refusal. */
+  runError?: string;
+  trigger?: string;
 }
 
 function setup(opts: Options = {}) {
-  const automation = { ...AUTOMATION, action: opts.action ?? AUTOMATION.action, enabled: opts.enabled ?? true };
+  const automation = {
+    ...AUTOMATION, action: opts.action ?? AUTOMATION.action, enabled: opts.enabled ?? true,
+    trigger: opts.trigger ?? AUTOMATION.trigger,
+  };
   const store = [...(opts.runs ?? [])];
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'list_automations') return Promise.resolve([automation]);
     if (cmd === 'list_automation_runs') return Promise.resolve([...store].reverse());
     if (cmd === 'run_automation') {
+      if (opts.runError !== undefined) return Promise.reject(new Error(opts.runError));
       if (opts.onRun === 'refuse') {
         return Promise.reject(new Error('run_automation not allowed. Permissions associated with this command: '));
       }
@@ -249,6 +256,21 @@ describe('an allowed run carries a contract, and the history says what is known'
     // The refused attempt did not become an executed run.
     expect(Array.from(history()).filter((r) => (r.textContent ?? '').includes('ran'))).toHaveLength(1);
     expect(liveText()).not.toMatch(/✓/);
+  });
+
+  it('a run that simply broke is not written into the history as a refusal', async () => {
+    // R3-0223: every rejected `run_automation` was recorded as "refused by the store" — a
+    // locked database became a governance event in the run history.
+    setup({ runs: [OLD_RUN], runError: 'database is locked' });
+    await loaded();
+    await waitFor(() => expect(history().length).toBe(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    // The failure is said, with its reason…
+    await waitFor(() => expect(document.body.textContent).toMatch(/database is locked/));
+    // …and the history still holds exactly the one run that happened.
+    expect(history().length).toBe(1);
+    expect(document.querySelector('.au-runs')?.textContent ?? '').not.toMatch(/refused by the store/);
   });
 
   it('reads the store’s own vocabulary refusal as refused, not merely failed', async () => {
@@ -434,5 +456,24 @@ describe('the run history does not say "no runs" before it has been read', () =>
     setup({ runs: [] });
     await loaded();
     await waitFor(() => expect(screen.queryAllByText(/No runs yet/).length).toBeGreaterThan(0));
+  });
+});
+
+// R3-0224: a conduit with no trigger was announced as firing on "any event". An empty trigger
+// is the manual one — the scheduler never fires it — which is the opposite claim.
+describe('a conduit with no trigger is not announced as firing on any event', () => {
+  it('its accessible name says manual only', async () => {
+    setup({ trigger: '' });
+    await loaded();
+    const lane = document.querySelector('[role="option"]') as HTMLElement;
+    expect(lane.getAttribute('aria-label')).toContain(AU_STR.triggerManualOnly.en);
+    expect(lane.getAttribute('aria-label')).not.toMatch(/any event/);
+  });
+
+  it('a conduit that has a trigger is still named by it', async () => {
+    setup({ trigger: 'every: 5m' });
+    await loaded();
+    const lane = document.querySelector('[role="option"]') as HTMLElement;
+    expect(lane.getAttribute('aria-label')).toContain('every: 5m');
   });
 });

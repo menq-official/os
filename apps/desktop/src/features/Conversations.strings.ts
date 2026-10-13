@@ -156,4 +156,11 @@ export const STR = {
     hy: 'Զրույցը չստեղծվեց',
     ru: 'Беседа не создана',
   },
+  // The room WAS created; the write of who is in it was not. A different statement from the one
+  // above, so it has its own title. The reason was only ever written to the console.
+  rosterFailedTitle: {
+    en: 'The room was created, but its participants were not saved',
+    hy: 'Սենյակը ստեղծվեց, բայց մասնակիցները չպահպանվեցին',
+    ru: 'Комната создана, но её участники не сохранены',
+  },
 } as const;

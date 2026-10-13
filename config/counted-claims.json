@@ -276,15 +276,15 @@
       ]
     },
     "frontend_tests": {
-      "value": 1201,
+      "value": 1224,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-13",
-        "head": "9984edc",
+        "head": "c594f51",
         "environments": {
-          "Debian 13 (trixie) native @ 9984edc + ten more low findings of the cockpit read: the Tasks roster and dependency reads, the Library Other kind, leaving a running question": {
-            "ran": 1201,
+          "Debian 13 (trixie) native @ c594f51 + nine more low findings of the cockpit read: the status vocabulary, event kind tones, the form row that pressed a button": {
+            "ran": 1224,
             "skipped": 0
           },
           "Debian 13 (trixie) native @ b6f70b7 + the default selection never replaces one the user made": {

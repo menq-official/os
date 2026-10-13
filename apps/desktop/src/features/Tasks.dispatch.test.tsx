@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 // Mock the Tauri IPC boundary. The point of this suite is the boundary itself: this
 // build registers NO dispatch command, so the composer must say so rather than paint a
@@ -296,5 +297,39 @@ describe('Tasks — the roster and the dependencies are read, not assumed', () =
     mountWith({});
     await screen.findByText('Draft the specification');
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+});
+
+// Found while testing R3-0239, not in the read: `FormRow` is a <label>, and three of its
+// forty-seven uses wrap BUTTONS. A label forwards a click on its text to its first control —
+// so clicking the word "Dependencies" pressed the first Remove.
+describe('Tasks — clicking a form row\'s label does not press a button inside it', () => {
+  it('the Dependencies label does not remove the first dependency', async () => {
+    const user = userEvent.setup();
+    const BLOCKER = { ...TASK, id: 'task-0', title: 'Agree the scope', status: 'active' };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'list_tasks') return Promise.resolve([{ ...TASK, status: 'blocked' }, BLOCKER]);
+      if (cmd === 'list_projects') return Promise.resolve([]);
+      if (cmd === 'list_agents') return Promise.resolve(AGENTS);
+      if (cmd === 'list_task_dependencies') return Promise.resolve([BLOCKER]);
+      return Promise.resolve(null);
+    });
+    render(<AppProvider><ToastProvider><Tasks /></ToastProvider></AppProvider>);
+    await screen.findAllByText('Draft the specification');
+    const card = [...document.querySelectorAll('article.mtask')]
+      .find((c) => c.textContent?.includes('Draft the specification')) as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog');
+    // By text: inside the <label> the first button's accessible name was the whole row.
+    await within(dialog).findByText('Remove');
+
+    await user.click(within(dialog).getByText('Dependencies'));
+    expect(invokeMock.mock.calls.some((c) => c[0] === 'remove_task_dependency')).toBe(false);
+    // And the group is still named for what it holds.
+    expect(within(dialog).getByRole('group', { name: 'Dependencies' })).toBeTruthy();
+    // Each control inside it has its own name again.
+    expect(within(dialog).getByRole('button', { name: 'Remove' })).toBeTruthy();
+    expect(within(dialog).getByRole('combobox', { name: 'Choose a blocking task…' })).toBeTruthy();
   });
 });

@@ -836,7 +836,12 @@ function MessageThread({ conversation, onActivity, onDelegation, reloadSignal }:
   );
 }
 
-function NewRoomForm({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Conversation) => void }) {
+function NewRoomForm({ onClose, onCreated, onRosterFailed }: {
+  onClose: () => void;
+  onCreated: (c: Conversation) => void;
+  /** The room exists and its roster write was rejected: the reason, for the page to show. */
+  onRosterFailed: (reason: string) => void;
+}) {
   const { t, lang } = useApp();
   const L = (k: keyof typeof STR) => STR[k][lang] ?? STR[k].en;
   const [name, setName] = useState('');
@@ -859,11 +864,12 @@ function NewRoomForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
         const roster = picked.length ? picked : agentNames.slice(0, 2);
         if (roster.length) {
           // Non-fatal: the room is created either way; if the roster write fails the reply
-          // fan-out falls back to the first two agents — but surface it so it isn't invisible.
+          // fan-out falls back to the first two agents. It is SAID, on the page — this was a
+          // `console.error`, which surfaces it to nobody who uses the app.
           try {
             await desktop.setConversationParticipants(c.id, roster);
           } catch (e) {
-            console.error('setConversationParticipants failed (room created without a roster):', e);
+            onRosterFailed(e instanceof Error ? e.message : String(e));
           }
         }
         onCreated(c);
@@ -882,7 +888,7 @@ function NewRoomForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
         <Input value={name} autoFocus onChange={(e) => setName(e.target.value)} />
       </FormRow>
       {agentNames.length > 0 && (
-        <FormRow label={L('participants')}>
+        <FormRow group label={L('participants')}>
           <div className="participant-pick">
             {agentNames.map((n) => (
               <button
@@ -965,6 +971,8 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
   // Why a new direct conversation could not be created. `createConversation` had no `.catch`
   // at all: a rejection was an unhandled promise and the New button simply did nothing.
   const [createError, setCreateError] = useState<string | null>(null);
+  // A room that was created without the roster chosen for it — a different statement.
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const s = useAsync(() => desktop.listConversations(kind), [kind]);
 
   // Delegations the OPEN thread's stream reported while this workspace has been mounted.
@@ -1022,6 +1030,7 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
 
   const startNew = () => {
     if (kind === 'group') {
+      setRosterError(null);
       setCreating(true);
     } else {
       setCreateError(null);
@@ -1050,6 +1059,7 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
       {creating && (
         <NewRoomForm
           onClose={() => setCreating(false)}
+          onRosterFailed={setRosterError}
           onCreated={(c) => {
             setSelectedId(c.id);
             s.reload();
@@ -1072,6 +1082,14 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
           <b>{L('createFailedTitle')}</b>
           <span className="mono chat-write-reason">{createError}</span>
           <Button small variant="ghost" onClick={() => setCreateError(null)}>{t('action.close')}</Button>
+        </div>
+      )}
+
+      {rosterError && (
+        <div className="chat-write-error" role="alert">
+          <b>{L('rosterFailedTitle')}</b>
+          <span className="mono chat-write-reason">{rosterError}</span>
+          <Button small variant="ghost" onClick={() => setRosterError(null)}>{t('action.close')}</Button>
         </div>
       )}
 

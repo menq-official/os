@@ -672,7 +672,7 @@ function ConsensusDeck({ roomsVersion, onPosted }: { roomsVersion: number; onPos
               </Select>
             </FormRow>
             {candidates.length > 0 && (
-              <FormRow label={L('askLabel')}>
+              <FormRow group label={L('askLabel')}>
                 <div className="cs-pick">
                   {candidates.map((n) => (
                     <button

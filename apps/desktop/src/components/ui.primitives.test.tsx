@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,6 +14,7 @@ import {
   LiveMark,
   InlineAlert,
   type Column,
+  FormRow,
 } from './ui';
 
 /**
@@ -41,6 +43,15 @@ describe('DataTable', () => {
     expect(within(table).getByText('7')).toBeInTheDocument();
     // one header row + three body rows
     expect(within(table).getAllByRole('row')).toHaveLength(4);
+  });
+
+  it('an activatable row is named by its own cells, not by the table caption', () => {
+    // R3-0214: every row carried `aria-label={caption}`, so a screen reader heard the table's
+    // name three times and none of the rows' contents.
+    render(<DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} onActivateRow={() => {}} />);
+    const names = ROWS.map((r) => screen.getByRole('row', { name: new RegExp(r.name) }));
+    expect(new Set(names).size).toBe(ROWS.length);
+    expect(screen.queryAllByRole('row', { name: 'Widgets' })).toHaveLength(0);
   });
 
   it('marks numeric columns with the dt-num class', () => {
@@ -183,6 +194,26 @@ describe('StatTile / TileGroup', () => {
     expect(tabbable).toHaveLength(1);
   });
 
+  it('keeps a tab stop when the first tile is not actionable', () => {
+    // R3-0215: the roving index counted every child, so with a plain tile first the one
+    // `tabIndex=0` went to a <div> that ignores it and no tile could be reached by Tab.
+    render(
+      <TileGroup label="Overview">
+        <StatTile glyph="a" value={1} label="Plain" />
+        <StatTile glyph="b" value={2} label="Two" onActivate={() => {}} />
+        <StatTile glyph="c" value={3} label="Three" onActivate={() => {}} />
+      </TileGroup>,
+    );
+    const tabbable = screen.getAllByRole('button').filter((el) => el.getAttribute('tabindex') === '0');
+    expect(tabbable).toHaveLength(1);
+    expect(tabbable[0]).toHaveTextContent('Two');
+    // And focusing another actionable tile moves the stop to it.
+    fireEvent.focus(screen.getByRole('button', { name: /Three/ }));
+    const after = screen.getAllByRole('button').filter((el) => el.getAttribute('tabindex') === '0');
+    expect(after).toHaveLength(1);
+    expect(after[0]).toHaveTextContent('Three');
+  });
+
   it('moves focus with the arrow keys inside a TileGroup', () => {
     const { container } = render(
       <TileGroup label="Overview">
@@ -277,4 +308,44 @@ describe('.stack — one class name, one meaning', () => {
       expect(definesStack(css(rel))).toBe(false);
     },
   );
+});
+
+// Three of the forty-seven `FormRow` uses wrapped buttons in the row's <label>, and a label
+// forwards a click on its text to its first control: clicking "Dependencies" pressed Remove.
+// The three are fixed; this holds the next one.
+describe('FormRow — a row that holds buttons is a group, not a label', () => {
+  const sources = import.meta.glob('../{features,components}/*.tsx', {
+    query: '?raw', import: 'default', eager: true,
+  }) as Record<string, string>;
+
+  it('no label-form FormRow in the tree wraps a button', () => {
+    const offenders: string[] = [];
+    let rows = 0;
+    for (const [file, text] of Object.entries(sources)) {
+      if (/\.(test|spec)\.tsx$/.test(file)) continue;
+      for (const m of text.matchAll(/<FormRow\b([^>]*)>([\s\S]*?)<\/FormRow>/g)) {
+        rows += 1;
+        const isGroup = /(^|\s)group(\s|$)/.test(m[1]);
+        if (!isGroup && /<(Button|button)\b/.test(m[2])) {
+          offenders.push(`${file}:${text.slice(0, m.index).split('\n').length}`);
+        }
+      }
+    }
+    // The scan found the rows it is about — a pattern that matches nothing passes anything.
+    expect(rows).toBeGreaterThan(40);
+    expect(offenders).toEqual([]);
+  });
+
+  it('the group form is a named group and its label text presses nothing', () => {
+    const onPress = vi.fn();
+    render(
+      <FormRow group label="Dependencies">
+        <button type="button" onClick={onPress}>Remove</button>
+      </FormRow>,
+    );
+    expect(screen.getByRole('group', { name: 'Dependencies' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Dependencies'));
+    expect(onPress).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  });
 });

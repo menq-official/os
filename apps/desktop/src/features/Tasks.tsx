@@ -159,7 +159,7 @@ function TaskDetail({ task, onClose, onSaved }: { task: Task; onClose: () => voi
         </Select>
       </FormRow>
 
-      <FormRow label={t('tasks.dependencies')}>
+      <FormRow group label={t('tasks.dependencies')}>
         <div className="stack" style={{ gap: 8 }}>
           {/* A read that failed has not said "none". (R3-0268) */}
           {deps.error
@@ -172,7 +172,8 @@ function TaskDetail({ task, onClose, onSaved }: { task: Task; onClose: () => voi
             </div>
           ))}
           <div className="row" style={{ gap: 8 }}>
-            <Select value={pick} onChange={(e) => setPick(e.target.value)}>
+            {/* Named here: the row is a group now, so no <label> names this select. */}
+            <Select aria-label={t('tasks.pickBlocker')} value={pick} onChange={(e) => setPick(e.target.value)}>
               <option value="">{t('tasks.pickBlocker')}</option>
               {available.map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
             </Select>

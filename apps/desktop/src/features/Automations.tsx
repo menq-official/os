@@ -577,8 +577,10 @@ export function Automations() {
       .catch((e: unknown) => {
         const message = e instanceof Error ? e.message : String(e);
         // The backend refused a run our contract allowed: recorded as a refusal BY THE STORE, so
-        // the two kinds of "no" stay distinguishable in the history.
-        recordRefusal(assessment.contract, null, 'store', message);
+        // the two kinds of "no" stay distinguishable in the history. Only a refusal, though — a
+        // call that simply broke (a locked database, a lost backend) refused nothing, and
+        // writing it there turned an outage into a governance event. It is still said, below.
+        if (isDenial(message)) recordRefusal(assessment.contract, null, 'store', message);
         setActionError({ id: a.id, message });
         setAnnounce(isDenial(message) ? `${a.name}: ${stateLabel('blocked')}` : message);
       });
@@ -735,7 +737,9 @@ export function Automations() {
         aria-selected={isSel}
         tabIndex={isSel ? 0 : -1}
         className={`lane ${STATE_CLASS[st]}${st === 'idle' ? ' au-live' : ''}${isSel ? ' sel' : ''}${off ? ' au-off' : ''}`}
-        aria-label={`${a.name}, ${a.trigger || L('anyEvent')}, ${stateLabel(st)}`}
+        // An empty trigger is the MANUAL one (`parseTrigger`): the scheduler never fires it.
+        // It was announced as "any event", the opposite claim.
+        aria-label={`${a.name}, ${a.trigger.trim() || L('triggerManualOnly')}, ${stateLabel(st)}`}
         onClick={() => select(a)}
         onFocus={() => { if (!isSel) select(a); }}
       >
