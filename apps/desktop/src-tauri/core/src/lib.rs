@@ -632,6 +632,37 @@ mod tests {
         }
     }
 
+    // R3-0133: an automation's action was committed on its own, BEFORE the run-log row that
+    // says it ran. When that row could not be written the action stayed done and unrecorded —
+    // and the scheduler decides "due" from the run log, so it did the action again on the next
+    // tick, and the next: one notification a minute for as long as the log write kept failing.
+    #[test]
+    fn an_action_whose_run_could_not_be_logged_is_not_left_done() {
+        let c = conn();
+        let a = repo::automations::create(
+            &c,
+            NewAutomation { name: "n".into(), trigger: "every: 1m".into(), action: "notify: tick".into() },
+            crate::repo::audit::Actor::local_operator(),
+        )
+        .unwrap();
+        arm(&c, &a.id);
+        let notifications = |c: &rusqlite::Connection| -> i64 {
+            c.query_row("SELECT COUNT(*) FROM notifications", [], |r| r.get(0)).unwrap()
+        };
+        let before = notifications(&c);
+        c.execute_batch(
+            "CREATE TRIGGER break_log BEFORE INSERT ON automation_runs \
+             BEGIN SELECT RAISE(ABORT, 'induced'); END;",
+        )
+        .unwrap();
+
+        for tick in 0..3 {
+            assert!(repo::automations::run_due(&c, i64::MAX).is_err(), "tick {tick} must report the failure");
+        }
+        assert_eq!(notifications(&c), before, "an unrecorded run left its action behind, once per tick");
+        assert_eq!(repo::automations::list_runs(&c, &a.id).unwrap().len(), 0);
+    }
+
     #[test]
     fn scheduler_fires_due_interval_automations_only() {
         let c = conn();

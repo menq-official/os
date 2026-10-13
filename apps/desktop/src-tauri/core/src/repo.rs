@@ -2760,10 +2760,14 @@ pub mod automations {
                 value: "automation is disabled".to_string(),
             });
         }
-        let (outcome, detail) = execute_action(conn, &automation.action)?;
         let run_id = crate::id();
         let now = now();
+        // The action and the row that says it ran, in ONE transaction. They were two: the action
+        // committed first, and when the log row could not be written it stayed done and
+        // unrecorded — and "due" is decided from the log, so the scheduler did it again on every
+        // tick. `execute_action`'s own `atomic` calls join this transaction instead of opening one.
         super::atomic(conn, |tx| {
+            let (outcome, detail) = execute_action(tx, &automation.action)?;
             tx.execute(
                 "INSERT INTO automation_runs(id, automation_id, ran_at, outcome, detail) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![run_id, id, now, outcome, detail],
