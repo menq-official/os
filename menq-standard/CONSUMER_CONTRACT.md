@@ -65,6 +65,12 @@ workflow always gives one, a bare local run does not, and the output says which 
    template changed. The update job cannot do it: an Actions token may not write workflow files.
 5. Configure `sync_facts` as soon as one fact is written in a second file.
 6. Read the changelog section in the update pull request before merging it.
+7. Write the core of the session-read manifest by hand and leave `areas` to
+   `check_session_read_budget.py --sync-areas`: start from `"areas": {}`, run it, and run it again
+   whenever a Markdown file is added or removed. It repairs, it does not regenerate: it keeps every
+   entry written by hand and its order, removes an entry whose file is gone or is in the core, and
+   appends each tracked Markdown file that nothing reaches to the area of its own directory. It
+   never changes the core. MUST 4 judges the manifest, not how it was produced.
 
 ### What the standard owes a repository that follows it
 
@@ -139,6 +145,13 @@ Repository-ն հետևում է MenQ Standard-ին, երբ `check_conformance.py
    ֆայլ գրել։
 5. Կարգավորել `sync_facts`-ը հենց որ մեկ փաստ գրվի երկրորդ ֆայլում։
 6. Merge անելուց առաջ կարդալ update pull request-ի changelog բաժինը։
+7. Session-read manifest-ի core-ը գրել ձեռքով, իսկ `areas`-ը թողնել
+   `check_session_read_budget.py --sync-areas`-ին. սկսել `"areas": {}`-ից, գործարկել այն, և նորից
+   գործարկել ամեն անգամ, երբ Markdown ֆայլ է ավելանում կամ հեռացվում։ Այն նորոգում է, ոչ թե նորից
+   գեներացնում. պահում է ձեռքով գրված ամեն գրառում և նրա հերթականությունը, հեռացնում է այն
+   գրառումը, որի ֆայլը այլևս չկա կամ core-ում է, և ամեն tracked Markdown ֆայլ, որին ոչինչ չի
+   հասնում, ավելացնում է իր directory-ի area-ին։ Այն երբեք չի փոխում core-ը։ MUST 4-ը գնահատում է
+   manifest-ը, ոչ թե այն, թե ինչպես է այն ստեղծվել։
 
 ### Ինչ է ստանդարտը պարտք իրեն հետևող repository-ին
 

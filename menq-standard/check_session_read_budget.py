@@ -11,6 +11,27 @@ Modes:
     (default)                check the manifest and the budget
     --receipt                print one sha256 over the ordered core content
     --verify-receipt DIGEST  exit non-zero unless DIGEST is the current receipt
+    --sync-areas             repair the manifest's "areas" from the tracked Markdown files
+
+--sync-areas REPAIRS, it does not regenerate. An area is reading guidance a
+person wrote: it may name files of other directories, name one file in several
+areas, and keep an order. So every existing area, every existing entry and
+their order are kept, and exactly three things change: an entry whose file is
+no longer tracked or no longer in the checkout is removed (and an area left
+empty by that); an entry that names a core path is removed; and every tracked
+Markdown file that neither the core nor any area reaches is appended to the
+area of its own directory, which is created in sorted position when absent.
+A manifest whose "areas" is {} therefore becomes a plain per-directory list.
+Nothing but the value of "areas" is changed, the core is never written, and a
+missing or malformed manifest is refused: this mode does not invent a core.
+It does NOT repair an area whose directory no longer exists while its entries
+are live; the default mode keeps reporting that one.
+
+The rewritten manifest is UTF-8, 2-space indented JSON with a trailing newline,
+in the line endings the file had: all LF stays LF, all CRLF stays CRLF. A file
+that mixes the two is refused. sync_facts.py works on such a file as it is,
+because it replaces spans inside lines; this mode rewrites the whole file and
+would have to choose one ending for it.
 
 Bytes are counted after CRLF is folded to LF, so a Windows checkout and a
 Linux checkout of the same commit measure the same number.
@@ -47,6 +68,8 @@ SCHEMA_VERSION = 1
 # differs lives in the manifest and the number that does not lives here.
 UNIVERSAL_TOTAL_BYTES_MAX = 350_000
 ROOT_AREA = "."
+# How many names of one kind --sync-areas prints before it says "and N more".
+SHOWN = 12
 
 
 class Refusal(Exception):
@@ -70,6 +93,25 @@ def tracked_files(root: Path) -> list[str]:
     except (OSError, subprocess.CalledProcessError) as exc:
         raise Refusal(f"cannot enumerate tracked files with git ls-files -z: {exc}") from exc
     return [part.decode("utf-8") for part in result.stdout.split(b"\0") if part]
+
+
+def is_markdown(rel: str) -> bool:
+    return rel.lower().endswith(".md")
+
+
+def tracked_directories(tracked: list[str]) -> set[str]:
+    """Every directory that holds a tracked file, at any depth, and the root."""
+    directories = {ROOT_AREA}
+    for rel in tracked:
+        parts = rel.split("/")[:-1]
+        for depth in range(1, len(parts) + 1):
+            directories.add("/".join(parts[:depth]))
+    return directories
+
+
+def own_area(rel: str) -> str:
+    """The directory a file lies in, as an area key."""
+    return rel.rsplit("/", 1)[0] if "/" in rel else ROOT_AREA
 
 
 def is_positive_int(value: object) -> bool:
@@ -183,11 +225,7 @@ def check(root: Path, manifest_rel: str = MANIFEST_REL) -> tuple[list[str], list
     except Refusal as refusal:
         return [str(refusal)], []
     tracked_set = set(tracked)
-    tracked_dirs = {ROOT_AREA}
-    for rel in tracked:
-        parts = rel.split("/")[:-1]
-        for depth in range(1, len(parts) + 1):
-            tracked_dirs.add("/".join(parts[:depth]))
+    tracked_dirs = tracked_directories(tracked)
 
     total_max = data["total_bytes_max"]
     if total_max > UNIVERSAL_TOTAL_BYTES_MAX:
@@ -244,8 +282,11 @@ def check(root: Path, manifest_rel: str = MANIFEST_REL) -> tuple[list[str], list
         area_sizes.append((area_bytes(root, files), directory, len(files)))
 
     for rel in tracked:
-        if rel.lower().endswith(".md") and rel not in reachable:
-            errors.append(f"tracked Markdown file is in neither the core nor any area: {rel}")
+        if is_markdown(rel) and rel not in reachable:
+            errors.append(
+                f"tracked Markdown file is in neither the core nor any area: {rel}; "
+                "list it in an area, or run this gate with --sync-areas"
+            )
 
     report = [
         f"core: {len(rows)} files, {total} bytes of {total_max} "
@@ -276,6 +317,141 @@ def receipt(root: Path, manifest_rel: str = MANIFEST_REL) -> str:
     return digest.hexdigest()
 
 
+def repaired_areas(root: Path, data: dict, tracked: list[str]) -> tuple[dict[str, list[str]], dict[str, list]]:
+    """The areas --sync-areas would write, and what differs from the manifest's own.
+
+    Changes: ``added``, ``dead`` and ``core`` are (area, path) pairs; ``emptied`` and
+    ``no_directory`` are area keys; ``absent`` are tracked Markdown paths missing from the checkout.
+    """
+    tracked_set = set(tracked)
+    tracked_dirs = tracked_directories(tracked)
+    core_set = {entry["path"] for entry in data["core"]}
+    changes: dict[str, list] = {"added": [], "dead": [], "core": [], "emptied": [], "absent": [], "no_directory": []}
+
+    areas: dict[str, list[str]] = {}
+    for directory, files in data["areas"].items():
+        kept: list[str] = []
+        for rel in files:
+            if rel in core_set:
+                changes["core"].append((directory, rel))
+            elif rel not in tracked_set or not (root / rel).is_file():
+                changes["dead"].append((directory, rel))
+            else:
+                kept.append(rel)
+        if not kept:
+            changes["emptied"].append(directory)
+            continue
+        areas[directory] = kept
+        if directory not in tracked_dirs:
+            changes["no_directory"].append(directory)
+
+    reachable = core_set.union(*areas.values())
+    for rel in sorted(tracked):
+        if not is_markdown(rel) or rel in reachable:
+            continue
+        if not (root / rel).is_file():
+            changes["absent"].append(rel)
+            continue
+        directory = own_area(rel)
+        if directory not in areas:
+            # A new area goes before the first existing key that sorts after it; no existing key moves.
+            ordered: dict[str, list[str]] = {}
+            placed = False
+            for key, value in areas.items():
+                if not placed and key > directory:
+                    ordered[directory] = []
+                    placed = True
+                ordered[key] = value
+            if not placed:
+                ordered[directory] = []
+            areas = ordered
+        areas[directory].append(rel)
+        changes["added"].append((directory, rel))
+    # An area emptied of dead entries and then given a new file was not removed.
+    changes["emptied"] = [directory for directory in changes["emptied"] if directory not in areas]
+    return areas, changes
+
+
+def manifest_uses_crlf(root: Path, manifest_rel: str) -> bool:
+    """True for an all-CRLF manifest, False for an all-LF one; a mixture is refused."""
+    try:
+        raw = (root / manifest_rel).read_bytes()
+    except OSError as exc:
+        raise Refusal(f"manifest cannot be read: {manifest_rel}: {exc.strerror or exc}") from exc
+    crlf = raw.count(b"\r\n")
+    bare_lf = raw.count(b"\n") - crlf
+    if crlf and bare_lf:
+        raise Refusal(
+            f"manifest mixes line endings: {manifest_rel} has {crlf} CRLF and {bare_lf} LF; "
+            "--sync-areas rewrites the whole file and will not choose one ending for it"
+        )
+    return bool(crlf)
+
+
+def manifest_bytes(data: dict, crlf: bool) -> bytes:
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    return (text.replace("\n", "\r\n") if crlf else text).encode("utf-8")
+
+
+def named(pairs: list[tuple[str, str]]) -> str:
+    """Up to SHOWN paths, each with its area when the two differ, and how many more there are."""
+    shown = [rel if own_area(rel) == directory else f"{rel} (in area {directory})" for directory, rel in pairs[:SHOWN]]
+    return ", ".join(shown) + (f" and {len(pairs) - SHOWN} more" if len(pairs) > SHOWN else "")
+
+
+def listed(names: list[str]) -> str:
+    return ", ".join(names[:SHOWN]) + (f" and {len(names) - SHOWN} more" if len(names) > SHOWN else "")
+
+
+def sync_areas(root: Path, manifest_rel: str = MANIFEST_REL) -> tuple[list[str], list[str]]:
+    """Repair "areas" in the manifest. Returns (errors, output lines); with errors nothing is written."""
+    try:
+        data = load_manifest(root, manifest_rel)
+        errors = shape_errors(data)
+        if errors:
+            return errors, []
+        crlf = manifest_uses_crlf(root, manifest_rel)
+        tracked = tracked_files(root)
+    except Refusal as refusal:
+        return [str(refusal)], []
+
+    areas, changes = repaired_areas(root, data, tracked)
+    size = f"{len(set().union(*areas.values()))} area files in {len(areas)} directories"
+    notes: list[str] = []
+    if changes["no_directory"]:
+        notes.append(
+            "NOT repaired: an area names a directory that does not exist while its entries are live; "
+            f"it is left as it is and the default mode reports it: {listed(changes['no_directory'])}"
+        )
+    if changes["absent"]:
+        notes.append(
+            "NOT added: tracked Markdown that is missing from the checkout, "
+            f"so the default mode stays RED for it: {listed(changes['absent'])}"
+        )
+
+    if list(areas.items()) == list(data["areas"].items()):
+        return [], [f"SESSION READ AREAS: UNCHANGED ({size}); the manifest was not written", *notes]
+
+    data["areas"] = areas
+    try:
+        (root / manifest_rel).write_bytes(manifest_bytes(data, crlf))
+    except OSError as exc:
+        return [f"manifest cannot be written: {manifest_rel}: {exc.strerror or exc}"], []
+    removed = len(changes["dead"]) + len(changes["core"])
+    lines = [
+        f"SESSION READ AREAS: WRITTEN ({size}; {len(changes['added'])} added, {removed} removed) to {manifest_rel}"
+    ]
+    if changes["added"]:
+        lines.append(f"added, each to the area of its own directory: {named(changes['added'])}")
+    if changes["dead"]:
+        lines.append(f"removed, no longer tracked or no longer in the checkout: {named(changes['dead'])}")
+    if changes["core"]:
+        lines.append(f"removed, already in the core: {named(changes['core'])}")
+    if changes["emptied"]:
+        lines.append(f"removed areas left empty: {listed(changes['emptied'])}")
+    return [], lines + notes
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -296,11 +472,26 @@ def main(
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--receipt", action="store_true", help="print the sha256 receipt of the current core")
     mode.add_argument("--verify-receipt", metavar="DIGEST", help="exit non-zero unless DIGEST is the current receipt")
+    mode.add_argument(
+        "--sync-areas", action="store_true", help='repair the manifest\'s "areas" from the tracked Markdown files'
+    )
     args = parser.parse_args(argv)
     root = args.root.resolve()
     if hasattr(sys.stdout, "reconfigure"):
         # A path may be Armenian; a non-UTF-8 console must not turn a verdict into a crash.
         sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+    if args.sync_areas:
+        errors, lines = sync_areas(root, args.manifest)
+        if errors:
+            print("SESSION READ AREAS: RED")
+            for error in errors:
+                print(f"- {error}")
+            print("- nothing was written")
+            return 1
+        for line in lines:
+            print(line)
+        return 0
 
     errors, report = check(root, args.manifest)
     if errors:

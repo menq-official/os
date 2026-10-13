@@ -1,6 +1,6 @@
 # Adopting MenQ Standard in a repository / MenQ Standard-ի ընդունումը repository-ում
 
-**Status / Կարգավիճակ:** Proposed under `D-029`; no repository has followed these steps on GitHub / Առաջարկված `D-029`-ով. ոչ մի repository այս քայլերը GitHub-ում չի կատարել  
+**Status / Կարգավիճակ:** In force under `D-029`; `menqstudio/OS` followed the Adopt steps on GitHub on 2026-10-10, the update steps have not run anywhere / Ուժի մեջ է `D-029`-ով. `menqstudio/OS`-ը Adopt քայլերը GitHub-ում կատարել է 2026-10-10-ին, update քայլերը ոչ մի տեղ չեն գործարկվել  
 **Document class / Փաստաթղթի դաս:** Informative  
 **Owner / Պատասխանատու:** MenQ Owner  
 **Canonical path / Canonical ուղի:** `consumer/ADOPTION.md`
@@ -8,9 +8,11 @@
 ## English
 
 Every command below was run on 2026-10-09, in this order, in a throwaway repository made for the
-purpose, with Python 3.13 and no network. Two things were therefore NOT exercised and are named
-where they occur: fetching from GitHub, and anything GitHub Actions does. What binds the
-repository afterwards is in `CONSUMER_CONTRACT.md`.
+purpose, with Python 3.13 and no network. Step 3 of “Adopt” changed in version 2.1.0, and the
+“Adopt” steps 1 to 4 were run again as they now read on 2026-10-10, the same way; step 5 was not
+run again. Two things were therefore NOT exercised and are named where they occur: fetching from
+GitHub, and anything GitHub Actions does. What binds the repository afterwards is in
+`CONSUMER_CONTRACT.md`.
 
 Run everything from the root of the repository that adopts the standard. It needs git and
 Python 3; nothing is installed.
@@ -34,11 +36,14 @@ Leave out `--with-update-workflow` to adopt without the update path.
 python3 ../MenQ-Standard/consumer/check_conformance.py install --standard ../MenQ-Standard --standard-ref origin/main --with-update-workflow
 ```
 
-**3. Write the session-read manifest** (`D-028`): the ordered core every AI session reads in full,
-its byte ceilings, and the area files per directory. Every tracked Markdown file must be reachable
-from the core or an area, the three Markdown files of the kit included. This is the manifest of
+**3. Write the core of the session-read manifest, and let the gate write the rest** (`D-028`). The
+core is yours to choose: the ordered files every AI session reads in full, the byte ceiling of
+each, and a total no greater than 350,000. Leave `areas` as `{}`. Every tracked Markdown file must
+be reachable from the core or an area, the three Markdown files of the kit included, and
+`--sync-areas` sees to that: it adds each tracked Markdown file that nothing reaches to the area
+of its own directory. It reads tracked files, so `git add` comes first. This is the manifest of
 the throwaway repository, which held `README.md` and `docs/GUIDE.md`; a real repository lists its
-own files and its own numbers, and no total above 350,000.
+own core and its own numbers.
 
 ```bash
 cat > SESSION_READ_MANIFEST.json <<'JSON'
@@ -48,19 +53,25 @@ cat > SESSION_READ_MANIFEST.json <<'JSON'
   "core": [
     {"path": "README.md", "bytes_max": 20000, "why": "What the repository is and how to work in it."}
   ],
-  "areas": {
-    "docs": ["docs/GUIDE.md"],
-    "menq-standard": [
-      "menq-standard/ADOPTION.md",
-      "menq-standard/CONSUMER_CONTRACT.md",
-      "menq-standard/SYNC_FACTS.md"
-    ]
-  }
+  "areas": {}
 }
 JSON
+git add --all
+python3 menq-standard/check_session_read_budget.py --sync-areas
 ```
 
-**4. Track the files and check.** The budget gate reads tracked files, so `git add` comes first.
+In the run it printed `SESSION READ AREAS: WRITTEN (4 area files in 2 directories; 4 added,
+0 removed) to SESSION_READ_MANIFEST.json` and named the four files. It rewrites the whole file as
+2-space indented JSON; only the value of `areas` changes.
+
+Run the same command again whenever a Markdown file is added or removed. It repairs, it does not
+regenerate: an entry you wrote by hand is kept where it is — a file of another directory, one file
+in several areas, an order you chose. It removes only an entry whose file is gone or is in the
+core, and it appends only a file that nothing reaches. It never changes the core, and it refuses a
+missing or malformed manifest. When there is nothing to do it says `UNCHANGED` and does not write.
+
+**4. Track the files and check.** The budget gate reads tracked files, so `git add` comes first;
+here it tracks the manifest as step 3 left it.
 With `--standard` the pin is compared with the standard itself, as the workflow will do.
 
 ```bash
@@ -111,7 +122,9 @@ python3 menq-standard/check_conformance.py check --standard ../MenQ-Standard --s
 ```
 
 **3. Fix what is RED, on the branch.** The usual reason is a new Markdown file in the kit that the
-session-read manifest does not list: add it to the `menq-standard` area, commit, push.
+session-read manifest does not list: run the gate with `--sync-areas`, as in step 3 of “Adopt”,
+which adds it to the `menq-standard` area; then commit and push. That command was run for an added
+Markdown file on 2026-10-10, though not on an update branch.
 
 **4. Re-render the workflows when the pull request says a template changed.** The update job cannot
 do it, because an Actions token may not write under `.github/workflows/`. The first command reads
@@ -131,9 +144,11 @@ and the pin go back together.
 ## Հայերեն
 
 Ներքևի ամեն հրաման գործարկվել է 2026-10-09-ին, այս հերթականությամբ, այդ նպատակով ստեղծված
-ժամանակավոր repository-ում, Python 3.13-ով և առանց ցանցի։ Ուստի երկու բան ՉԻ փորձարկվել, և դրանք
-նշված են իրենց տեղում՝ GitHub-ից fetch-ը և այն ամենը, ինչ անում է GitHub Actions-ը։ Թե ինչն է
-դրանից հետո պարտադիր repository-ի համար՝ գրված է `CONSUMER_CONTRACT.md`-ում։
+ժամանակավոր repository-ում, Python 3.13-ով և առանց ցանցի։ «Ընդունում» բաժնի 3-րդ քայլը փոխվել է
+2.1.0 տարբերակում, և «Ընդունում» բաժնի 1-ից 4-րդ քայլերը, ինչպես այժմ գրված են, նորից գործարկվել
+են 2026-10-10-ին նույն ձևով. 5-րդ քայլը նորից չի գործարկվել։ Ուստի երկու բան ՉԻ փորձարկվել, և
+դրանք նշված են իրենց տեղում՝ GitHub-ից fetch-ը և այն ամենը, ինչ անում է GitHub Actions-ը։ Թե ինչն
+է դրանից հետո պարտադիր repository-ի համար՝ գրված է `CONSUMER_CONTRACT.md`-ում։
 
 Ամեն ինչ գործարկիր ստանդարտն ընդունող repository-ի root-ից։ Պետք են git և Python 3. ոչինչ չի
 տեղադրվում։ Հրամանները նույնն են երկու լեզվով և գրված են անգլերեն բաժնում. այստեղ բացատրված է
@@ -149,13 +164,28 @@ and the pin go back together.
 `.github/workflows/menq-standard-conformance.yml`-ում և `.github/workflows/menq-standard-update.yml`-ում։
 Առանց update ճանապարհի ընդունելու համար բաց թող `--with-update-workflow`-ը։
 
-**3. Գրիր session-read manifest-ը** (`D-028`)՝ հերթականությամբ core-ը, որը ամեն AI session կարդում
-է ամբողջությամբ, նրա բայթերի սահմանները և ամեն directory-ի area-ի ֆայլերը։ Ամեն tracked Markdown
-ֆայլ պետք է հասանելի լինի core-ից կամ area-ից, ներառյալ kit-ի երեք Markdown ֆայլը։ Անգլերեն
-բաժնի օրինակը ժամանակավոր repository-ի manifest-ն է, որն ուներ `README.md` և `docs/GUIDE.md`.
-իրական repository-ն գրում է իր ֆայլերը և իր թվերը, և ընդհանուրը 350,000-ից ոչ ավելի։
+**3. Գրիր session-read manifest-ի core-ը, իսկ մնացածը թող գրի gate-ը** (`D-028`)։ Core-ը դու ես
+ընտրում՝ հերթականությամբ այն ֆայլերը, որոնք ամեն AI session կարդում է ամբողջությամբ, ամեն մեկի
+բայթերի սահմանը և ընդհանուրը՝ 350,000-ից ոչ ավելի։ `areas`-ը թող `{}`։ Ամեն tracked Markdown ֆայլ
+պետք է հասանելի լինի core-ից կամ area-ից, ներառյալ kit-ի երեք Markdown ֆայլը, և դա ապահովում է
+`--sync-areas`-ը. այն ամեն tracked Markdown ֆայլ, որին ոչինչ չի հասնում, ավելացնում է իր
+directory-ի area-ին։ Այն կարդում է tracked ֆայլերը, ուստի նախ `git add`։ Անգլերեն բաժնի օրինակը
+ժամանակավոր repository-ի manifest-ն է, որն ուներ `README.md` և `docs/GUIDE.md`. իրական
+repository-ն գրում է իր core-ը և իր թվերը։
 
-**4. Track արա ֆայլերը և ստուգիր։** Budget gate-ը կարդում է tracked ֆայլերը, ուստի նախ `git add`։
+Գործարկման ժամանակ այն տպեց `SESSION READ AREAS: WRITTEN (4 area files in 2 directories; 4 added,
+0 removed) to SESSION_READ_MANIFEST.json` և անվանեց չորս ֆայլը։ Այն ամբողջ ֆայլը նորից գրում է
+որպես 2 բացատով indent արված JSON. փոխվում է միայն `areas`-ի արժեքը։
+
+Նույն հրամանը նորից գործարկիր ամեն անգամ, երբ Markdown ֆայլ է ավելանում կամ հեռացվում։ Այն
+նորոգում է, ոչ թե նորից գեներացնում. ձեռքով գրված գրառումը մնում է իր տեղում՝ ուրիշ directory-ի
+ֆայլը, մի քանի area-ում նշված նույն ֆայլը, քո ընտրած հերթականությունը։ Այն հեռացնում է միայն այն
+գրառումը, որի ֆայլը այլևս չկա կամ core-ում է, և ավելացնում է միայն այն ֆայլը, որին ոչինչ չի
+հասնում։ Այն երբեք չի փոխում core-ը և մերժում է բացակայող կամ սխալ կառուցվածքով manifest-ը։ Երբ
+անելիք չկա, այն գրում է `UNCHANGED` և ֆայլը չի գրում։
+
+**4. Track արա ֆայլերը և ստուգիր։** Budget gate-ը կարդում է tracked ֆայլերը, ուստի նախ `git add`.
+այստեղ այն track է անում manifest-ը այնպես, ինչպես թողել է 3-րդ քայլը։
 `--standard`-ով pin-ը համեմատվում է հենց ստանդարտի հետ, ինչպես կանի workflow-ը։
 
 **5. Commit և push արա որպես մարդ։** Commit-ը ավելացնում է workflow ֆայլեր. workflow ֆայլ
@@ -187,7 +217,9 @@ workflow-ները, ուստի conformance run չի երևում, մինչև մա
 չփակի ու նորից չբացի pull request-ը։ Հրամանները branch-ի անունը վերցնում են `UPDATE_BRANCH`-ից։
 
 **3. Ուղղիր այն, ինչ RED է, branch-ի վրա։** Սովորական պատճառը kit-ի նոր Markdown ֆայլն է, որը
-session-read manifest-ը չի թվարկում. ավելացրու այն `menq-standard` area-ին, commit և push արա։
+session-read manifest-ը չի թվարկում. գործարկիր gate-ը `--sync-areas`-ով, ինչպես «Ընդունում» բաժնի
+3-րդ քայլում, և այն ֆայլը կավելացնի `menq-standard` area-ին. հետո commit և push արա։ Այդ հրամանը
+ավելացված Markdown ֆայլի համար գործարկվել է 2026-10-10-ին, թեև ոչ update branch-ի վրա։
 
 **4. Նորից render արա workflow-ները, երբ pull request-ը ասում է, որ template-ը փոխվել է։** Update
 job-ը դա չի կարող անել, քանի որ Actions token-ը չի կարող գրել `.github/workflows/`-ում։ Առաջին

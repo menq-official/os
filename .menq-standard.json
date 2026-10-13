@@ -2,18 +2,18 @@
   "schema_version": 1,
   "standard": {
     "repository": "menqstudio/MenQ-Standard",
-    "version": "2.0.0",
-    "commit": "d6eeb195e3026c845a3c92794e3ba523a3c28345"
+    "version": "2.1.0",
+    "commit": "63a8090dba219bbab9153c494acd00f95d82fe1f"
   },
   "kit_dir": "menq-standard",
   "session_read_manifest": "config/session-read-manifest.json",
   "hash": "sha256 of the file's bytes after CRLF is folded to LF",
   "files": {
-    "ADOPTION.md": "6c59041a8199d2b9227d05865c57f5e3f886556e543d150e2f997742d8fb04eb",
-    "CONSUMER_CONTRACT.md": "15374d02adef4b58f0505f670f19786137b8bacd88d9c289386f4d31c53675ab",
+    "ADOPTION.md": "76ff10372db1b72c764fb71f3c454c876048447d8b0354b7f3a2dd1754cb0168",
+    "CONSUMER_CONTRACT.md": "995b05b1089a1fcb737ec36408584ebbabcf4a24797bb62f29249188e7af05db",
     "SYNC_FACTS.md": "22406aa9c6c73b2545bdd5bd826a900eb740ee8f20648913f23a6182301ac92f",
     "check_conformance.py": "cf9287a45a83ab277401ff2afc85dbdf7ad53713006897ed15c5bab9dbbdb1cd",
-    "check_session_read_budget.py": "e26f40fc1fad153ffd811dddea4ab3cc4edfc5c0668c2b7f287e35d07c4414a5",
+    "check_session_read_budget.py": "718521cc388d9cf0735b8086ea8aef73e2d875e26934ebfd400709feeee6c3a3",
     "sync_facts.py": "d4fed6389fff2dce8fdf6a0cf0c28f394b8fe5dd4aa562d4148716a74bafd74d",
     "templates/menq-standard-conformance.yml": "2242a25d55fde4dce1ddbc81c06f97b564a9948defc12247c5c9550e373c6c7a",
     "templates/menq-standard-update.yml": "37ed64096953b5a2cadcb72d01c6dab9bbef25bfb21d5c893a586cd458c0e814",

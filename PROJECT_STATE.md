@@ -11,7 +11,7 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `f1fd268`.** PR #411 on `l-42` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `2c12ddc`.** PR #412 on `std-2.1` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** L-17, L-25, L-26, L-36 wait on the Owner; K-01, K-09 open.
 >
@@ -75,7 +75,7 @@ All 35 contexts in `config/required-checks.json` are required on `main`, with `s
 on this plan a private repository carries no protection, and going private deletes the rules.
 
 **The `.deb` was installed here 2026-10-09** and runs: mirrors granted, self-test on Linux,
-governed turn refused (OWNER 2h). `T-169`'s design was REJECTED. OS follows MenQ Standard 2.0.0 (`T-171`). A 12th review is unfinished: `L-01`–`L-43` (20 ◑).
+governed turn refused (OWNER 2h). `T-169`'s design was REJECTED. OS follows MenQ Standard 2.1.0 (`T-171`). A 12th review is unfinished: `L-01`–`L-43` (20 ◑).
 
 **Two audit reports went missing, one unrecoverable** — the fifth never filed (15 promotions not
 carried), the seventh reconstructed from two commit messages. `A-06` in the ledger.
