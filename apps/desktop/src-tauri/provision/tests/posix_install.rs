@@ -801,6 +801,28 @@ fn engine_accepts_the_anchor_on_its_merits(
     sh_as(user, "rm -rf \"$1\"", &[&own]);
 }
 
+/// The desktop account this test runs as: `$BROPS_TEST_DESKTOP_USER`, else `$SUDO_USER`, else
+/// `nobody` — the order the module doc states.
+fn desktop_account_name(test_user: Option<String>, sudo_user: Option<String>) -> String {
+    // The filter is asked of each source: a variable that is set to nothing, or to `root`,
+    // used to end the search and skip `$SUDO_USER`.
+    let usable = |n: &String| !n.is_empty() && n != "root";
+    test_user.filter(usable).or_else(|| sudo_user.filter(usable)).unwrap_or_else(|| "nobody".to_string())
+}
+
+#[test]
+fn the_desktop_account_falls_through_a_value_that_cannot_be_used() {
+    let some = |s: &str| Some(s.to_string());
+    assert_eq!(desktop_account_name(some("alice"), some("bob")), "alice");
+    assert_eq!(desktop_account_name(None, some("bob")), "bob");
+    assert_eq!(desktop_account_name(None, None), "nobody");
+    // set, and not an account the test may run as: the next source is asked
+    assert_eq!(desktop_account_name(some(""), some("bob")), "bob", "an empty variable is not a choice");
+    assert_eq!(desktop_account_name(some("root"), some("bob")), "bob", "root is not a desktop account");
+    assert_eq!(desktop_account_name(some("root"), some("root")), "nobody");
+    assert_eq!(desktop_account_name(some(""), some("")), "nobody");
+}
+
 #[test]
 #[ignore = "needs root: it mints a real root-owned anchor in a temporary directory. Build with \
             --no-run, then run the test binary under sudo with --ignored --exact <this name> \
@@ -821,11 +843,10 @@ fn root_installs_an_anchor_the_desktop_uid_verifies_and_cannot_touch() {
     }
 
     // ---- the fixture: a desktop account that already exists, and a directory of our own ----
-    let name = std::env::var("BROPS_TEST_DESKTOP_USER")
-        .ok()
-        .or_else(|| std::env::var("SUDO_USER").ok())
-        .filter(|n| !n.is_empty() && n != "root")
-        .unwrap_or_else(|| "nobody".to_string());
+    let name = desktop_account_name(
+        std::env::var("BROPS_TEST_DESKTOP_USER").ok(),
+        std::env::var("SUDO_USER").ok(),
+    );
     let user = install::resolve_user(&install::read_passwd().expect("passwd"), &name)
         .unwrap_or_else(|e| panic!("the desktop account for this test: {e}"));
     println!("DESKTOP ACCOUNT {} uid={} gid={}", user.name, user.uid, user.gid);

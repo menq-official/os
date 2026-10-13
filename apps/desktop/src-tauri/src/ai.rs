@@ -1551,6 +1551,8 @@ impl TrustSurfaceGuard {
         let mut restored: Vec<String> = Vec::new();
         let mut unrestorable: Vec<String> = Vec::new();
         let quarantine = quarantine_dir();
+        // Whether anything actually reached it: the notice names the directory only then.
+        let mut kept = false;
 
         for (path, snap) in &self.files {
             // What the PATH is, before what it holds. Every one of these was a regular file
@@ -1573,7 +1575,7 @@ impl TrustSurfaceGuard {
                     let target = std::fs::read_link(link)
                         .map(|t| t.to_string_lossy().into_owned())
                         .unwrap_or_else(|e| format!("(unreadable link: {e})"));
-                    let _ = std::fs::write(&dest, target);
+                    kept |= std::fs::write(&dest, target).is_ok();
                 }
                 if snap.bytes.is_none() {
                     // Nothing to put in its place, so the link stays and the notice says so.
@@ -1628,7 +1630,7 @@ impl TrustSurfaceGuard {
                 if let Some(parent) = dest.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                let _ = std::fs::write(&dest, bytes);
+                kept |= std::fs::write(&dest, bytes).is_ok();
             }
             match &snap.bytes {
                 Some(original) => {
@@ -1701,7 +1703,7 @@ impl TrustSurfaceGuard {
             "NEW directories of a build-output name, left in place and NOT inspected",
             &new_dirs,
         ));
-        if let Some(qdir) = quarantine.as_ref().filter(|_| !restored.is_empty()) {
+        if let Some(qdir) = quarantine.as_ref().filter(|_| kept && !restored.is_empty()) {
             notice.push_str(&format!("\nWhat the turn wrote was kept at: {}", qdir.display()));
         }
         eprintln!("{notice}");
@@ -1747,14 +1749,16 @@ impl Drop for TrustSurfaceGuard {
 
 /// Directory the rejected content of a settled turn is kept in, inside the private AI sandbox
 /// (0600 on unix) — never inside the repository, where it would itself become a change.
+///
+/// A NAME, not a directory: it is created by the first file kept in it (each writer makes its
+/// own parent). Creating it here left one empty directory behind for every turn that changed
+/// nothing, which is nearly all of them.
 fn quarantine_dir() -> Option<std::path::PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let dir = ai_sandbox_dir().ok()?.join(format!("trust-surface-rejected-{nanos}"));
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+    Some(ai_sandbox_dir().ok()?.join(format!("trust-surface-rejected-{nanos}")))
 }
 
 /// Read `path` (a file or a directory subtree) into `out`. Symlinks are never followed: a link
@@ -4309,6 +4313,34 @@ mod tests {
         for open in ["apps/desktop/src", "apps/desktop/src-tauri/src/commands.rs"] {
             assert!(!BRO_PROTECTED_PATHS.contains(&open), "{open} must stay writable");
         }
+    }
+
+    /// Cockpit read R3-0163. Every settle made a `trust-surface-rejected-<nanos>` directory in
+    /// the sandbox, changed or not — one empty directory per agent turn, for as long as the app
+    /// ran. The name is chosen up front and the directory appears with the first thing kept in
+    /// it. The second half is the kept copy itself, which no test read: the notice names a
+    /// directory, and what the turn wrote is in it.
+    #[test]
+    fn the_quarantine_directory_appears_with_the_first_file_kept_in_it() {
+        let asked = quarantine_dir().expect("the sandbox is available");
+        assert!(!asked.exists(), "asking where rejected content would go created {}", asked.display());
+
+        let root = std::env::temp_dir().join(format!("brops-quarantine-{}", brops_core::id()));
+        let engine = root.join("engine").join("runtime").join("bro_hook.py");
+        std::fs::create_dir_all(engine.parent().unwrap()).unwrap();
+        std::fs::write(&engine, "TRUSTED = True\n").unwrap();
+        let guard = TrustSurfaceGuard::take(&root);
+        std::fs::write(&engine, "TRUSTED = False\n").unwrap();
+        let notice = guard.settle().expect("a changed file is reported");
+        let kept_at = notice
+            .lines()
+            .find_map(|l| l.strip_prefix("What the turn wrote was kept at: "))
+            .unwrap_or_else(|| panic!("the notice names no directory: {notice}"));
+        let kept = std::path::Path::new(kept_at).join("engine").join("runtime").join("bro_hook.py");
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), "TRUSTED = False\n");
+        assert_eq!(std::fs::read_to_string(&engine).unwrap(), "TRUSTED = True\n");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(kept_at);
     }
 
     /// Cockpit read R3-0010. A turn that FAILS after changing the trust surface says so in the

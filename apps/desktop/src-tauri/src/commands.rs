@@ -2194,10 +2194,11 @@ pub async fn stream_run_step(
     // retry of a failed step exists.
     macro_rules! fail_attempt {
         ($msg:expr) => {{
-            if let Ok(conn) = locked(&state) {
-                let _ = repo::runs::fail_step_execution(&conn, &step.id, &attempt);
-            }
-            let _ = on_event.send(RunStepEvent::Error { message: $msg });
+            let message = match locked(&state) {
+                Ok(conn) => settle_failed_attempt(Ok(&conn), &step.id, &attempt, $msg),
+                Err(e) => settle_failed_attempt(Err(e), &step.id, &attempt, $msg),
+            };
+            let _ = on_event.send(RunStepEvent::Error { message });
             return Ok(());
         }};
     }
@@ -2244,40 +2245,70 @@ pub async fn stream_run_step(
     // been cancelled/finished while the turn ran) — if so, fail the attempt (don't persist for a dead run;
     // the grant stays consumed and the failed step is terminal). A stale/duplicate dispatch (different
     // attempt) cannot persist. The gate was enforced + the grant consumed at claim time.
-    let outcome = {
-        let conn = match locked(&state) {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = on_event.send(RunStepEvent::Error { message: e });
-                return Ok(());
-            }
-        };
-        match repo::runs::get(&conn, &run_id) {
-            Ok(run) if matches!(run.status.as_str(), "succeeded" | "failed" | "cancelled") => {
-                let _ = repo::runs::fail_step_execution(&conn, &step.id, &attempt);
-                let _ = on_event.send(RunStepEvent::Error { message: format!("run is {}", run.status) });
-                return Ok(());
-            }
-            Err(e) => {
-                let _ = on_event.send(RunStepEvent::Error { message: e.to_string() });
-                return Ok(());
-            }
-            _ => {}
-        }
-        // Not the operator: the step was executed by a model this loop dispatched,
-        // and the person who started the run is not identifiable at this layer.
-        repo::runs::complete_step_execution(&conn, &step.id, &attempt, &full, repo::audit::Actor::run_executor())
-            .and_then(|_| repo::runs::advance(&conn, &run_id, repo::audit::Actor::run_executor()))
+    let outcome = match locked(&state) {
+        Ok(conn) => persist_step_result(&conn, &run_id, &step.id, &attempt, &full),
+        Err(e) => Err(settle_failed_attempt(Err(e), &step.id, &attempt, "the step's result was not saved".into())),
     };
     match outcome {
-        Ok(_) => {
+        Ok(()) => {
             let _ = on_event.send(RunStepEvent::Done);
         }
-        Err(e) => {
-            let _ = on_event.send(RunStepEvent::Error { message: e.to_string() });
+        Err(message) => {
+            let _ = on_event.send(RunStepEvent::Error { message });
         }
     }
     Ok(())
+}
+
+/// Fail a claimed attempt and return what the person is told about it.
+///
+/// Both ways this can go wrong used to be dropped — no connection, or a settle the store
+/// refused — and the person got the reason the turn failed while the step stayed claimed, with
+/// nothing saying so. The reason is passed on unchanged when the attempt was settled; when it
+/// was not, the message says that too. A claim left behind is failed by the start-up
+/// reconciliation of the next session (`repo::runs::fail_step_execution`'s neighbour).
+fn settle_failed_attempt(
+    conn: Result<&rusqlite::Connection, String>,
+    step_id: &str,
+    attempt: &str,
+    message: String,
+) -> String {
+    let settled = conn
+        .and_then(|conn| repo::runs::fail_step_execution(conn, step_id, attempt).map_err(|e| e.to_string()));
+    match settled {
+        Ok(_) => message,
+        Err(why) => format!(
+            "{message} — and this attempt could not be settled ({why}); the step stays claimed until \
+             the app is restarted"
+        ),
+    }
+}
+
+/// Persist a finished turn's result under its claiming attempt and advance the run.
+///
+/// Every refusal before the result is written settles the claim: a run that could not be read
+/// and a result that could not be written used to return with the step still claimed, which
+/// blocks every later claim on it. Once the result IS written the step is done, and a failed
+/// `advance` after that is reported without touching the step.
+fn persist_step_result(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    step_id: &str,
+    attempt: &str,
+    full: &str,
+) -> Result<(), String> {
+    match repo::runs::get(conn, run_id) {
+        Ok(run) if matches!(run.status.as_str(), "succeeded" | "failed" | "cancelled") => {
+            return Err(settle_failed_attempt(Ok(conn), step_id, attempt, format!("run is {}", run.status)));
+        }
+        Err(e) => return Err(settle_failed_attempt(Ok(conn), step_id, attempt, e.to_string())),
+        _ => {}
+    }
+    // Not the operator: the step was executed by a model this loop dispatched,
+    // and the person who started the run is not identifiable at this layer.
+    repo::runs::complete_step_execution(conn, step_id, attempt, full, repo::audit::Actor::run_executor())
+        .map_err(|e| settle_failed_attempt(Ok(conn), step_id, attempt, e.to_string()))?;
+    repo::runs::advance(conn, run_id, repo::audit::Actor::run_executor()).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// One-shot "Ask Bro": stream an answer to a single prompt WITHOUT persisting a
@@ -3346,6 +3377,80 @@ mod tests {
             assert_eq!(missing, vec!["policy-bundle digest"], "for {bad}");
         }
         assert!(is_lower_hex64(PROVISIONED_DIGEST));
+    }
+
+    // ---- a claimed run step is settled, and a failure to settle it is said (R3-0175, R3-0176) ----
+
+    /// A run with one step claimed for execution: `(run id, step id, attempt)`.
+    fn claimed_step(conn: &rusqlite::Connection) -> (String, String, String) {
+        let op = repo::audit::Actor::local_operator;
+        let run = repo::runs::create(conn, "one step", "", op()).unwrap();
+        let step = repo::runs::add_step(conn, &run.id, "one", "").unwrap();
+        repo::runs::advance(conn, &run.id, op()).unwrap();
+        let attempt = repo::runs::claim_step_for_execution(conn, &step.id, "sess-test").unwrap();
+        (run.id, step.id, attempt)
+    }
+
+    fn step_status(conn: &rusqlite::Connection, step_id: &str) -> String {
+        conn.query_row("SELECT status FROM run_steps WHERE id = ?1", [step_id], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn a_failed_attempt_that_could_not_be_settled_says_so() {
+        let conn = brops_core::db::open_in_memory().unwrap();
+        let (_run, step, attempt) = claimed_step(&conn);
+
+        // settled: the reason is passed on as it is, and the step is failed
+        let told = settle_failed_attempt(Ok(&conn), &step, &attempt, "the provider refused".into());
+        assert_eq!(told, "the provider refused");
+        assert_eq!(step_status(&conn, &step), "failed");
+
+        // not settled, because the attempt is not the claiming one
+        let (_run, step, _attempt) = claimed_step(&conn);
+        let told = settle_failed_attempt(Ok(&conn), &step, "not-the-attempt", "the provider refused".into());
+        assert!(told.starts_with("the provider refused"), "{told}");
+        assert!(told.contains("could not be settled"), "the step is still claimed and nobody is told: {told}");
+        assert_eq!(step_status(&conn, &step), "active");
+
+        // not settled, because there was no connection to settle it on
+        let told = settle_failed_attempt(Err("db lock poisoned".into()), &step, "x", "the provider refused".into());
+        assert!(told.contains("could not be settled") && told.contains("db lock poisoned"), "{told}");
+    }
+
+    #[test]
+    fn a_step_result_that_cannot_be_persisted_does_not_leave_the_step_claimed() {
+        let conn = brops_core::db::open_in_memory().unwrap();
+
+        // the ordinary case
+        let (run, step, attempt) = claimed_step(&conn);
+        assert_eq!(persist_step_result(&conn, &run, &step, &attempt, "the result"), Ok(()));
+        assert_eq!(step_status(&conn, &step), "done");
+
+        // the run cannot be read
+        let (_run, step, attempt) = claimed_step(&conn);
+        let refused = persist_step_result(&conn, "no-such-run", &step, &attempt, "the result").unwrap_err();
+        assert_eq!(step_status(&conn, &step), "failed", "left claimed after: {refused}");
+
+        // the result cannot be written
+        let (run, step, attempt) = claimed_step(&conn);
+        conn.execute_batch(
+            "CREATE TRIGGER refuse_done BEFORE UPDATE ON run_steps WHEN NEW.status = 'done'
+             BEGIN SELECT RAISE(ABORT, 'the result could not be written'); END",
+        )
+        .unwrap();
+        let refused = persist_step_result(&conn, &run, &step, &attempt, "the result").unwrap_err();
+        assert!(refused.contains("the result could not be written"), "{refused}");
+        assert_eq!(step_status(&conn, &step), "failed", "left claimed after: {refused}");
+        conn.execute_batch("DROP TRIGGER refuse_done").unwrap();
+
+        // a run that ended while the turn ran: the attempt is failed, as it already was
+        let (run, step, attempt) = claimed_step(&conn);
+        conn.execute("UPDATE runs SET status = 'cancelled' WHERE id = ?1", [&run]).unwrap();
+        assert_eq!(
+            persist_step_result(&conn, &run, &step, &attempt, "the result"),
+            Err("run is cancelled".to_string())
+        );
+        assert_eq!(step_status(&conn, &step), "failed");
     }
 
     // T-010 in-body bound: an automation's action (which can drive execution) is
