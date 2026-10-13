@@ -2,20 +2,15 @@ import React, { useEffect, useRef, type KeyboardEvent } from 'react';
 import '../ui.css';
 import { EmptyState, usePrefersReducedMotion } from '../ui';
 import { STRIP_W, STRIP_H, buildECG, buildLinePath, pointCoords } from './geometry';
-import { useApp } from '../../app/store';
+import { useAppOptional } from '../../app/store';
 import type { Lang } from '../../domain/enums';
 import { localize, beatSummary, barSummary, type StrKey } from './Chart.strings';
 
-// Read the active UI language reactively. `useApp()` throws outside an
-// `AppProvider` (e.g. in isolated component tests); those callers are treated as
-// English so the primitives stay usable standalone. `useApp` calls its own
-// hooks before any throw, so hook order is stable across renders either way.
+// Read the active UI language reactively. Outside an `AppProvider` (e.g. in
+// isolated component tests) there is no language to read; those callers are
+// treated as English so the primitives stay usable standalone.
 function useLang(): Lang {
-  try {
-    return useApp().lang;
-  } catch {
-    return 'en';
-  }
+  return useAppOptional()?.lang ?? 'en';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

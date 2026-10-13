@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../app/store';
 import { ALL_ITEMS, navLabel, type RouteId } from '../app/nav';
+import { NavIcon } from './NavIcons';
 import { desktop, hasBackend } from '../services/desktop';
 import type { SearchResult } from '../domain/entities';
 
@@ -36,7 +37,6 @@ export function CommandPalette() {
   const [active, setActive] = useState(0);
   const [entities, setEntities] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   /** The element that had focus when the palette opened, so closing can hand it back. */
   const openerRef = useRef<HTMLElement | null>(null);
   /** Stable ids: `aria-controls` and `aria-activedescendant` are id references, and two palettes
@@ -169,7 +169,6 @@ export function CommandPalette() {
   return (
     <div className="palette-scrim" onClick={() => setPaletteOpen(false)}>
       <div
-        ref={panelRef}
         className="palette"
         role="dialog"
         aria-modal="true"
@@ -212,7 +211,7 @@ export function CommandPalette() {
               onMouseEnter={() => setActive(idx)}
               onClick={() => go(idx)}
             >
-              <span className="nav-ico">{item.icon}</span>
+              <span className="nav-ico"><NavIcon id={item.id} /></span>
               <span>{item.label}</span>
               <span className="top-spacer" />
               <span className="muted" style={{ fontSize: 11 }}>{t('palette.navigate')}</span>

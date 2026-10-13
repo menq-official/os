@@ -8,7 +8,7 @@
 // `ui.tsx` and `Shell.tsx`. That reasoning is wrong for a spec that mounts a component in
 // isolation: `CommandPalette` does not import `Shell`, so `layout.css` was absent, and the
 // unstyled-class detector reported `.nav-ico` and `.top-spacer` as defined by no rule. They are
-// defined — `layout.css:19` and `:27` — and have been all along.
+// defined — both in `layout.css` — and have been all along.
 //
 // In the running app there is no such thing as a page without `layout.css`: `main.tsx` mounts the
 // whole tree and `Shell` is always present. So the faithful thing to load is EVERYTHING the app

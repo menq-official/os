@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import {
   settleAnimations, invisibleContent, clobberedMotion, unstyledClasses, styledClassTokens,
-  reportUnstyled, contrastRatio, effectiveBackground,
+  reportUnstyled, contrastRatio, effectiveBackground, parseRgb,
 } from '../test/computedStyle';
 
 /**
@@ -67,6 +67,9 @@ async function openPalette() {
 
 const q = (sel: string) => document.querySelector(sel) as HTMLElement;
 
+/** The alpha of a computed colour. NaN for a form that cannot be read, and NaN fails `> 0`. */
+const alphaOf = (value: string): number => parseRgb(value)?.[3] ?? Number.NaN;
+
 describe('⌘K palette — the classes it renders are styled by something', () => {
   it('every class the palette applies is selected by at least one rule', async () => {
     // THE GATE THE REPOSITORY DID NOT HAVE. `check_c1_tokens.py` proves every custom-property
@@ -101,13 +104,28 @@ describe('⌘K palette — it behaves as a modal, not as block divs in normal fl
     expect(rect.height).toBeGreaterThanOrEqual(window.innerHeight);
   });
 
+  it('the alpha reader reads the alpha channel, and an unread colour is not a pass', () => {
+    // It took the last comma-separated number, which in a three-part `rgb()` is BLUE — opaque
+    // black read as alpha 0 — and it scored a colour it could not parse as opaque.
+    expect(alphaOf('rgb(0, 0, 0)')).toBe(1);
+    expect(alphaOf('rgb(10, 20, 30)')).toBe(1);
+    expect(alphaOf('rgba(0, 0, 0, 0.5)')).toBe(0.5);
+    expect(alphaOf('rgba(0, 0, 0, 0)')).toBe(0);
+    expect(alphaOf('color(srgb 0 0 0 / 0)')).toBeNaN();
+  });
+
   it('the scrim is a visible backdrop, not transparent', async () => {
     // Measured at b16e572 as `rgba(0, 0, 0, 0)` — present in the DOM, absent on screen.
     await openPalette();
     const bg = getComputedStyle(q('.palette-scrim')).backgroundColor;
-    const alpha = /rgba?\([^)]*?,\s*([\d.]+)\)$/.exec(bg);
-    expect(alpha ? parseFloat(alpha[1]) : 1,
+    expect(alphaOf(bg),
       `the scrim's background is ${bg} — a backdrop nobody can see`).toBeGreaterThan(0);
+  });
+
+  it('a page row\'s icon is drawn in the 18px slot, not at the svg default size', async () => {
+    await openPalette();
+    const box = q('.palette-item .nav-ico svg').getBoundingClientRect();
+    expect([box.width, box.height]).toEqual([18, 18]);
   });
 
   it('the page behind is not clickable while aria-modal says it is inert', async () => {

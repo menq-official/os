@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
 import { useCountUp, useEasedCountUp } from './ui';
@@ -50,9 +50,35 @@ describe('the count-up curves agree about what their flag means', () => {
       });
 
       it('never overshoots the true value', async () => {
-        render(<Probe hook={hook} target={7} animate />);
-        await waitFor(() => expect(screen.getByTestId('v').textContent).toBe('7'));
-        expect(Number(screen.getByTestId('v').textContent)).toBeLessThanOrEqual(7);
+        // EVERY rendered value is recorded. Waiting for the text to equal the target and then
+        // asserting `<= target` looked only once the count had arrived, and at a target of 7 a
+        // last frame 2% past the end rounds to 7 anyway.
+        //
+        // The one frame that can overshoot is one that lands PAST the end of the run, so that is
+        // the frame delivered here: each arrives ten seconds after the last, far beyond either
+        // duration. No clock is waited on and no midpoint is asserted.
+        let ts = performance.now();
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+          ts += 10_000;
+          const at = ts;
+          return window.setTimeout(() => cb(at), 0);
+        });
+        vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id));
+        try {
+          const target = 1000;
+          const seen: number[] = [];
+          function Recorder() {
+            const v = hook(target, true);
+            seen.push(v);
+            return <output data-testid="v">{v}</output>;
+          }
+          render(<Recorder />);
+          await waitFor(() => expect(Math.max(...seen)).toBeGreaterThanOrEqual(target));
+          expect(Math.max(...seen)).toBe(target);
+          expect(seen[seen.length - 1]).toBe(target);
+        } finally {
+          vi.unstubAllGlobals();
+        }
       });
 
       it('reports zero as zero rather than animating toward nothing', () => {

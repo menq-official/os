@@ -76,8 +76,8 @@ const LS = {
 };
 
 // The route a window opens on: the URL hash (`#tasks`) when present — so a reload or a
-// right-click "Open in new window" lands on the same view — else home. An unknown slug
-// is harmless (the router falls back to a generic view).
+// right-click "Open in new window" lands on the same view — else the last view, else home. An
+// unknown slug never becomes the route (see `routeFromHash`).
 const isRoute = (id: string): id is RouteId => ALL_ITEMS.some((i) => i.id === id);
 
 function routeFromHash(): RouteId {

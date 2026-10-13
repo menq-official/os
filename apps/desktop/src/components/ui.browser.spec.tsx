@@ -55,8 +55,6 @@ describe('the pill tone vocabulary is styled, not just applied', () => {
 
   it('each tone computes differently from the plain pill', async () => {
     // Stronger than "a rule exists": a rule that sets nothing visible would pass the check above.
-    // `off` is excluded because it is defined as an opacity change on the BASE pill, which is the
-    // one tone whose whole design is to look like the plain one, dimmed.
     const { container } = render(
       <>
         <span className="pill" id="plain">plain</span>

@@ -49,19 +49,11 @@ export function buildLinePath(
   pad = 6,
 ): string {
   if (values.length === 0) return '';
+  // One value is the case the two differ on: the line spans the strip, the dot sits at its centre.
   const mid = height / 2;
   if (values.length === 1) return `M 0 ${mid.toFixed(1)} L ${width.toFixed(1)} ${mid.toFixed(1)}`;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const stepX = width / (values.length - 1);
-  const usable = height - pad * 2;
-  return values
-    .map((v, i) => {
-      const x = i * stepX;
-      const y = pad + (1 - (v - min) / span) * usable;
-      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
+  return pointCoords(values, width, height, pad)
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
     .join(' ');
 }
 
@@ -83,7 +75,8 @@ export function ringPositions(n: number, radius = 34): { x: number; y: number }[
   });
 }
 
-/** Even-x / normalized-y coordinates for each value (marker dots, deterministic). */
+/** Even-x / normalized-y coordinates for each value (marker dots, and the vertices
+ *  `buildLinePath` joins). Equal values have no band to spread over and sit at mid-height. */
 export function pointCoords(
   values: number[],
   width: number,
@@ -95,11 +88,11 @@ export function pointCoords(
   if (values.length === 1) return [{ x: width / 2, y: mid }];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
+  const span = max - min;
   const stepX = width / (values.length - 1);
   const usable = height - pad * 2;
   return values.map((v, i) => ({
     x: i * stepX,
-    y: pad + (1 - (v - min) / span) * usable,
+    y: span === 0 ? mid : pad + (1 - (v - min) / span) * usable,
   }));
 }

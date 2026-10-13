@@ -149,8 +149,7 @@ function useMesh(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
       }
     }
 
-    // Throttle the ambient field to ~30fps. It drifts slowly, so half the frames
-    // are imperceptible — but at 60fps its constant repaint forces every
+    // Throttle the ambient field. At 60fps its constant repaint forces every
     // backdrop-filter surface above it to recompute its blur each frame, which is a
     // real typing-lag / GPU-load source. Cheaper backdrop, same look.
     let lastPaint = 0;
@@ -258,19 +257,21 @@ function usePointerLight() {
 /**
  * The power-on gate. On first launch the OS sits "cold"; pressing the mark (or
  * Space) runs the ignition cinematic — the mark boots, then `body.ignited`
- * lights the ambient layer and the gate lifts away. Persisted per browser so it
- * only greets on a true cold start. Reduced-motion ignites instantly.
+ * lights the ambient layer and the gate lifts away. Persisted per window session
+ * (sessionStorage) so it only greets on a cold start of that window.
+ * Reduced-motion ignites instantly.
  */
 export function useIgnition(): {
   ignited: boolean;
   gateLift: boolean;
   powerOn: () => void;
-  gateMarkRef: React.RefObject<HTMLSpanElement | null>;
+  /** True from the press until the gate is gone: the gate's mark wears `boot` while it is. */
+  booting: boolean;
 } {
   const persistedKey = 'brops.ignited';
   const [ignited, setIgnited] = useState(false);
   const [gateLift, setGateLift] = useState(false);
-  const gateMarkRef = useRef<HTMLSpanElement>(null);
+  const [booting, setBooting] = useState(false);
 
   // On a warm start (already ignited this session), skip the gate entirely.
   useEffect(() => {
@@ -302,7 +303,7 @@ export function useIgnition(): {
   const powerOn = React.useCallback(() => {
     if (gateLift) return;
     const reduced = prefersReducedMotion();
-    gateMarkRef.current?.classList.add('boot');
+    setBooting(true);
     window.setTimeout(
       () => {
         setGateLift(true);
@@ -331,7 +332,7 @@ export function useIgnition(): {
     return () => removeEventListener('keydown', onKey);
   }, [gateLift, powerOn]);
 
-  return { ignited, gateLift, powerOn, gateMarkRef };
+  return { ignited, gateLift, powerOn, booting };
 }
 
 /** The fixed ambient backdrop + shared SVG defs. Render once, near the app root. */

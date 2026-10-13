@@ -272,7 +272,7 @@ export function unstyledClasses(root: ParentNode, styled: Set<string>, exempt: S
 }
 
 /** `rgb()` / `rgba()` as computed by the browser → `[r, g, b, a]`. */
-function parseRgb(value: string): [number, number, number, number] | null {
+export function parseRgb(value: string): [number, number, number, number] | null {
   const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/
     .exec(value.trim());
   if (!m) return null;

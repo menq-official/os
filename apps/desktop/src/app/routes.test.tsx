@@ -56,17 +56,13 @@ describe('no page under features/ is unreachable', () => {
    *   Conversations  — the shared thread workspace Chat and GroupChat both render.
    *   delegationView — the delegation ledger Chat renders beside the thread.
    *   Onboarding     — the first-run overlay, mounted by App.tsx outside the stage.
-   *   registry       — the OLD route table, superseded by app/routes.tsx. It has since
-   *                    been DELETED, so the glob never yields it and this entry is inert;
-   *                    it is kept only so a stray re-add is caught by review, not by a
-   *                    surprise failure here.
    *   writeRecord    — the shared local-write-record reader (badge + panel + notice)
    *                    that Memory and Knowledge both render, so the two surfaces cannot
    *                    drift into saying different things about the same records. Not a
    *                    page: it has no route and mounts nothing on its own.
    */
   const SUB_COMPONENTS = new Set([
-    'Generic', 'Conversations', 'delegationView', 'Onboarding', 'registry', 'writeRecord',
+    'Generic', 'Conversations', 'delegationView', 'Onboarding', 'writeRecord',
   ]);
 
   const stems = Object.keys(pages)
@@ -80,6 +76,13 @@ describe('no page under features/ is unreachable', () => {
   it('every page is either routed or a declared sub-component', () => {
     const orphans = stems.filter((s) => !routedFiles.has(s) && !SUB_COMPONENTS.has(s));
     expect(orphans, 'give these a route in app/routes.tsx, or declare them as sub-components').toEqual([]);
+  });
+
+  it('every declared sub-component is a file that exists', () => {
+    // An exemption for a file that is gone exempts whatever is next given its name: a re-added
+    // `features/registry.tsx` passed the orphan check above for as long as its entry stayed.
+    const inert = [...SUB_COMPONENTS].filter((s) => !stems.includes(s));
+    expect(inert, 'these exemptions name no file; remove them').toEqual([]);
   });
 
   it('every routed id has a page file behind it', () => {

@@ -41,7 +41,7 @@ function setFieldValue(el: HTMLInputElement | HTMLTextAreaElement, next: string)
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { route, setRoute, theme, toggleTheme, lang, setLang, setPaletteOpen, t } = useApp();
-  const { gateLift, powerOn, gateMarkRef } = useIgnition();
+  const { gateLift, powerOn, booting } = useIgnition();
 
   // Real badge counts from the backend; absent (0) when no backend is connected.
   // Re-read on every navigation. With `[]` they were read once at mount, and the Shell never
@@ -169,14 +169,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div id="gate" role="dialog" aria-label={t('app.name')}>
           <button type="button" className="lockup" onClick={powerOn}>
             <b>Br</b>
-            <Mark state="" size={0} style={{ width: '1em', height: '1em' }} />
+            {/* `.mark.boot svg` is the boot glow the 900 ms before the gate lifts is for */}
+            <Mark state={booting ? 'boot' : ''} size={0} style={{ width: '1em', height: '1em' }} />
             <b>PS</b>
           </button>
           <span className="hint" aria-hidden="true">
             <span className="kbd">Space</span>
           </span>
-          {/* the gate's boot animation is applied to this ref by useIgnition */}
-          <span ref={gateMarkRef} style={{ display: 'none' }} />
         </div>
       )}
 

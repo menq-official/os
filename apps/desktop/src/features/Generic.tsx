@@ -13,7 +13,7 @@ export function Generic({ route }: { route: RouteId }) {
     <>
       <PageHeader title={item ? t(item.labelKey) : String(route)} subtitle={item ? t(item.subtitleKey) : ''} />
       <Panel>
-        <EmptyState glyph={item?.icon ?? '◍'} title={t('generic.title')} hint={t('generic.hint')} />
+        <EmptyState title={t('generic.title')} hint={t('generic.hint')} />
       </Panel>
     </>
   );

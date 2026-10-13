@@ -16,7 +16,6 @@ export interface NavItem {
   id: RouteId;
   labelKey: DictKey;
   subtitleKey: DictKey;
-  icon: string;
   /** Inline trilingual copy owned by the page itself. When present it WINS over
    *  `labelKey` — see `navLabel`. Used by pages that keep all of their copy in a
    *  co-located `*.strings.ts` catalog instead of the shared dictionaries. */
@@ -57,51 +56,50 @@ export const NAV: NavGroup[] = [
   {
     labelKey: 'nav.group.core',
     items: [
-      { id: 'home', labelKey: 'nav.home', subtitleKey: 'home.subtitle', icon: '◎' },
-      { id: 'command', labelKey: 'nav.command', subtitleKey: 'command.subtitle', icon: '⌘' },
-      { id: 'chat', labelKey: 'nav.chat', subtitleKey: 'chat.subtitle', icon: '💬' },
-      { id: 'groupChat', labelKey: 'nav.groupChat', subtitleKey: 'groupChat.subtitle', icon: '👥' },
-      { id: 'projects', labelKey: 'nav.projects', subtitleKey: 'projects.subtitle', icon: '🗂' },
-      { id: 'tasks', labelKey: 'nav.tasks', subtitleKey: 'tasks.subtitle', icon: '✓' },
-      { id: 'agents', labelKey: 'nav.agents', subtitleKey: 'agents.subtitle', icon: '🤖' },
+      { id: 'home', labelKey: 'nav.home', subtitleKey: 'home.subtitle' },
+      { id: 'command', labelKey: 'nav.command', subtitleKey: 'command.subtitle' },
+      { id: 'chat', labelKey: 'nav.chat', subtitleKey: 'chat.subtitle' },
+      { id: 'groupChat', labelKey: 'nav.groupChat', subtitleKey: 'groupChat.subtitle' },
+      { id: 'projects', labelKey: 'nav.projects', subtitleKey: 'projects.subtitle' },
+      { id: 'tasks', labelKey: 'nav.tasks', subtitleKey: 'tasks.subtitle' },
+      { id: 'agents', labelKey: 'nav.agents', subtitleKey: 'agents.subtitle' },
     ],
   },
   {
     labelKey: 'nav.group.intelligence',
     items: [
-      { id: 'knowledge', labelKey: 'nav.knowledge', subtitleKey: 'knowledge.subtitle', icon: '📚' },
-      { id: 'memory', labelKey: 'nav.memory', subtitleKey: 'memory.subtitle', icon: '🧠' },
-      { id: 'decisions', labelKey: 'nav.decisions', subtitleKey: 'decisions.subtitle', icon: '⚖' },
+      { id: 'knowledge', labelKey: 'nav.knowledge', subtitleKey: 'knowledge.subtitle' },
+      { id: 'memory', labelKey: 'nav.memory', subtitleKey: 'memory.subtitle' },
+      { id: 'decisions', labelKey: 'nav.decisions', subtitleKey: 'decisions.subtitle' },
       {
         id: 'bridge',
         labelKey: BRIDGE_LABEL_KEY,
         subtitleKey: BRIDGE_SUBTITLE_KEY,
-        icon: '🔗',
         labelCopy: BRIDGE_STR.panelTitle,
         subtitleCopy: BRIDGE_STR.panelEyebrow,
       },
-      { id: 'research', labelKey: 'nav.research', subtitleKey: 'research.subtitle', icon: '⌖' },
-      { id: 'library', labelKey: 'nav.library', subtitleKey: 'library.subtitle', icon: '❑' },
+      { id: 'research', labelKey: 'nav.research', subtitleKey: 'research.subtitle' },
+      { id: 'library', labelKey: 'nav.library', subtitleKey: 'library.subtitle' },
     ],
   },
   {
     labelKey: 'nav.group.operations',
     items: [
-      { id: 'calendar', labelKey: 'nav.calendar', subtitleKey: 'calendar.subtitle', icon: '📅' },
-      { id: 'automations', labelKey: 'nav.automations', subtitleKey: 'automations.subtitle', icon: '⚙' },
-      { id: 'approvals', labelKey: 'nav.approvals', subtitleKey: 'approvals.subtitle', icon: '🛡' },
-      { id: 'activity', labelKey: 'nav.activity', subtitleKey: 'activity.subtitle', icon: '📈' },
-      { id: 'notifications', labelKey: 'nav.notifications', subtitleKey: 'notifications.subtitle', icon: '🔔' },
+      { id: 'calendar', labelKey: 'nav.calendar', subtitleKey: 'calendar.subtitle' },
+      { id: 'automations', labelKey: 'nav.automations', subtitleKey: 'automations.subtitle' },
+      { id: 'approvals', labelKey: 'nav.approvals', subtitleKey: 'approvals.subtitle' },
+      { id: 'activity', labelKey: 'nav.activity', subtitleKey: 'activity.subtitle' },
+      { id: 'notifications', labelKey: 'nav.notifications', subtitleKey: 'notifications.subtitle' },
     ],
   },
   {
     labelKey: 'nav.group.system',
     items: [
-      { id: 'files', labelKey: 'nav.files', subtitleKey: 'files.subtitle', icon: '📁' },
-      { id: 'integrations', labelKey: 'nav.integrations', subtitleKey: 'integrations.subtitle', icon: '🔌' },
-      { id: 'analytics', labelKey: 'nav.analytics', subtitleKey: 'analytics.subtitle', icon: '📊' },
-      { id: 'security', labelKey: 'nav.security', subtitleKey: 'security.subtitle', icon: '🔒' },
-      { id: 'settings', labelKey: 'nav.settings', subtitleKey: 'settings.subtitle', icon: '⚙' },
+      { id: 'files', labelKey: 'nav.files', subtitleKey: 'files.subtitle' },
+      { id: 'integrations', labelKey: 'nav.integrations', subtitleKey: 'integrations.subtitle' },
+      { id: 'analytics', labelKey: 'nav.analytics', subtitleKey: 'analytics.subtitle' },
+      { id: 'security', labelKey: 'nav.security', subtitleKey: 'security.subtitle' },
+      { id: 'settings', labelKey: 'nav.settings', subtitleKey: 'settings.subtitle' },
     ],
   },
 ];

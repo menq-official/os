@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { Beatline, StripChart, BarChart, type StripPoint, type BarDatum } from './Chart';
 import { buildECG, buildLinePath, pointCoords, ringPositions, STRIP_W, STRIP_H } from './geometry';
+import { STR } from './Chart.strings';
+import { AppProvider } from '../../app/store';
 
 /**
  * Geometry is pure and deterministic, so it is asserted directly; the Beatline
@@ -26,6 +28,22 @@ describe('geometry', () => {
     const path = buildLinePath([0, 10], 100, 50, 6);
     // two points: x at 0 and 100; min(0)->bottom band, max(10)->top band
     expect(path).toBe('M 0.0 44.0 L 100.0 6.0');
+  });
+
+  it('a flat series of several points is a mid-height line, and its dots sit on it', () => {
+    // `span = max - min || 1` put every equal value at `height - pad`: the bottom edge.
+    expect(buildLinePath([5, 5], 100, 50, 6)).toBe('M 0.0 25.0 L 100.0 25.0');
+    expect(pointCoords([5, 5, 5], 100, 50, 6)).toEqual([
+      { x: 0, y: 25 }, { x: 50, y: 25 }, { x: 100, y: 25 },
+    ]);
+  });
+
+  it('the line passes through the dots: one normalisation, not two', () => {
+    const values = [3, 9, 1, 4];
+    const fromDots = pointCoords(values, 120, 40, 4)
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+      .join(' ');
+    expect(buildLinePath(values, 120, 40, 4)).toBe(fromDots);
   });
 
   it('pointCoords returns one coord per value', () => {
@@ -70,6 +88,21 @@ describe('Beatline', () => {
     // auto summary names the range + latest value
     expect(screen.getByText(/3 points/)).toBeInTheDocument();
     expect(screen.getByText(/Latest 5/)).toBeInTheDocument();
+  });
+
+  it('speaks the provider\'s language when there is one, and English when there is none', () => {
+    // Both halves of `useLang`. Every other chart test renders without a provider, so a
+    // `useLang` that returned 'en' unconditionally passed the whole suite.
+    localStorage.setItem('brops.lang', JSON.stringify('hy'));
+    try {
+      const { unmount } = render(<AppProvider><Beatline data={[]} caption="Empty" /></AppProvider>);
+      expect(screen.getByText(STR.emptyTitle.hy)).toBeInTheDocument();
+      unmount();
+    } finally {
+      localStorage.removeItem('brops.lang');
+    }
+    render(<Beatline data={[]} caption="Empty" />);
+    expect(screen.getByText(STR.emptyTitle.en)).toBeInTheDocument();
   });
 
   it('provides a data-table fallback with a row per point', () => {

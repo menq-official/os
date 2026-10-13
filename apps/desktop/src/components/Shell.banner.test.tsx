@@ -271,3 +271,28 @@ describe('Shell and ErrorState — no English left in a translated page', () => 
     }
   });
 });
+
+// The power-on gate. Pressing the lockup starts a 900 ms wait before the gate lifts, and that wait
+// exists for one thing: the mark's boot glow, `.mark.boot svg` in aios.css. The class used to be
+// added to a hidden, empty <span> beside the lockup, so the wait ran and nothing glowed.
+describe('Shell — the power-on gate boots the mark it shows', () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => document.body.classList.remove('ignited'));
+
+  it('pressing the lockup puts `boot` on the visible mark, the one holding the svg', () => {
+    const { container } = render(<AppProvider><Shell><p>stage</p></Shell></AppProvider>);
+    const lockup = container.querySelector<HTMLButtonElement>('#gate .lockup')!;
+    const mark = lockup.querySelector('.mark')!;
+    expect(mark.querySelector('svg')).not.toBeNull();
+    expect(mark.classList.contains('boot')).toBe(false);
+
+    fireEvent.click(lockup);
+
+    // What `.mark.boot svg` selects: an element that is a .mark, is .boot, and contains an svg.
+    expect(container.querySelector('#gate .mark.boot svg')).not.toBeNull();
+    // And nothing else in the gate carries the class to no effect.
+    for (const el of Array.from(container.querySelectorAll('#gate .boot'))) {
+      expect(el.matches('.mark') && el.querySelector('svg') !== null, el.outerHTML).toBe(true);
+    }
+  });
+});

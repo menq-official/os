@@ -15,9 +15,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   Channel: class {},
 }));
 
-import { AppProvider } from '../app/store';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { AppProvider, useApp } from '../app/store';
 import { ToastProvider } from './toast';
 import { CommandPalette } from './CommandPalette';
+import { NavIcon } from './NavIcons';
 import { ALL_ITEMS } from '../app/nav';
 
 /**
@@ -144,6 +146,20 @@ describe('CommandPalette — the listbox says which row Enter is aimed at', () =
     expect(screen.getAllByRole('option')).toHaveLength(ALL_ITEMS.length);
   });
 
+  it('each page row carries the icon the sidebar shows for that page', async () => {
+    // Two tables used to answer "what does this page look like": an emoji per item in nav.ts for
+    // the palette, an SVG per RouteId in NavIcons.tsx for the sidebar.
+    const user = userEvent.setup();
+    setup();
+    await openWithShortcut(user);
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(ALL_ITEMS.length);
+    ALL_ITEMS.forEach((item, idx) => {
+      expect(options[idx].querySelector('.nav-ico')!.innerHTML, item.id)
+        .toBe(renderToStaticMarkup(<NavIcon id={item.id} />));
+    });
+  });
+
   it('names the active row with aria-activedescendant, and moves it with the arrows', async () => {
     const user = userEvent.setup();
     setup();
@@ -258,11 +274,18 @@ describe('CommandPalette — entity search over the IPC boundary', () => {
     return { pending, searches };
   }
 
+  /** Reads the deep-link target off the store: `openEntity` sets it, `setRoute` clears it. */
+  function FocusProbe() {
+    const { focus } = useApp();
+    return <output data-testid="focus">{JSON.stringify(focus)}</output>;
+  }
+
   function mount() {
     return render(
       <AppProvider>
         <ToastProvider>
           <CommandPalette />
+          <FocusProbe />
         </ToastProvider>
       </AppProvider>,
     );
@@ -327,5 +350,7 @@ describe('CommandPalette — entity search over the IPC boundary', () => {
     await user.keyboard('{Enter}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(window.location.hash).toContain('tasks');
+    // The route alone is what `setRoute('tasks')` would also produce. The entity is the difference.
+    expect(JSON.parse(screen.getByTestId('focus').textContent!)).toEqual({ kind: 'task', id: 'id-Deep link' });
   });
 });

@@ -1,42 +1,14 @@
-.shell { display: grid; grid-template-columns: 244px 1fr; height: 100%; }
-
-.sidebar {
-  background: var(--brops-surface); border-right: 1px solid var(--brops-border);
-  display: flex; flex-direction: column; overflow-y: auto; padding: var(--menq-space-4) var(--menq-space-3);
-}
 .nav { display: flex; flex-direction: column; }
-/* Brand block: the responsive <Mark> primitive supplies the glyph + wordmark and
-   collapses its own text at ≤900px (`.mark--responsive`), so only the padding
-   wrapper lives here now. */
-.brand { display: flex; align-items: center; gap: var(--menq-space-3); padding: var(--menq-space-2) var(--menq-space-2) var(--menq-space-4); }
-
-.nav-group-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--brops-muted);
-  padding: var(--menq-space-4) var(--menq-space-2) var(--menq-space-2); }
-.nav-item { display: flex; align-items: center; gap: var(--menq-space-3); width: 100%; text-align: left;
-  padding: 7px 10px; border-radius: var(--menq-radius-md); color: var(--brops-text); border: none; background: transparent; }
-.nav-item:hover { background: var(--menq-color-hover); }
-.nav-item.active { background: var(--menq-color-selected); color: var(--brops-accent); font-weight: 600; }
+/* The brand lockup (`.brand`) is styled in theme/aios.css; a second rule for it lived here. */
 .nav-ico { width: 18px; text-align: center; opacity: 0.9; }
 
-.main { display: flex; flex-direction: column; min-width: 0; height: 100%; }
-.topbar { display: flex; align-items: center; gap: var(--menq-space-3); padding: var(--menq-space-3) var(--menq-space-5);
-  border-bottom: 1px solid var(--brops-border); background: var(--brops-bg); }
-.searchbtn { flex: 1; max-width: 460px; display: flex; align-items: center; gap: var(--menq-space-3);
-  padding: 8px 12px; border-radius: var(--menq-radius-md); border: 1px solid var(--brops-border);
-  background: var(--brops-surface); color: var(--brops-muted); }
 .top-spacer { flex: 1; }
 .dock { display: flex; align-items: center; gap: var(--menq-space-3); }
 .icon-btn { width: 34px; height: 34px; border-radius: var(--menq-radius-md); border: 1px solid var(--brops-border);
   background: var(--brops-surface); display: grid; place-items: center; position: relative; }
 .icon-btn:hover { background: var(--menq-color-hover); }
-.lang-select, .content select { background: var(--brops-surface); color: var(--brops-text);
+.lang-select { background: var(--brops-surface); color: var(--brops-text);
   border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md); padding: 7px 9px; }
-
-.content { padding: var(--menq-space-5); overflow-y: auto; flex: 1; }
-.content-inner { max-width: 1180px; margin: 0 auto; }
-
-.proto-banner { font-size: 12px; color: var(--brops-muted); background: var(--menq-color-hover);
-  border: 1px dashed var(--brops-border); border-radius: var(--menq-radius-md); padding: 6px 12px; margin-bottom: var(--menq-space-4); }
 
 /* --- accessibility --------------------------------------------------------
    Skip link: off-screen until focused, then slides into the top-left corner. */
@@ -49,17 +21,10 @@
 /* Keyboard-only focus ring on every interactive surface. :focus-visible keeps
    the ring off mouse clicks while showing it for Tab/arrow navigation. */
 .skip-link:focus-visible,
-.nav-item:focus-visible,
-.searchbtn:focus-visible,
 .icon-btn:focus-visible,
-.lang-select:focus-visible,
-.content :focus-visible {
+.lang-select:focus-visible {
   outline: 2px solid var(--brops-accent); outline-offset: 2px;
 }
-
-/* The main region is a programmatic focus target for the skip link (tabIndex
-   -1); it should not paint a persistent outline when focused that way. */
-.content:focus { outline: none; }
 
 /* --- ⌘K command palette ----------------------------------------------------
    RESTORED. These rules lived here until `0c08dd8` (PR #47, "UI refreshes",
@@ -79,9 +44,9 @@
    rule here turns that suite red instead of shipping silently.
 
    Two of them are load-bearing beyond appearance. The scrim is what makes
-   `aria-modal="true"` (CommandPalette.tsx:173) true for a sighted user: without
-   it the page behind stays clickable and the attribute is a promise kept only to
-   assistive technology. And `.palette-item.active` is the only thing a sighted
+   `aria-modal="true"` (on the `.palette` dialog in CommandPalette.tsx) true for a
+   sighted user: without it the page behind stays clickable and the attribute is a
+   promise kept only to assistive technology. And `.palette-item.active` is the only thing a sighted
    keyboard user has to follow the cursor the arrow keys move. */
 .palette-scrim {
   position: fixed; inset: 0; z-index: 60;
@@ -143,11 +108,4 @@
   border-left-color: var(--menq-color-accent);
   color: var(--brops-text);
   font-weight: 600;
-}
-
-@media (max-width: 900px) {
-  .shell { grid-template-columns: 64px 1fr; }
-  /* The brand wordmark collapses via `.mark--responsive .mark-text` in ui.css. */
-  .nav-group-label, .nav-item span:not(.nav-ico) { display: none; }
-  .nav-item { justify-content: center; }
 }

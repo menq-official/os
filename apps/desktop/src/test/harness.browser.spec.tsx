@@ -162,6 +162,36 @@ describe('each detector fires on a deliberate defect', () => {
     expect(clobberedMotion(container)).toEqual([]);
   });
 
+  it('the brand lockup is styled by one rule, the one in aios.css', () => {
+    // `layout.css` carried a second `.brand` at the same specificity and later in the cascade:
+    // `display: flex`, a 12px gap and its own padding. "Br", the mark and "PS" are one word, and
+    // they were drawn with a word space between each part.
+    const { container } = render(
+      <a className="brand" href="#home"><b>Br</b><span className="mark" /><b>PS</b></a>,
+    );
+    const brand = getComputedStyle(container.querySelector('.brand')!);
+    expect(brand.display).toBe('inline-flex');
+    expect(brand.fontSize).toBe('26px');
+    expect(parseFloat(brand.columnGap)).toBeCloseTo(0.52, 2); // .02em of 26px
+    expect(brand.padding).toBe('4px 10px 14px');
+  });
+
+  it('the no-backend banner is styled by the stage rule alone', () => {
+    // `.stage > .proto-banner` in aios-shell.css sets every property a second, weaker rule in
+    // `layout.css` also set. These values are that rule's, with or without the weaker one.
+    const { container } = render(
+      <main className="stage"><div className="proto-banner">offline</div></main>,
+    );
+    const banner = getComputedStyle(container.querySelector('.proto-banner')!);
+    expect(banner.padding).toBe('7px 13px');
+    expect(banner.borderTopStyle).toBe('solid');
+    expect(banner.marginBottom).toBe('18px');
+    expect(banner.fontSize).toBe(getComputedStyle(document.documentElement).getPropertyValue('--t-micro').trim());
+    expect(banner.borderTopLeftRadius).not.toBe(
+      getComputedStyle(document.documentElement).getPropertyValue('--menq-radius-md').trim(),
+    );
+  });
+
   it('describeEl gives a path someone can find in the source', () => {
     const { container } = render(<div className="outer"><p id="x" className="a b">t</p></div>);
     expect(describeEl(container.querySelector('#x')!)).toBe('div.outer > p#x.a.b');

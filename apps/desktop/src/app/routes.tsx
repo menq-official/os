@@ -223,6 +223,10 @@ export function RouteView({ route }: { route: RouteId }) {
     <div key={route} className="stage-enter">
       <RouteErrorBoundary route={route}>
         <React.Suspense fallback={<div className="screen-loading" aria-busy="true" />}>
+          {/* Defence in depth only. SCREENS is total over RouteId and the store validates every
+              way a route is set (`routeFromHash`, `setRoute`, `openEntity`), so nothing in the app
+              reaches `Generic`; a test does, by casting an unknown id. It stays because that state
+              WAS reached once, through a cast over a backend string (A-08, see store.tsx). */}
           {Page ? <Page /> : <Generic route={route} />}
           <RouteFocus route={route} enabled={navigations.current > 0} />
         </React.Suspense>
