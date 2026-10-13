@@ -1218,7 +1218,7 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(rows.len(), 2, "the tick writes automation.ran and task.created: {rows:?}");
-        for (event, kind, id) in &rows {
+        for (event, kind, _id) in &rows {
             assert_ne!(kind, "user", "{event} was attributed to a human with nobody present");
         }
         let ran = rows.iter().find(|r| r.0 == "automation.ran").unwrap();
@@ -1227,14 +1227,55 @@ mod tests {
         assert_eq!((made.1.as_str(), made.2.as_str()), ("system", "automation"));
     }
 
+    /// Cockpit read R3-0878. A `user` message's audit actor was `(role, author)`, and for a
+    /// message typed in the window the author is whatever the renderer sent — the localised
+    /// word for "You", or anything else. So the evidence table named the actor by a string the
+    /// renderer chose. This layer can establish that a human drove the cockpit and never which
+    /// human (T-052), so a user message is attributed to the local operator; the author stays
+    /// what it is on the message itself. An agent's author is minted server-side and is kept.
+    #[test]
+    fn a_user_messages_audit_actor_is_the_local_operator_whatever_author_it_carries() {
+        let c = conn();
+        let conv = repo::chat::create_conversation(&c, "direct", "t", crate::repo::audit::Actor::local_operator()).unwrap();
+        for author in ["You", "Դու", "root", "Bro", "scheduler"] {
+            repo::chat::post_message(&c, NewMessage { conversation_id: conv.id.clone(), role: "user".into(), author: author.into(), body: "x".into() }).unwrap();
+        }
+        repo::chat::post_message(&c, NewMessage { conversation_id: conv.id.clone(), role: "agent".into(), author: "Bro".into(), body: "y".into() }).unwrap();
+
+        let rows: Vec<(String, String)> = c
+            .prepare("SELECT actor_type, actor_id FROM audit_events WHERE event_type = 'message.posted' ORDER BY rowid")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(rows.len(), 6);
+        for row in &rows[..5] {
+            assert_eq!(
+                (row.0.as_str(), row.1.as_str()),
+                ("user", crate::repo::audit::LOCAL_OPERATOR),
+                "a user message was attributed to an author the renderer supplied"
+            );
+        }
+        assert_eq!((rows[5].0.as_str(), rows[5].1.as_str()), ("agent", "Bro"));
+        // The message keeps the author it was posted with: this is about the EVIDENCE row.
+        let authors: Vec<String> = c
+            .prepare("SELECT author FROM messages WHERE role = 'user' ORDER BY rowid")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(authors, ["You", "Դու", "root", "Bro", "scheduler"]);
+    }
+
     /// Every audit row the SEED causes through `repo::audit::record` is attributed to
     /// the seed, and nothing the product writes about itself names a person.
     ///
-    /// The one remaining `"gev"` in a seeded audit row is a demo CHAT MESSAGE, whose
-    /// audit actor is derived from the message's own role and author -- the shape the
-    /// rule at `repo::audit::record` asks for, applied to a fictional conversation. That
-    /// is content, not an attribution this layer invented, so it is asserted here rather
-    /// than quietly excluded.
+    /// No seeded audit row names a person at all. One used to: a demo CHAT MESSAGE posted
+    /// as `user` by an author spelled `gev`, whose audit actor was then that author. A user
+    /// message is attributed to the local operator now (R3-0878), so the exception this
+    /// test carried — "outside a demo message" — has nothing left to cover and is gone.
     #[test]
     fn every_audited_seed_write_is_attributed_to_the_seed_and_not_to_a_person() {
         let c = conn();
@@ -1249,10 +1290,7 @@ mod tests {
 
         let personal: Vec<&(String, String, String)> =
             rows.iter().filter(|r| r.2 == "gev").collect();
-        assert!(
-            personal.iter().all(|r| r.0 == "message.posted"),
-            "a seeded audit row names a person outside a demo message: {personal:?}"
-        );
+        assert!(personal.is_empty(), "a seeded audit row names a person: {personal:?}");
 
         // Every event type the seed reaches ONLY through `repo::audit::record` -- i.e.
         // excluding the types the fabricated activity-ECG block also inserts directly --

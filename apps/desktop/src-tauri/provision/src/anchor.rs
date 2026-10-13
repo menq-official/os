@@ -1096,8 +1096,70 @@ impl PosixOwnership {
 /// open a file somebody else made), mode `0600` stated at creation, and `fstat` on the open
 /// HANDLE rather than a second look at the path. `AlreadyExists` is retried with a fresh name
 /// and then refused — never worked around by using whatever was there.
+///
+/// # And the fourth: where the probe file is made (cockpit read R3-0871)
+///
+/// "A file this process creates is owned by its effective uid" is true of an ordinary local
+/// filesystem and is not a property of files in general: a squashing network mount, a FUSE
+/// mount, or one mounted with a fixed `uid=` reports an owner of ITS choosing. The probe
+/// directory is `$TMPDIR`, which the caller's environment names. So the number that decides
+/// whether the anchor is genuine was the owner of a file in a directory the caller picked.
+///
+/// Where the kernel states the uid directly it is read from there, and `$TMPDIR` is not
+/// consulted at all: `/proc/self/status` has a `Uid:` line whose second field is the effective
+/// uid. The probe remains for a POSIX host with no procfs. A status file that IS there and
+/// does not state a uid is a refusal, not a reason to fall back — that is not what an absent
+/// procfs looks like.
 #[cfg(not(windows))]
 pub fn posix_euid() -> Result<u32, ProvisionError> {
+    euid_from(std::fs::read_to_string(PROC_SELF_STATUS).ok(), probe_euid)
+}
+
+/// The kernel's account of this process, on a host with procfs.
+#[cfg(not(windows))]
+const PROC_SELF_STATUS: &str = "/proc/self/status";
+
+/// The effective uid in a `/proc/<pid>/status` document: the SECOND number on the `Uid:` line,
+/// which reads `Uid:\t<real>\t<effective>\t<saved>\t<filesystem>`. `None` unless that line is
+/// there exactly once with four numbers on it.
+pub fn euid_from_proc_status(status: &str) -> Option<u32> {
+    let mut lines = status.lines().filter_map(|line| line.strip_prefix("Uid:"));
+    let (first, second) = (lines.next()?, lines.next());
+    if second.is_some() {
+        return None;
+    }
+    let fields: Vec<&str> = first.split_whitespace().collect();
+    if fields.len() != 4 || fields.iter().any(|f| f.parse::<u32>().is_err()) {
+        return None;
+    }
+    fields[1].parse().ok()
+}
+
+/// Decide the effective uid from what the kernel said, falling back to `probe` ONLY when there
+/// was no status document at all. Split from [`posix_euid`] so the rule is tested without a
+/// second process: with a status in hand the probe must not even be called.
+pub fn euid_from(
+    status: Option<String>,
+    probe: impl FnOnce() -> Result<u32, ProvisionError>,
+) -> Result<u32, ProvisionError> {
+    match status {
+        None => probe(),
+        Some(text) => euid_from_proc_status(&text).ok_or_else(|| ProvisionError::Custody {
+            path: PathBuf::from("/proc/self/status"),
+            what: "this process's effective uid could not be measured: the kernel's status \
+                   document is present and does not state one `Uid:` line of four numbers. \
+                   Refusing rather than falling back to the owner of a file in the temporary \
+                   directory — that number decides whether the anchor is genuine"
+                .to_string(),
+            remedy: CUSTODY_REMEDY.to_string(),
+        }),
+    }
+}
+
+/// The probe-file measurement: the owner of a file this process creates in the temporary
+/// directory. Used only where there is no procfs ([`posix_euid`]).
+#[cfg(not(windows))]
+fn probe_euid() -> Result<u32, ProvisionError> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let dir = std::env::temp_dir();
     for _ in 0..8 {

@@ -61,27 +61,36 @@ pub struct FileContent {
 /// falling back to `USERPROFILE` so the default workspace resolves on Windows,
 /// where `HOME` is normally unset.
 fn home_dir() -> Option<PathBuf> {
-    if let Some(h) = std::env::var_os("HOME") {
-        if !h.is_empty() {
-            return Some(PathBuf::from(h));
-        }
-    }
-    if let Some(h) = std::env::var_os("USERPROFILE") {
-        if !h.is_empty() {
-            return Some(PathBuf::from(h));
-        }
-    }
-    None
+    home_candidates().into_iter().next()
+}
+
+/// Every directory that is a home for this process: `HOME`, then `USERPROFILE`, each if set and
+/// non-empty. Both can be set and differ — a Windows machine whose shell exports `HOME` — and
+/// each is then a profile the files root must not be (cockpit read R3-0879).
+fn home_candidates() -> Vec<PathBuf> {
+    home_candidates_from(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
+}
+
+/// [`home_candidates`] over the two values, so the rule is tested without touching the
+/// process environment.
+fn home_candidates_from(
+    home: Option<std::ffi::OsString>,
+    profile: Option<std::ffi::OsString>,
+) -> Vec<PathBuf> {
+    [home, profile].into_iter().flatten().filter(|v| !v.is_empty()).map(PathBuf::from).collect()
 }
 
 /// Refuse a files root that resolves to a filesystem root (`/`, `C:\`) or to the
 /// home directory itself — either would put the whole disk/profile (SSH keys,
 /// browser data, shell rc) one `confine` check away, leaving only the incomplete
 /// `is_sensitive` denylist as a guard. `canon` must already be canonicalized;
-/// `home` (if known) is canonicalized here before comparing, so `\\?\`-prefix or
+/// each of `homes` is canonicalized here before comparing, so `\\?\`-prefix or
 /// symlink differences can't dodge the check. Fails closed: an unsafe root is an
 /// error, never silently widened or narrowed.
-fn reject_unsafe_root(canon: &Path, home: Option<&Path>) -> Result<(), String> {
+///
+/// `homes` is EVERY candidate ([`home_candidates`]), not the first one found: the root is
+/// refused if it is any of them.
+fn reject_unsafe_root(canon: &Path, homes: &[PathBuf]) -> Result<(), String> {
     if canon.parent().is_none() {
         eprintln!(
             "[brops] files: BROPS_FILES_ROOT resolves to a filesystem root ({}) — refused",
@@ -89,7 +98,7 @@ fn reject_unsafe_root(canon: &Path, home: Option<&Path>) -> Result<(), String> {
         );
         return Err("the configured files root is not allowed".to_string());
     }
-    if let Some(home) = home {
+    for home in homes {
         if let Ok(home_canon) = fs::canonicalize(home) {
             if canon == home_canon {
                 eprintln!(
@@ -128,7 +137,7 @@ fn files_root() -> Result<PathBuf, String> {
     })?;
     // Applied to the default too (harmless — `~/BroPS` can never trip it), so the
     // clamp cannot be bypassed by any code path.
-    reject_unsafe_root(&canon, home_dir().as_deref())?;
+    reject_unsafe_root(&canon, &home_candidates())?;
     Ok(canon)
 }
 
@@ -525,20 +534,52 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// Cockpit read R3-0879. The clamp was told ONE home — `HOME` if set, else `USERPROFILE` —
+    /// so on a machine where both are set and differ (a Windows box with a `HOME` exported
+    /// by a shell) a files root equal to the real profile was compared against the other
+    /// directory and passed. Every candidate is a home.
+    #[test]
+    fn the_files_root_may_not_be_any_directory_that_is_a_home() {
+        let base = scratch("twohomes");
+        let (shell_home, profile) = (base.join("shell-home"), base.join("profile"));
+        fs::create_dir_all(&shell_home).unwrap();
+        fs::create_dir_all(profile.join("workspace")).unwrap();
+        let homes = [shell_home.clone(), profile.clone()];
+        for home in &homes {
+            assert!(
+                reject_unsafe_root(&fs::canonicalize(home).unwrap(), &homes).is_err(),
+                "{} is a home directory and was accepted as the files root",
+                home.display()
+            );
+        }
+        // A directory inside a home is still a legal root, and no home at all refuses nothing.
+        let inside = fs::canonicalize(profile.join("workspace")).unwrap();
+        assert!(reject_unsafe_root(&inside, &homes).is_ok());
+        assert!(reject_unsafe_root(&fs::canonicalize(&profile).unwrap(), &[]).is_ok());
+        // The candidates are both variables, in that order, and an empty one is not a home.
+        assert_eq!(
+            home_candidates_from(Some("/h".into()), Some("C:\\Users\\u".into())),
+            [PathBuf::from("/h"), PathBuf::from("C:\\Users\\u")]
+        );
+        assert_eq!(home_candidates_from(Some("".into()), Some("/p".into())), [PathBuf::from("/p")]);
+        assert_eq!(home_candidates_from(None, None), Vec::<PathBuf>::new());
+        let _ = fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn files_root_clamp_rejects_fs_root_and_home() {
         let base = scratch("rootclamp");
         let canon = fs::canonicalize(&base).unwrap();
         // a filesystem root ("/", "C:\") is refused
         let fs_root = fs::canonicalize(if cfg!(windows) { "C:\\" } else { "/" }).unwrap();
-        assert!(reject_unsafe_root(&fs_root, None).is_err(), "a filesystem root must be refused");
+        assert!(reject_unsafe_root(&fs_root, &[]).is_err(), "a filesystem root must be refused");
         // the home directory itself is refused (base standing in for $HOME)
-        assert!(reject_unsafe_root(&canon, Some(&base)).is_err(), "the home dir itself must be refused");
+        assert!(reject_unsafe_root(&canon, &[base.clone()]).is_err(), "the home dir itself must be refused");
         // a normal subdirectory is fine
-        assert!(reject_unsafe_root(&canon, None).is_ok());
+        assert!(reject_unsafe_root(&canon, &[]).is_ok());
         let sub = base.join("ws");
         fs::create_dir_all(&sub).unwrap();
-        assert!(reject_unsafe_root(&fs::canonicalize(&sub).unwrap(), Some(&base)).is_ok());
+        assert!(reject_unsafe_root(&fs::canonicalize(&sub).unwrap(), &[base.clone()]).is_ok());
         let _ = fs::remove_dir_all(&base);
     }
 

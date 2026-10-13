@@ -599,6 +599,38 @@ fn a_posix_anchor_no_ancestor_of_which_the_reader_owns_is_out_of_reach() {
     assert!(mechanism.contains("refused by the kernel"), "{mechanism}");
 }
 
+/// Cockpit read R3-0871. Where the kernel states the effective uid it is read from there, and
+/// the probe — the owner of a file created in `$TMPDIR`, a directory the caller's environment
+/// names — is not consulted at all. A status document that is present and does not state a uid
+/// is a refusal, never a reason to fall back to the probe.
+#[test]
+fn the_effective_uid_comes_from_the_kernels_statement_and_not_from_a_file_in_tmpdir() {
+    const STATUS: &str = "Name:\tbrops\nUmask:\t0022\nState:\tR (running)\nPid:\t4242\n\
+                          Uid:\t1000\t1001\t1002\t1003\nGid:\t2000\t2001\t2002\t2003\n";
+    // The SECOND number: real, effective, saved, filesystem.
+    assert_eq!(anchor::euid_from_proc_status(STATUS), Some(1001));
+    for (what, text) in [
+        ("no Uid line", "Name:\tx\nGid:\t1\t1\t1\t1\n".to_string()),
+        ("three numbers", STATUS.replace("\t1003", "")),
+        ("five numbers", STATUS.replace("\t1003", "\t1003\t1004")),
+        ("a number that is not one", STATUS.replace("1001", "root")),
+        ("a negative number", STATUS.replace("1001", "-1")),
+        ("a number past u32", STATUS.replace("1001", "4294967296")),
+        ("two Uid lines", format!("{STATUS}Uid:\t0\t0\t0\t0\n")),
+        ("an empty document", String::new()),
+    ] {
+        assert_eq!(anchor::euid_from_proc_status(&text), None, "{what}");
+        // Present and unreadable: refused, and the probe is not reached.
+        let verdict = anchor::euid_from(Some(text), || panic!("{what}: fell back to the probe"));
+        assert!(verdict.is_err(), "{what}: a status with no uid in it produced {verdict:?}");
+    }
+    // With the kernel's statement in hand the probe is never called, whatever it would say.
+    let stated = anchor::euid_from(Some(STATUS.to_string()), || panic!("the probe was consulted"));
+    assert_eq!(stated.ok(), Some(1001));
+    // No status document at all — a POSIX host without procfs — is the one case that probes.
+    assert_eq!(anchor::euid_from(None, || Ok(777)).ok(), Some(777));
+}
+
 /// `posix_euid` agrees with the kernel's own answer, asked a different way.
 ///
 /// The product learns its effective uid by creating a file and reading the owner back, because

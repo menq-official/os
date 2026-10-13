@@ -410,12 +410,22 @@ pub mod audit {
             Actor { kind: "agent", id }
         }
 
-        /// An actor carried by already-trusted row data: the message role/author
-        /// pair. The webview allowlist (`commands::WEBVIEW_MESSAGE_ROLES`) narrows
-        /// the role a renderer may post to `user`; agent and system roles are
-        /// minted server-side only.
+        /// The actor of a posted message.
+        ///
+        /// An AGENT or SYSTEM message carries an author that was minted server-side, and
+        /// that author is the actor. A `user` message does not: its author is what the
+        /// renderer sent — `commands::post_user_message` fixes the ROLE and passes the
+        /// name through — so it is display text, not an identity, and the actor is the
+        /// local operator, the one thing this layer can establish about a human at the
+        /// cockpit ([`LOCAL_OPERATOR`]). This used to return `(role, author)` for every
+        /// role, on the reasoning that the pair was "already-trusted row data"; for the
+        /// one role a renderer may post it was a string the renderer chose, written into
+        /// the evidence table as who acted (cockpit read R3-0878).
         pub const fn from_message(role: &'a str, author: &'a str) -> Actor<'a> {
-            Actor { kind: role, id: author }
+            match role.as_bytes() {
+                b"user" => Actor { kind: "user", id: LOCAL_OPERATOR },
+                _ => Actor { kind: role, id: author },
+            }
         }
     }
 

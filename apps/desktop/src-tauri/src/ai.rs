@@ -788,6 +788,82 @@ fn finalize_sandbox(dir: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Reuse the cached sandbox at `p` only if it is still THIS ACCOUNT'S OWN, making it again if
+/// it has vanished.
+///
+/// It used to be reused on the strength of its name (cockpit read R3-0872): a directory that
+/// was there was taken as it stood, and one that had vanished and been made again by somebody
+/// else — `create_dir` answering `AlreadyExists` — was taken as healed. The name sits in the
+/// temporary directory for anyone to read. Whatever is in that directory is what the next
+/// `claude` subprocess starts in: its `.claude/settings.json`, its `.mcp.json`.
+///
+/// So after the heal, and on EVERY reuse, the directory is judged by [`sandbox_is_ours`]. A
+/// directory that fails is not repaired and not replaced here: the turn is refused, and stays
+/// refused until the process restarts with a new name. That is the fail-closed answer to
+/// "something else is living at my sandbox's path".
+fn reuse_cached_sandbox(p: &std::path::Path, our_uid: u32) -> Result<(), String> {
+    if std::fs::symlink_metadata(p).is_err() {
+        match std::fs::create_dir(p) {
+            Ok(()) => finalize_sandbox(p)?,
+            // Lost a race to another thread healing the same path — or to anyone else. The
+            // judgement below is what tells the two apart.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(format!("AI sandbox: {e}")),
+        }
+    }
+    sandbox_is_ours(p, our_uid)
+}
+
+/// Is `dir` a sandbox this account made and nobody else can enter?
+///
+/// Read with `symlink_metadata`, so a link standing where the directory or its marker should
+/// be is seen as a link and refused. On Unix: owned by `our_uid`, and no permission bit for
+/// group or other — a directory this account owns at `0700` cannot have been created or
+/// written by another account. Everywhere: a real directory holding the marker as a real file.
+///
+/// Windows (reduced guarantee, as [`finalize_sandbox`] says): there is no owner or mode to
+/// read here, so only the directory and the marker are checked.
+fn sandbox_is_ours(dir: &std::path::Path, our_uid: u32) -> Result<(), String> {
+    let refused = |why: String| Err(format!("AI sandbox {} is not this process's own: {why}", dir.display()));
+    let meta = match std::fs::symlink_metadata(dir) {
+        Ok(meta) => meta,
+        Err(e) => return refused(format!("it cannot be read ({e})")),
+    };
+    if !meta.file_type().is_dir() {
+        return refused("it is not a directory".to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.uid() != our_uid {
+            return refused(format!("it is owned by uid {}, and this process runs as {our_uid}", meta.uid()));
+        }
+        if meta.mode() & 0o077 != 0 {
+            return refused(format!("its mode {:04o} lets another account in", meta.mode() & 0o7777));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = our_uid;
+    match std::fs::symlink_metadata(dir.join(SANDBOX_MARKER)) {
+        Ok(marker) if marker.file_type().is_file() => Ok(()),
+        _ => refused("its marker file is missing or is not a regular file".to_string()),
+    }
+}
+
+/// The uid this process runs as, for [`sandbox_is_ours`]. On Windows there is none and the
+/// value is unused.
+fn this_account() -> Result<u32, String> {
+    #[cfg(not(windows))]
+    {
+        brops_provision::anchor::posix_euid()
+            .map_err(|e| format!("AI sandbox: this process's uid could not be measured ({e})"))
+    }
+    #[cfg(windows)]
+    {
+        Ok(0)
+    }
+}
+
 /// A unique, owner-only (0700) empty directory created fresh for this process's
 /// `claude` subprocesses, so the CLI can't pick up a nearby project's
 /// `.claude/settings.json`, `.mcp.json`, or source files. `create_dir` (not
@@ -798,16 +874,8 @@ fn ai_sandbox_dir() -> Result<std::path::PathBuf, String> {
         // Self-heal: if our cached sandbox vanished (e.g. a sibling instance on an
         // OS where pid liveness is unknown swept it via the age fallback, or the
         // OS purged temp), recreate it exclusively rather than failing every AI
-        // reply until restart. `create_dir` (not `_all`) keeps the original
-        // no-preplanted-dir guarantee; a lost race to another thread healing the
-        // same path is fine — the marker/perms are (re)applied by the winner.
-        if !p.is_dir() {
-            match std::fs::create_dir(p) {
-                Ok(()) => finalize_sandbox(p)?,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(format!("AI sandbox: {e}")),
-            }
-        }
+        // reply until restart — and judge it, healed or not, before it is used.
+        reuse_cached_sandbox(p, this_account()?)?;
         return Ok(p.clone());
     }
     let base = std::env::temp_dir();
@@ -1353,6 +1421,15 @@ fn protected_path_deny_patterns() -> Vec<String> {
 const SNAPSHOT_SKIP_DIRS: &[&str] =
     &["target", "node_modules", "__pycache__", ".pytest_cache", ".git", ".venv", "venv", "dist", "build"];
 
+/// The two skipped names Python itself writes wherever it imports from or runs a test. A NEW
+/// one of these appears on the first test run in a fresh checkout and is not reported; a new
+/// directory of any OTHER skipped name is (cockpit read R3-0876).
+///
+/// What staying silent here costs is stated, not hidden: `__pycache__` is where a stale `.pyc`
+/// would be planted, and CPython imports an existing one before any Python check can run. That
+/// is residual item `O-1`, it is open, and this guard does not close it.
+const SNAPSHOT_PYTHON_CACHE_DIRS: &[&str] = &["__pycache__", ".pytest_cache"];
+
 /// Largest file the guard holds bytes for (8 MiB). A protected source file is orders of
 /// magnitude smaller; anything bigger is tracked by DIGEST only, so a change is still
 /// detected and reported — it just cannot be undone, and the notice says so rather than
@@ -1407,6 +1484,9 @@ struct FileSnapshot {
 pub(crate) struct TrustSurfaceGuard {
     root: std::path::PathBuf,
     files: std::collections::BTreeMap<std::path::PathBuf, FileSnapshot>,
+    /// Every skip-named directory that was inside the surface when the turn began. Their
+    /// contents are not read; their EXISTENCE is, so one the turn creates can be named.
+    skipped_dirs: std::collections::BTreeSet<std::path::PathBuf>,
     settled: std::cell::Cell<bool>,
 }
 
@@ -1415,11 +1495,12 @@ impl TrustSurfaceGuard {
     /// not snapshotted (it is also not something the turn can be shown to have changed).
     pub(crate) fn take(root: &std::path::Path) -> Self {
         let mut files = std::collections::BTreeMap::new();
+        let mut skipped_dirs = std::collections::BTreeSet::new();
         for rel in BRO_PROTECTED_PATHS {
             let path = root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-            collect_snapshot(&path, 0, &mut files);
+            collect_snapshot(&path, 0, &mut files, &mut skipped_dirs);
         }
-        Self { root: root.to_path_buf(), files, settled: std::cell::Cell::new(false) }
+        Self { root: root.to_path_buf(), files, skipped_dirs, settled: std::cell::Cell::new(false) }
     }
 
     /// Restore anything the turn changed and describe what happened, or `None` if the trust
@@ -1513,17 +1594,30 @@ impl TrustSurfaceGuard {
         // Files that did not exist when the turn started. Reported, never removed.
         let mut added: Vec<String> = Vec::new();
         let mut now = std::collections::BTreeMap::new();
+        let mut now_skipped = std::collections::BTreeSet::new();
         for rel in BRO_PROTECTED_PATHS {
             let path = self.root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-            collect_snapshot(&path, 0, &mut now);
+            collect_snapshot(&path, 0, &mut now, &mut now_skipped);
         }
         for path in now.keys() {
             if !self.files.contains_key(path) {
                 added.push(self.relative(path));
             }
         }
+        // Skip-named directories that were not there when the turn began (R3-0876). What is in
+        // them is not read — that is the meaning of the skip — so a turn could put anything
+        // there unseen. The directory is named; nothing is removed.
+        let new_dirs: Vec<String> = now_skipped
+            .iter()
+            .filter(|dir| !self.skipped_dirs.contains(*dir))
+            .filter(|dir| {
+                let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                !SNAPSHOT_PYTHON_CACHE_DIRS.contains(&name.as_str())
+            })
+            .map(|dir| self.relative(dir))
+            .collect();
 
-        if restored.is_empty() && unrestorable.is_empty() && added.is_empty() {
+        if restored.is_empty() && unrestorable.is_empty() && added.is_empty() && new_dirs.is_empty() {
             return None;
         }
         let mut notice = format!(
@@ -1545,6 +1639,10 @@ impl TrustSurfaceGuard {
         notice.push_str(&list("REVERTED to their previous bytes", &restored));
         notice.push_str(&list("CHANGED and could NOT be reverted", &unrestorable));
         notice.push_str(&list("NEW files, left in place and not applied to anything", &added));
+        notice.push_str(&list(
+            "NEW directories of a build-output name, left in place and NOT inspected",
+            &new_dirs,
+        ));
         if let Some(qdir) = quarantine.as_ref().filter(|_| !restored.is_empty()) {
             notice.push_str(&format!("\nWhat the turn wrote was kept at: {}", qdir.display()));
         }
@@ -1608,6 +1706,7 @@ fn collect_snapshot(
     path: &std::path::Path,
     depth: usize,
     out: &mut std::collections::BTreeMap<std::path::PathBuf, FileSnapshot>,
+    skipped: &mut std::collections::BTreeSet<std::path::PathBuf>,
 ) {
     if depth > 16 {
         return;
@@ -1644,9 +1743,10 @@ fn collect_snapshot(
         let name = name.to_string_lossy();
         let child = entry.path();
         if child.is_dir() && SNAPSHOT_SKIP_DIRS.contains(&name.as_ref()) {
+            skipped.insert(child);
             continue;
         }
-        collect_snapshot(&child, depth + 1, out);
+        collect_snapshot(&child, depth + 1, out, skipped);
     }
 }
 
@@ -4191,6 +4291,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Cockpit read R3-0876. Nine directory names are skipped as build output, so a directory
+    /// of such a name that a turn CREATES inside a protected subtree was a place nothing looked:
+    /// `engine/runtime/build/backdoor.py` was neither restored, nor reported, nor seen. The
+    /// contents are still not read — that is what "build output" means — but a directory of
+    /// that kind which was not there when the turn began is named in the notice.
+    #[test]
+    fn a_build_named_directory_the_turn_created_inside_the_surface_is_reported() {
+        let root = std::env::temp_dir().join(format!("brops-guard-skipdir-{}", brops_core::id()));
+        let write = |rel: &str, body: &str| {
+            let p = root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, body).unwrap();
+            p
+        };
+        write("engine/runtime/isolated_signer.py", "TRUSTED = True\n");
+        // Build output that is ALREADY there is the legitimate case and stays silent.
+        let artifact = write("apps/desktop/src-tauri/broker/target/debug/x.bin", "old\n");
+        write("engine/runtime/__pycache__/isolated_signer.cpython-312.pyc", "old\n");
+
+        let guard = TrustSurfaceGuard::take(&root);
+        std::fs::write(&artifact, "rebuilt\n").unwrap();
+        let hidden = write("engine/runtime/build/backdoor.py", "pass\n");
+        write("bridge/dist/also.py", "pass\n");
+        // Python writes these wherever it imports from; a new one is not reported.
+        write("tools/__pycache__/x.cpython-312.pyc", "new\n");
+        write("tools/.pytest_cache/v/cache/lastfailed", "{}\n");
+
+        let notice = guard.settle().expect("a new build-named directory inside the surface was not reported");
+        let slash = |s: &str| s.replace('/', std::path::MAIN_SEPARATOR_STR);
+        assert!(notice.contains(&slash("engine/runtime/build")), "{notice}");
+        assert!(notice.contains(&slash("bridge/dist")), "{notice}");
+        assert!(notice.contains("NOT inspected"), "{notice}");
+        assert!(!notice.contains("__pycache__") && !notice.contains(".pytest_cache"), "{notice}");
+        assert!(!notice.contains("target"), "build output that was already there is not news: {notice}");
+        assert!(hidden.exists(), "a new directory is reported, never destroyed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The turn that changed nothing says nothing — a guard that cries wolf gets ignored.
     #[test]
     fn an_untouched_trust_surface_produces_no_notice() {
@@ -4622,6 +4760,85 @@ mod tests {
             assert!(!truthy(Some(off)), "{off:?} should be OFF");
         }
         assert!(!truthy(None));
+    }
+
+    /// Cockpit read R3-0872. The cached sandbox was reused on the strength of its NAME: if a
+    /// directory was there it was taken, and if it had vanished and somebody else had made one
+    /// of that name first, `AlreadyExists` was taken as "healed". The name is visible in the
+    /// temporary directory. So a directory another account planted — with a `.claude/settings.json`
+    /// of its choosing — became the working directory of the next `claude` subprocess. A
+    /// sandbox is this process's only if this account owns it, nobody else can enter it, it is
+    /// a real directory and it carries the marker.
+    #[cfg(unix)]
+    #[test]
+    fn a_cached_sandbox_is_reused_only_if_it_is_still_this_accounts_own() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let base = std::env::temp_dir().join(format!("brops_r3_0872_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let me = std::fs::metadata(&base).unwrap().uid();
+        let fresh = |name: &str| {
+            let dir = base.join(name);
+            std::fs::create_dir(&dir).unwrap();
+            finalize_sandbox(&dir).unwrap();
+            dir
+        };
+
+        // The sandbox this process made is its own.
+        let ours = fresh("ours");
+        assert_eq!(reuse_cached_sandbox(&ours, me), Ok(()));
+
+        // One that vanished is made again, exclusively, and is then its own.
+        let vanished = base.join("vanished");
+        assert_eq!(reuse_cached_sandbox(&vanished, me), Ok(()));
+        assert!(vanished.join(SANDBOX_MARKER).is_file());
+        assert_eq!(std::fs::metadata(&vanished).unwrap().permissions().mode() & 0o777, 0o700);
+
+        // A directory of that name somebody else made: no marker, and open to others.
+        let planted = base.join("planted");
+        std::fs::create_dir(&planted).unwrap();
+        std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o777)).unwrap();
+        std::fs::write(planted.join("settings.json"), b"{}").unwrap();
+        assert!(reuse_cached_sandbox(&planted, me).is_err(), "a planted directory was adopted");
+
+        // Each property on its own.
+        let no_marker = fresh("no-marker");
+        std::fs::remove_file(no_marker.join(SANDBOX_MARKER)).unwrap();
+        assert!(reuse_cached_sandbox(&no_marker, me).unwrap_err().contains("marker"));
+
+        let open = fresh("open");
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o750)).unwrap();
+        assert!(reuse_cached_sandbox(&open, me).unwrap_err().contains("mode"));
+
+        let foreign = fresh("foreign");
+        assert!(reuse_cached_sandbox(&foreign, me + 1).unwrap_err().contains("owned by"));
+
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&ours, &link).unwrap();
+        assert!(reuse_cached_sandbox(&link, me).unwrap_err().contains("not a directory"));
+
+        let marker_link = fresh("marker-link");
+        std::fs::remove_file(marker_link.join(SANDBOX_MARKER)).unwrap();
+        std::os::unix::fs::symlink(ours.join(SANDBOX_MARKER), marker_link.join(SANDBOX_MARKER)).unwrap();
+        assert!(reuse_cached_sandbox(&marker_link, me).unwrap_err().contains("marker"));
+
+        let _ = std::fs::remove_dir_all(&base);
+
+        // And the cached path goes through that judgement on every use. A text check, and it
+        // says so: the cache is a process-wide `OnceLock` a test cannot reset.
+        let source = include_str!("ai.rs");
+        let production = source.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+        assert_ne!(production.len(), source.len(), "the test module marker moved");
+        let cached = production
+            .split("if let Some(p) = AI_SANDBOX.get() {")
+            .nth(1)
+            .expect("the cached-sandbox branch is gone")
+            .split("let base = std::env::temp_dir();")
+            .next()
+            .unwrap();
+        let judged = cached.find(concat!("reuse_cached_", "sandbox(p, this_account()?)?;")).expect("not judged");
+        let handed = cached.find("return Ok(p.clone());").expect("the cached path is not returned");
+        assert!(judged < handed, "the cached sandbox is handed out before it is judged");
     }
 
     #[test]

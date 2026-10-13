@@ -675,8 +675,24 @@ pub fn list_conversations(state: State<AppState>, kind: Option<String>) -> Resul
     repo::chat::list_conversations(&conn, kind.as_deref()).map_err(|e| e.to_string())
 }
 
+/// Conversation kinds the window may create. The domain has a third, `ask`: the hidden,
+/// system-owned conversation that holds governed Ask-Bro challenges. Only
+/// [`hidden_ask_conversation`] creates that one — and it ADOPTS the newest `ask` conversation
+/// it finds, so one the renderer made would become where the next governed ask is recorded
+/// (cockpit read R3-0877).
+const WEBVIEW_CONVERSATION_KINDS: &[&str] = &["direct", "group"];
+
+fn webview_may_create_kind(kind: &str) -> Result<(), String> {
+    if WEBVIEW_CONVERSATION_KINDS.contains(&kind) {
+        Ok(())
+    } else {
+        Err(format!("a conversation of kind {kind:?} may not be created from the window"))
+    }
+}
+
 #[tauri::command]
 pub fn create_conversation(state: State<AppState>, kind: String, title: String) -> Result<Conversation, String> {
+    webview_may_create_kind(&kind)?;
     let conn = locked(&state)?;
     repo::chat::create_conversation(&conn, &kind, &title, repo::audit::Actor::local_operator()).map_err(|e| e.to_string())
 }
@@ -3319,6 +3335,40 @@ mod tests {
             assert!(err.contains("returned an accept"), "{err}");
         }
         assert_eq!(only_a_block(Err("db".into())).unwrap_err(), "db");
+    }
+
+    // Cockpit read R3-0877. `ask` is the hidden, system-owned conversation kind: the governed
+    // Ask-Bro challenges live in it, and `hidden_ask_conversation` adopts the newest one it
+    // finds. The window's `create_conversation` passed its `kind` straight to the repository,
+    // which accepts all three, so the renderer could mint an `ask` conversation and have the
+    // next governed ask adopted into it.
+    #[test]
+    fn the_window_may_not_create_the_system_owned_ask_conversation() {
+        assert_eq!(webview_may_create_kind("direct"), Ok(()));
+        assert_eq!(webview_may_create_kind("group"), Ok(()));
+        for refused in ["ask", "ASK", " ask", "system", ""] {
+            let why = webview_may_create_kind(refused).expect_err("a kind the window may not create");
+            assert!(why.contains("may not be created from the window"), "{refused:?}: {why}");
+        }
+        // Every kind the domain knows is either one the window may create or `ask`: a fourth
+        // kind added to the domain has to be put on one side here, on purpose.
+        for kind in brops_core::domain::CONVERSATION_KINDS {
+            assert_eq!(webview_may_create_kind(kind).is_ok(), *kind != "ask", "{kind}");
+        }
+        // And the command asks before it reaches the repository. A text check, and it says so —
+        // the handler needs a Tauri state to run.
+        let src = include_str!("commands.rs");
+        let production = src.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+        let handler = production
+            .split("pub fn create_conversation(")
+            .nth(1)
+            .expect("the create_conversation command is gone")
+            .split("\n#[tauri::command]")
+            .next()
+            .unwrap();
+        let asked = handler.find("webview_may_create_kind(&kind)?;").expect("the command does not ask");
+        let wrote = handler.find(concat!("repo::chat::create_", "conversation(")).expect("no write");
+        assert!(asked < wrote, "the kind is checked after the conversation is created");
     }
 
     // Cockpit read R3-0011. A run step's claim spends a natively confirmed grant, and a failed
