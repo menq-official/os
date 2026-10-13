@@ -32,6 +32,7 @@
 // the run path, so a rule that cannot run governed cannot be created and cannot be fired.
 
 import type { Automation, AutomationRun } from '../domain/entities';
+import type { RiskLevel } from '../domain/enums';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1 · Capability policy — mirrored, not invented
@@ -223,8 +224,6 @@ export function parseTrigger(trigger: string): TriggerParse {
 // ─────────────────────────────────────────────────────────────────────────────
 // 4 · The contract
 // ─────────────────────────────────────────────────────────────────────────────
-
-export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
 const RISK_ORDER: RiskLevel[] = ['low', 'medium', 'high', 'critical'];
 

@@ -236,7 +236,7 @@ export function Activity() {
   const pillTone = state.loading ? 'info' : state.error ? 'warn' : 'live';
   const pillText = state.loading
     ? L('connecting')
-    : state.error ? L('offline') : L('rhythmStable');
+    : state.error ? L('offline') : L('recordLoaded');
 
   // ── Resolve the §D state → the main region ──────────────────────────────────
   let main: ReactNode;
@@ -496,7 +496,7 @@ export function Activity() {
         </header>
 
         {/* Text-equivalent live region for the strip (§D a11y). */}
-        <span className="pa-sr" role="status" aria-live="polite" aria-atomic="true">{liveText}</span>
+        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{liveText}</span>
         {/* Visible, not only announced: the reader of a strip that looks sparse (or empty) on a
             fresh install is owed the reason. */}
         {seededCount > 0 && !state.error && (
@@ -539,12 +539,10 @@ function PaField({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// Only page-local chrome not covered by aios.css lives here: the SR live region,
-// the state-screen frame, the loading skeleton, the blocked panel, and the beat
-// detail grid. Everything visual on the live view is aios classes.
+// Only page-local chrome not covered by aios.css lives here: the state-screen frame,
+// the loading skeleton, the blocked panel, and the beat detail grid. Everything visual
+// on the live view is aios classes; the SR live region is `.sr-only` from ui.css.
 const PA_STYLE = `
-.pa-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-
 .v-activity .pa-state { grid-column: 1 / -1; display: grid; place-items: center; min-height: 240px; padding: 40px 24px; text-align: center; }
 .v-activity .pa-skel { width: 100%; max-width: 720px; }
 

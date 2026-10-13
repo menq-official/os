@@ -35,8 +35,8 @@ export const PROJECT_STATUSES: ProjectStatus[] = ['planned', 'active', 'blocked'
  * means the fixture would have produced an identical screenshot for the word `zzz`.
  *
  * The family attached to each word is not a new rule — it is what `statusMeta` already computes,
- * and `decisions status vocabulary` asserts the two agree, so this map cannot drift away from the
- * page it describes.
+ * and the `decision status vocabulary` suite (`features/Decisions.status.test.ts`) asserts the two
+ * agree, so this map cannot drift away from the page it describes.
  */
 export const DECISION_STATUS_FAMILY = {
   proposed: 'waiting',    // the ONLY value the desktop store itself writes (repo.rs decisions::create)

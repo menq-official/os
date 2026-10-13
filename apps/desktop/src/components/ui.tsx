@@ -112,7 +112,7 @@ export function ErrorState({ message, onRetry, retryLabel }: { message: string; 
 /** Uniform loading / error / empty / populated rendering around a list command. */
 export function Async<T>({
   state,
-  emptyTitle = 'Nothing here yet',
+  emptyTitle,
   emptyHint,
   children,
 }: {
@@ -124,17 +124,14 @@ export function Async<T>({
   const { t } = useApp();
   if (state.loading && state.data === null) return <Skeleton rows={4} />;
   if (state.error) {
-    // No desktop backend at all (e.g. browser preview): show a calm offline
-    // state, not the alarming red error meant for real backend failures.
-    if (!hasBackend()) {
-      return <EmptyState glyph="◍" title={t('state.offline')} hint={t('state.offlineHint')} />;
-    }
+    // With no desktop backend at all `ErrorState` shows the calm offline state instead of
+    // this message; that is its own first branch, not repeated here.
     const denied = /denied|not permitted|permission/i.test(state.error);
     const message = denied ? `${t('state.permissionDenied')}: ${state.error}` : state.error;
     return <ErrorState message={message} onRetry={state.reload} retryLabel={t('action.retry')} />;
   }
   const data = state.data ?? [];
-  if (data.length === 0) return <EmptyState title={emptyTitle} hint={emptyHint} />;
+  if (data.length === 0) return <EmptyState title={emptyTitle ?? t('state.empty')} hint={emptyHint} />;
   return <>{children(data)}</>;
 }
 
@@ -289,11 +286,14 @@ export function ConfirmDialog({
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Phase-4 component-library primitives (G1–G6). Presentational and locale-
- * neutral: every label is passed in as a prop (matching Modal / EmptyState /
- * Field), so none of these touch `useApp()` or the Tauri IPC layer. Each covers
- * the standard §D concerns — role/aria, keyboard, non-color signal, and
- * prefers-reduced-motion — through `ui.css`.
+ * Phase-4 component-library primitives (G1–G6). Presentational: none of these
+ * touch the Tauri IPC layer, and labels are passed in as props (matching Modal /
+ * EmptyState / Field) with two exceptions. `Drawer` reads `useAppOptional()` for
+ * its close button's label (`action.close`, falling back to 'Close' outside a
+ * provider), and `LiveMark` falls back to the English state words 'Live' /
+ * 'Connecting' / 'Offline' when no `label` is given. Each covers the standard §D
+ * concerns — role/aria, keyboard, non-color signal, and prefers-reduced-motion
+ * — through `ui.css`.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 /** Live `prefers-reduced-motion` reader for JS-driven motion. SSR-/test-safe:
@@ -419,7 +419,7 @@ export function DataTable<T>({
   rowKey,
   caption,
   loading = false,
-  emptyTitle = 'Nothing here yet',
+  emptyTitle,
   emptyHint,
   emptyGlyph,
   onActivateRow,
@@ -430,7 +430,9 @@ export function DataTable<T>({
   rowKey: (row: T, index: number) => string;
   caption: string;
   loading?: boolean;
-  emptyTitle?: string;
+  /** Shown when `rows` is empty. Required: this table reads no dictionary, so a default here
+   *  could only be one language. */
+  emptyTitle: string;
   emptyHint?: string;
   emptyGlyph?: string;
   onActivateRow?: (row: T, index: number) => void;
@@ -579,8 +581,8 @@ export function Drawer({
  * - `'complementary'` (default) — a landmark `<aside role="complementary">` with
  *   an accessible name and an uppercase rail header. Use for a genuine context
  *   rail that should be a navigable landmark.
- * - `'panel'` — a plain `Card`/`.panel` container identical to `Panel` (title as
- *   `.panel-title`, `space-5` padding, NO landmark role). Use when the region is
+ * - `'panel'` — renders `Panel` (title as `.panel-title`, `space-5` padding, NO
+ *   landmark role). Use when the region is
  *   a list/rail that must adopt the rail model WITHOUT adding another
  *   `complementary` landmark or changing the panel's padding — e.g. the
  *   conversation and command run lists.
@@ -599,22 +601,9 @@ export function Rail({
   children: React.ReactNode;
 }) {
   if (variant === 'panel') {
-    // Identical markup to `Panel` (Card + .panel, title in .panel-head, children
-    // rendered directly) so adopting the rail model changes neither the padding
-    // nor the landmark structure.
-    return (
-      <Card>
-        <div className="panel">
-          {(label || actions) && (
-            <div className="panel-head">
-              {label && <div className="panel-title">{label}</div>}
-              {actions}
-            </div>
-          )}
-          {children}
-        </div>
-      </Card>
-    );
+    // `Panel` itself, not a copy of its markup: adopting the rail model changes neither the
+    // padding nor the landmark structure.
+    return <Panel title={label} actions={actions}>{children}</Panel>;
   }
   return (
     <aside className={`rail rail--${side}`} role="complementary" aria-label={label}>
@@ -728,12 +717,13 @@ export function StatTile({
 
 // ── G5 · Mark / LiveMark ────────────────────────────────────────────────────
 /**
- * The "Br·PS" wordmark with its square glyph (promoted from Shell's brand).
+ * The "Br·PS" wordmark with its square glyph. No page renders it: the Shell and
+ * the pages draw the `Mark` from `components/Ambient`.
  *
- * `responsive` honours the collapsed-sidebar rule: at ≤900px the text (word +
- * sub) is hidden and only the square glyph remains, exactly like the sidebar
- * collapses its labels — so Shell can adopt this without breaking the narrow
- * layout. The glyph keeps a `title` so the collapsed mark stays identifiable.
+ * `responsive` adds `mark--responsive`, under which `ui.css` hides the text (word +
+ * sub) at ≤900px and leaves the square glyph, which then carries the word as its
+ * `title`. That breakpoint is this rule's own: the shell's rail does not collapse
+ * its labels, it leaves the canvas at ≤860px (`aios.css`).
  */
 export function Mark({
   word = 'Br·PS', sub, glyph = 'B', responsive = false,

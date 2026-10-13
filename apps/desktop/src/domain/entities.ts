@@ -136,13 +136,6 @@ export interface Message {
   receipt?: 'development_untrusted' | 'trusted_verified' | 'demonstration_verified' | null;
 }
 
-export interface NewMessage {
-  conversationId: string;
-  role: MessageRole;
-  author: string;
-  body: string;
-}
-
 export interface KnowledgeNote {
   id: string;
   title: string;

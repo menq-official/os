@@ -24,13 +24,57 @@ function setup() {
 }
 
 const called = (cmd: string) => invokeMock.mock.calls.some((c) => c[0] === cmd);
+/** The page's text-equivalent live region: the shared `.sr-only` rule, as a direct child of the
+ *  view (the strip keeps hidden text of its own further down). */
+const liveRegion = (c: HTMLElement) => c.querySelector('.v-activity > .sr-only[role="status"]');
 
 beforeEach(() => invokeMock.mockReset());
 
 describe('Activity — mirrors the real list_activity store', () => {
   it('mounts and wires the real list_activity read without fabricating', async () => {
-    setup();
+    // "Without fabricating" was asserted by `called('list_activity')` alone, which a page that
+    // reads the store and then paints rows of its own passes. Every instrument is read here and
+    // held to the ONE row the read returned.
+    const { container } = setup();
     await waitFor(() => expect(called('list_activity')).toBe(true));
+    await waitFor(() => expect(container.querySelector('.beatline .node')).not.toBeNull());
+    const texts = (sel: string) => [...container.querySelectorAll(sel)].map((n) => n.textContent);
+    expect(container.querySelectorAll('.strip-blip')).toHaveLength(1);
+    expect(texts('.beatline .node .pill')).toEqual(['task.created']);
+    expect(texts('.beatline .node .nd-lbl')).toEqual(['t-1']);
+    // One tally row per instrument: the row's own event type, and its own actor.
+    expect(texts('.signs .sign .micro')).toEqual(['task.created', 'local-operator']);
+    expect(texts('.signs .sign b')).toEqual(['1', '1']);
+    // The total counts up from 0 over 600 ms; it is read where it settles.
+    await waitFor(() => expect(container.querySelector('.vcore .num')!.textContent).toBe('1'));
+    expect(container.querySelector('.vitals')!.textContent).toContain('/1');
+    expect(liveRegion(container)!.textContent).toMatch(/^1 activity beats\./);
+  });
+});
+
+// The header pill read 'RHYTHM · STABLE' for every loaded state, an empty record included, on a
+// page whose header says rhythm is "omitted rather than fabricated". Nothing measures stability.
+describe('Activity — the header pill states what happened, not a rhythm nobody measured', () => {
+  const pill = (c: HTMLElement) => c.querySelector('.pageHead .pill');
+
+  it('a loaded record is called loaded', async () => {
+    const { container } = setup();
+    await waitFor(() => expect(container.querySelector('.beatline .node')).not.toBeNull());
+    expect(pill(container)!.textContent).not.toMatch(/RHYTHM|STABLE/);
+    expect(pill(container)!.textContent).toBe(ACT_STR.recordLoaded.en);
+  });
+
+  it('an EMPTY record is not called stable either', async () => {
+    invokeMock.mockImplementation(() => Promise.resolve([]));
+    const { container } = render(<AppProvider><ToastProvider><Activity /></ToastProvider></AppProvider>);
+    await waitFor(() => expect(screen.getByText('No activity yet')).toBeInTheDocument());
+    expect(pill(container)!.textContent).not.toMatch(/RHYTHM|STABLE/);
+  });
+
+  it.each(['en', 'hy', 'ru'] as const)('no string of the page claims a stable rhythm (%s)', (lang) => {
+    for (const [key, value] of Object.entries(ACT_STR)) {
+      expect(value[lang], key).not.toMatch(/STABLE|ԿԱՅՈՒՆ|СТАБИЛЬН/i);
+    }
   });
 });
 
@@ -160,8 +204,8 @@ describe('Activity — the rate is the quotient, not a floor', () => {
       return Promise.resolve(null);
     });
     const { container } = render(<AppProvider><ToastProvider><Activity /></ToastProvider></AppProvider>);
-    await waitFor(() => expect(container.querySelector('.pa-sr')?.textContent).toMatch(/3 activity beats/));
-    const said = container.querySelector('.pa-sr')!.textContent!;
+    await waitFor(() => expect(liveRegion(container)?.textContent).toMatch(/3 activity beats/));
+    const said = liveRegion(container)!.textContent!;
     expect(said).not.toMatch(/About 1 per minute/);
     expect(said).toMatch(/About <1 per minute/);
   });
@@ -177,8 +221,8 @@ describe('Activity — the rate is the quotient, not a floor', () => {
       return Promise.resolve(null);
     });
     const { container } = render(<AppProvider><ToastProvider><Activity /></ToastProvider></AppProvider>);
-    await waitFor(() => expect(container.querySelector('.pa-sr')?.textContent).toMatch(/13 activity beats/));
+    await waitFor(() => expect(liveRegion(container)?.textContent).toMatch(/13 activity beats/));
     // 13 events over 2 minutes
-    expect(container.querySelector('.pa-sr')!.textContent).toMatch(/About 7 per minute/);
+    expect(liveRegion(container)!.textContent).toMatch(/About 7 per minute/);
   });
 });

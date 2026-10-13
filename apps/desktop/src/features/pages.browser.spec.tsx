@@ -310,6 +310,32 @@ describe('computed style — a stale global rule does not reach an element it wa
     // The month NAME keeps its capital — on the label, where it was always meant to be.
     expect(getComputedStyle(container.querySelector('.cm-title') as Element).textTransform).toBe('capitalize');
   });
+
+  it('the Tasks mission board is the grid its own rule draws, not the old kanban scroller', async () => {
+    // R3-0407: `ui.css` kept `.board { display: flex; overflow-x: auto; padding-bottom: 6px; … }`
+    // from a kanban nothing renders. `.v-tasks .board` (aios.css) re-declares display, gap and
+    // alignment and nothing else, so the scroll container and the 6px reached the mission board.
+    arrange('populated');
+    const { container } = await mount(page('tasks')());
+    await waitFor(() => expect(container.querySelector('.v-tasks .board')).not.toBeNull());
+    const cs = getComputedStyle(container.querySelector('.v-tasks .board') as Element);
+    expect(cs.display).toBe('grid');
+    expect(cs.overflowX).toBe('visible');
+    expect(cs.paddingBottom).toBe('0px');
+  });
+
+  it('the Activity live region is hidden by the shared rule and still in the page', async () => {
+    // R3-0767: the page carried `.pa-sr`, its own copy of `.sr-only`. It uses the shared class
+    // now, so the shared rule is what has to reach it — measured, because the class name alone
+    // says nothing about a stylesheet.
+    arrange('populated');
+    const { container } = await mount(page('activity')());
+    const region = container.querySelector('.v-activity > .sr-only[role="status"]');
+    expect(region).not.toBeNull();
+    const cs = getComputedStyle(region as Element);
+    expect([cs.position, cs.width, cs.height, cs.overflowX]).toEqual(['absolute', '1px', '1px', 'hidden']);
+    expect(cs.clip).toBe('rect(0px, 0px, 0px, 0px)');
+  });
 });
 
 // R3-0231 found the bridge page had no <h1>; R3-0271 found Tasks had two. Both are one rule,

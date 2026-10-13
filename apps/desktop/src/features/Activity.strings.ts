@@ -26,10 +26,12 @@ export const STR = {
     hy: 'ԱՆՋԱՏՎԱԾ',
     ru: 'ОФФЛАЙН',
   },
-  rhythmStable: {
-    en: 'RHYTHM · STABLE',
-    hy: 'ՌԻԹՄ · ԿԱՅՈՒՆ',
-    ru: 'РИТМ · СТАБИЛЬНЫЙ',
+  // What the header pill says once the read has returned without an error — with rows or with
+  // none. It read 'RHYTHM · STABLE'; nothing on this page measures a rhythm or its stability.
+  recordLoaded: {
+    en: 'RECORD · LOADED',
+    hy: 'ԳՐԱՌՈՒՄ · ԲԵՌՆՎԱԾ',
+    ru: 'ЗАПИСЬ · ЗАГРУЖЕНА',
   },
   // The activity read is a local SQLite query. Nothing governs it and nothing approves it, so
   // a refusal here is reported as a refused read with its reason — not as a governance wall

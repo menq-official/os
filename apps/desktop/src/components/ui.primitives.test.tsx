@@ -36,7 +36,7 @@ const COLS: Column<Row>[] = [
 
 describe('DataTable', () => {
   it('renders a table with a caption, column headers and data cells', () => {
-    render(<DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} />);
+    render(<DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} emptyTitle="No widgets" />);
     const table = screen.getByRole('table', { name: 'Widgets' });
     expect(within(table).getByText('Name')).toBeInTheDocument();
     expect(within(table).getByText('Alpha')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('DataTable', () => {
   it('an activatable row is named by its own cells, not by the table caption', () => {
     // R3-0214: every row carried `aria-label={caption}`, so a screen reader heard the table's
     // name three times and none of the rows' contents.
-    render(<DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} onActivateRow={() => {}} />);
+    render(<DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} emptyTitle="No widgets" onActivateRow={() => {}} />);
     const names = ROWS.map((r) => screen.getByRole('row', { name: new RegExp(r.name) }));
     expect(new Set(names).size).toBe(ROWS.length);
     expect(screen.queryAllByRole('row', { name: 'Widgets' })).toHaveLength(0);
@@ -56,7 +56,7 @@ describe('DataTable', () => {
 
   it('marks numeric columns with the dt-num class', () => {
     const { container } = render(
-      <DataTable caption="W" columns={COLS} rows={ROWS} rowKey={(r) => r.id} />,
+      <DataTable caption="W" columns={COLS} rows={ROWS} rowKey={(r) => r.id} emptyTitle="No widgets" />,
     );
     expect(container.querySelector('th.dt-num')).not.toBeNull();
     expect(container.querySelectorAll('td.dt-num').length).toBe(ROWS.length);
@@ -64,7 +64,7 @@ describe('DataTable', () => {
 
   it('shows a skeleton (aria-busy) while loading and no data rows', () => {
     const { container } = render(
-      <DataTable caption="W" columns={COLS} rows={[]} rowKey={(r) => r.id} loading />,
+      <DataTable caption="W" columns={COLS} rows={[]} rowKey={(r) => r.id} emptyTitle="No widgets" loading />,
     );
     expect(container.querySelector('tbody[aria-busy="true"]')).not.toBeNull();
     expect(container.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
@@ -83,6 +83,17 @@ describe('DataTable', () => {
     expect(screen.getByText('Nothing here')).toBeInTheDocument();
   });
 
+  it('has no empty title of its own: the caller must supply one', () => {
+    // R3-0762: the default was the English 'state.empty' literal, in a table that reads no
+    // dictionary. The directive below is the check — `npm run typecheck` fails on it the day
+    // `emptyTitle` becomes optional again.
+    const { container } = render(
+      // @ts-expect-error emptyTitle is required
+      <DataTable caption="W" columns={COLS} rows={[]} rowKey={(r) => r.id} />,
+    );
+    expect(container.querySelector('.empty-title')!.textContent).toBe('');
+  });
+
   it('makes rows keyboard-activatable when onActivateRow is given', () => {
     const onActivate = vi.fn();
     render(
@@ -91,6 +102,7 @@ describe('DataTable', () => {
         columns={COLS}
         rows={ROWS}
         rowKey={(r) => r.id}
+        emptyTitle="No widgets"
         onActivateRow={onActivate}
       />,
     );
@@ -101,7 +113,7 @@ describe('DataTable', () => {
   });
 
   it('exposes exactly one row in the tab order (roving tabindex)', () => {
-    render(<DataTable caption="W" columns={COLS} rows={ROWS} rowKey={(r) => r.id} />);
+    render(<DataTable caption="W" columns={COLS} rows={ROWS} rowKey={(r) => r.id} emptyTitle="No widgets" />);
     const rows = screen.getAllByRole('row').slice(1);
     const tabbable = rows.filter((r) => r.getAttribute('tabindex') === '0');
     expect(tabbable).toHaveLength(1);

@@ -31,7 +31,7 @@ const COLS: Column<Row>[] = [
 describe('accessibility (axe) — Phase-4 primitives', () => {
   it('DataTable (populated) has no violations', async () => {
     const { container } = render(
-      <main><DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} /></main>,
+      <main><DataTable caption="Widgets" columns={COLS} rows={ROWS} rowKey={(r) => r.id} emptyTitle="No widgets" /></main>,
     );
     expect(await axe(container)).toHaveNoViolations();
   });

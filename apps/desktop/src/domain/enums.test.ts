@@ -89,9 +89,23 @@ describe('value lists', () => {
     ]);
   });
 
-  it('INTEGRATION_STATUSES and STEP_STATUSES expose their allowed sets', () => {
+  it('INTEGRATION_STATUSES exposes its allowed set', () => {
     expect(INTEGRATION_STATUSES).toEqual(['disconnected', 'connected', 'error']);
-    expect(STEP_STATUSES).toEqual(['pending', 'active', 'done', 'failed', 'skipped']);
+  });
+
+  // R3-0410: no page reads STEP_STATUSES — it is the declared step vocabulary the tone and label
+  // coverage below iterates. It was compared here with a literal copy of itself; it is held to
+  // the two `run_steps.status` guards instead, which are what decide.
+  it('STEP_STATUSES is the set both run_steps status guards admit', () => {
+    const dir = resolve(process.cwd(), 'src-tauri/core/schema');
+    const admitted: string[][] = [];
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+      const sql = readFileSync(resolve(dir, file), 'utf8');
+      const guard = /CREATE TRIGGER[^;]*trg_run_steps_status_(?:ins|upd) BEFORE (?:INSERT|UPDATE OF status) ON run_steps\s+WHEN NEW\.status NOT IN \(([^)]*)\)/g;
+      for (const m of sql.matchAll(guard)) admitted.push([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+    }
+    expect(admitted, 'the insert and the update guard on run_steps.status').toHaveLength(2);
+    for (const set of admitted) expect([...set].sort()).toEqual([...STEP_STATUSES].sort());
   });
 
   it('every value list has a tone mapping where a status is display-facing', () => {

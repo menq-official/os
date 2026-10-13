@@ -56,15 +56,10 @@
 .grid { display: grid; gap: var(--menq-space-4); }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.stat { font-size: 26px; font-weight: 700; }
 .muted { color: var(--brops-muted); }
 .row { display: flex; align-items: center; gap: var(--menq-space-3); }
 .between { justify-content: space-between; }
 .stack { display: flex; flex-direction: column; gap: var(--menq-space-3); }
-
-.list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--menq-space-3);
-  padding: var(--menq-space-3) 0; border-bottom: 1px solid var(--brops-border); }
-.list-row:last-child { border-bottom: none; }
 
 .avatar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   background: var(--menq-color-selected); color: var(--brops-accent); font-weight: 700; font-size: 12px; flex: none; }
@@ -92,24 +87,12 @@
 .modal-title { font-size: 17px; font-weight: 700; margin-bottom: var(--menq-space-4); }
 
 /* chat / conversations */
-.chat-layout { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: var(--menq-space-4); align-items: start; }
 .chat-item { display: flex; align-items: center; justify-content: space-between; gap: var(--menq-space-3);
   width: 100%; text-align: left; background: transparent; color: var(--brops-text); cursor: pointer;
   border: 1px solid transparent; border-radius: var(--menq-radius-md); padding: 9px 11px; font: inherit; }
 .chat-item:hover { background: var(--menq-color-hover); }
 .chat-item--active { background: var(--menq-color-selected); border-color: var(--brops-accent); }
 .chat-item-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-thread { max-height: 52vh; overflow-y: auto; margin-bottom: var(--menq-space-4); padding-right: 4px; }
-.chat-msg { display: flex; gap: var(--menq-space-3); align-items: flex-start; }
-.chat-msg--mine { flex-direction: row-reverse; }
-.chat-bubble { background: var(--menq-color-hover); border: 1px solid var(--brops-border);
-  border-radius: var(--menq-radius-md); padding: 8px 12px; max-width: 74%; }
-.chat-msg--mine .chat-bubble { background: var(--menq-color-selected); border-color: var(--brops-accent); }
-.chat-author { font-size: 11px; color: var(--brops-muted); margin-bottom: 2px; }
-.chat-composer { display: flex; gap: var(--menq-space-3); align-items: flex-start; }
-.chat-composer-field { position: relative; flex: 1; }
-.chat-composer-field .input { width: 100%; }
-@media (max-width: 820px) { .chat-layout { grid-template-columns: 1fr; } }
 
 /* conversation row hover actions (rename / delete) */
 .chat-item-row { position: relative; }
@@ -132,10 +115,6 @@
   text-align: left; background: transparent; border: none; border-radius: var(--menq-radius-sm);
   padding: 6px 8px; cursor: pointer; color: var(--brops-text); font: inherit; }
 .mention-item:hover, .mention-item--active { background: var(--menq-color-hover); }
-.chat-stream { display: block; }
-
-/* files browser */
-.file-row--dir:hover { background: var(--menq-color-hover); border-radius: var(--menq-radius-md); }
 
 /* chat typing indicator + AI hint */
 .chat-hint { font-size: 12px; color: var(--brops-muted); }
@@ -152,7 +131,6 @@
 @media (prefers-reduced-motion: reduce) { .chat-cursor { animation: none; } }
 
 /* markdown rendering in agent replies */
-.md-plain { white-space: pre-wrap; }
 .md { line-height: 1.5; }
 .md > *:first-child { margin-top: 0; }
 .md > *:last-child { margin-bottom: 0; }
@@ -206,30 +184,9 @@
 @media (max-width: 720px) { .bar-row { grid-template-columns: minmax(64px, 34%) 1fr auto; } }
 
 /* run step execution results */
-.run-step { padding: 4px 0; }
 .run-step-result { margin: 6px 0 4px 22px; padding: 8px 12px; background: var(--menq-color-hover); border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md); font-size: 0.92em; }
 
-/* calendar — month grid + agenda */
-.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--menq-space-3); flex-wrap: wrap; }
-.cal-grid-wrap { overflow-x: auto; }
-.cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(78px, 1fr)); min-width: 560px; }
-.cal-weekdays { gap: 0; margin-bottom: 6px; }
-.cal-weekday { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--brops-muted); text-align: center; padding: 4px 0; }
-.cal-grid { gap: 6px; }
-.cal-cell { display: flex; flex-direction: column; gap: 4px; align-items: stretch; text-align: left;
-  min-height: 92px; padding: 6px 7px; font: inherit; cursor: pointer;
-  background: var(--brops-surface); color: var(--brops-text);
-  border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md);
-  transition: background var(--menq-motion-fast), border-color var(--menq-motion-fast); }
-.cal-cell:hover { background: var(--menq-color-hover); border-color: var(--brops-accent); }
-.cal-cell--out { opacity: 0.5; }
-.cal-cell--today { border-color: var(--brops-accent); background: var(--menq-color-selected); }
-.cal-daynum { font-size: 12px; font-weight: 600; color: var(--brops-muted); }
-.cal-cell--today .cal-daynum { color: var(--brops-accent); }
-.cal-events { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.cal-event { min-width: 0; }
-.cal-event .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-more { font-size: 11px; color: var(--brops-muted); padding-left: 2px; }
+/* calendar — agenda heading + run history */
 .cal-agenda-heading { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--brops-muted); margin-top: var(--menq-space-3); font-weight: 600; }
 /* The run-history section — seventh independent audit, `G-07`.
@@ -245,23 +202,6 @@
   border-top: 1px solid var(--brops-border); }
 .cal-run-list { list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: var(--menq-space-2); }
-.agenda-card { display: flex; align-items: center; justify-content: space-between; gap: var(--menq-space-3);
-  flex-wrap: wrap; padding: 10px 12px; background: var(--brops-surface);
-  border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md); }
-.agenda-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* tasks kanban board */
-.board { display: flex; gap: var(--menq-space-3); overflow-x: auto; padding-bottom: 6px; align-items: flex-start; }
-.board-col { flex: 1 1 0; min-width: 200px; background: var(--menq-color-hover); border: 1px solid var(--brops-border); border-radius: var(--menq-radius-card); padding: 8px; }
-.board-col--over { border-color: var(--brops-accent); background: var(--menq-color-selected); }
-.board-col-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 6px 8px; }
-.board-col-title { font-weight: 700; text-transform: capitalize; font-size: 13px; }
-.board-col-body { display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
-.board-card { background: var(--brops-elevated); border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md); padding: 10px 12px; cursor: grab; }
-.board-card:hover { border-color: var(--brops-accent); }
-.board-card:active { cursor: grabbing; }
-.board-card-title { font-size: 14px; }
-.board-empty { text-align: center; padding: 8px 0; opacity: 0.5; }
 
 /* ───────────────────────────────────────────────────────────────────────────
  * Phase-4 component-library primitives (G1–G6). All colors resolve through
@@ -385,7 +325,6 @@
 .chart-plot { width: 100%; height: auto; display: block;
   background: var(--brops-bg); border: 1px solid var(--brops-border); border-radius: var(--menq-radius-md); }
 .chart-baseline { stroke: var(--brops-border); stroke-width: 1; }
-.chart-grid-line { stroke: color-mix(in srgb, var(--brops-border) 70%, transparent); stroke-width: 1; }
 .chart-line { stroke: var(--brops-accent); stroke-width: 2; fill: none; vector-effect: non-scaling-stroke;
   stroke-linejoin: round; stroke-linecap: round; }
 .chart-line--draw { stroke-dasharray: 1200; stroke-dashoffset: 1200; animation: chart-draw 700ms var(--menq-motion-easing, ease-out) forwards; }
@@ -397,9 +336,11 @@
 .chart-table table { width: 100%; border-collapse: collapse; margin-top: var(--menq-space-3); }
 .chart-table caption { text-align: left; }
 /* Visually hidden, still announced. `.chart-caption` was this rule under a name that only made
-   sense inside a chart, so every other surface that needed it either re-declared the same six
-   properties locally (Analytics, Security both did) or used a glyph and hoped. `.sr-only` is the
-   name the rest of the world uses; the chart keeps its own so nothing has to be renamed. */
+   sense inside a chart; `.sr-only` is the name the rest of the world uses, and the chart keeps
+   its own so nothing has to be renamed. Two pages use the shared class (Tasks, Activity).
+   Eleven pages still declare the same rule under a page-local name in their own <style> block:
+   Agents, Analytics, Approvals, Automations, Decisions, Knowledge, Memory, Notifications,
+   Projects, Settings, Tasks. */
 .sr-only,
 .chart-caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -459,7 +400,7 @@
 .barchart .bar-row { animation: barchart-bar-in var(--menq-motion-med) ease-out both; animation-delay: var(--enter, 0ms); }
 @keyframes barchart-bar-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
 
-/* G5 · Mark responsive collapse — mirrors the ≤900px sidebar label hide */
+/* G5 · Mark responsive collapse — its own breakpoint; the shell rail goes off-canvas at ≤860px (aios.css) and hides no labels */
 @media (max-width: 900px) { .mark--responsive .mark-text { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {

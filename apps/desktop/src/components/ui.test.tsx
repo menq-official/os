@@ -14,16 +14,22 @@ import {
   Panel,
   Card,
   Skeleton,
+  Async,
 } from './ui';
 import { statusTone, type Tone } from '../domain/enums';
 import { renderMarkdown } from './markdown';
+import { AppProvider } from '../app/store';
+import { dicts } from '../i18n';
+import type { AsyncState } from '../hooks/useAsync';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * Component tests for the shared, presentational UI primitives.
  *
- * Everything exercised here renders WITHOUT the Tauri IPC layer or the
- * `useApp` context (ErrorState / Async are intentionally excluded because
- * they call `useApp()` / `hasBackend()`).
+ * Everything exercised here renders WITHOUT the Tauri IPC layer, and all but
+ * the `Async` suite without the `useApp` context: `Async` calls `useApp()`, so
+ * that suite mounts it under an `AppProvider`.
  */
 
 describe('Badge', () => {
@@ -92,8 +98,11 @@ describe('EmptyState', () => {
   });
 
   it('omits the hint element when no hint is provided', () => {
-    render(<EmptyState title="Solo" />);
-    expect(screen.queryByText('Add your first item')).not.toBeInTheDocument();
+    // Asked of the element, not of a text: this queried 'Add your first item', a string this
+    // render was never given, so it passed with an empty hint <div> on screen.
+    const { container } = render(<EmptyState title="Solo" />);
+    expect(container.querySelector('.empty .muted')).toBeNull();
+    expect(container.querySelector('.empty')!.children).toHaveLength(2);
   });
 
   it('renders the default glyph and a custom glyph', () => {
@@ -189,8 +198,10 @@ describe('PageHeader', () => {
   });
 
   it('omits the subtitle when not provided', () => {
-    render(<PageHeader title="Solo" />);
-    expect(screen.queryByText('All work items')).not.toBeInTheDocument();
+    // Asked of the element: 'All work items' belongs to another test's render and could not be
+    // here whether or not an empty subtitle <div> was.
+    const { container } = render(<PageHeader title="Solo" />);
+    expect(container.querySelector('.page-subtitle')).toBeNull();
   });
 });
 
@@ -228,6 +239,60 @@ describe('Skeleton', () => {
   it('renders the requested number of rows', () => {
     const { container } = render(<Skeleton rows={5} />);
     expect(container.querySelectorAll('.skeleton')).toHaveLength(5);
+  });
+});
+
+describe('Async — the states it renders itself', () => {
+  const settled = (data: string[] | null, error: string | null = null): AsyncState<string[]> =>
+    ({ data, loading: false, error, reload: () => {} });
+  const underLang = (lang: 'en' | 'hy' | 'ru', run: () => void) => {
+    localStorage.setItem('brops.lang', JSON.stringify(lang));
+    try { run(); } finally { localStorage.removeItem('brops.lang'); }
+  };
+  const title = () => document.querySelector('.empty-title')!.textContent;
+
+  // R3-0762: the default was the English literal with `t` in scope, so a caller that left
+  // `emptyTitle` out showed English under Armenian and Russian.
+  it.each(['en', 'hy', 'ru'] as const)('titles an empty list from the dictionary when no emptyTitle is given (%s)', (lang) => {
+    underLang(lang, () => {
+      render(<AppProvider><Async state={settled([])}>{() => <p>rows</p>}</Async></AppProvider>);
+      expect(title()).toBe(dicts[lang]['state.empty']);
+    });
+    expect(dicts.hy['state.empty']).not.toBe(dicts.en['state.empty']);
+  });
+
+  it('a caller\'s emptyTitle still wins over the dictionary', () => {
+    underLang('hy', () => {
+      render(<AppProvider><Async state={settled([])} emptyTitle="No notes">{() => <p>rows</p>}</Async></AppProvider>);
+      expect(title()).toBe('No notes');
+    });
+  });
+
+  it('ui.tsx carries no copy of the dictionary\'s empty title', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/components/ui.tsx'), 'utf8');
+    expect(src).not.toContain(dicts.en['state.empty']);
+  });
+
+  // R3-0763: Async answered "no backend" itself and then handed the same error to ErrorState,
+  // whose first statement is the same answer. ErrorState is the one copy now.
+  it('a failed read with no backend is the calm offline panel, with no error and no retry', () => {
+    render(<AppProvider><Async state={settled(null, 'permission denied')}>{() => <p>rows</p>}</Async></AppProvider>);
+    expect(title()).toBe(dicts.en['state.offline']);
+    expect(screen.getByText(dicts.en['state.offlineHint'])).toBeInTheDocument();
+    expect(screen.queryByText(/permission denied/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('a failed read WITH a backend is the error panel, a refusal named as one', () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    try {
+      render(<AppProvider><Async state={settled(null, 'permission denied')}>{() => <p>rows</p>}</Async></AppProvider>);
+      expect(title()).toBe(dicts.en['state.loadFailed']);
+      expect(screen.getByText(`${dicts.en['state.permissionDenied']}: permission denied`)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: dicts.en['action.retry'] })).toBeInTheDocument();
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
   });
 });
 
