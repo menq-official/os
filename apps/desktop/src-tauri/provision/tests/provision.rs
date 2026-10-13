@@ -848,6 +848,33 @@ fn only_not_found_is_absence_when_provisioning_asks_what_is_at_a_path() {
     assert_eq!(prov::occupancy_from_probe(dir.path(), fs::symlink_metadata(dir.path())).unwrap(), prov::Occupancy::Other);
 }
 
+/// Cockpit read R3-0153: a caller's bad ARGUMENT — a head sequence of zero, an expiry in the
+/// past, an empty id — was reported with the words for a damaged store: "the provisioned trust
+/// store is not usable … Nothing was changed or deleted … Moving or removing the `trust`
+/// directory…". The store was fine; the request was wrong.
+#[test]
+fn a_bad_argument_is_not_reported_as_a_damaged_trust_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = mint_at(dir.path()).unwrap();
+    let out = dir.path().join("out.json");
+    let far = i64::MAX / 2;
+
+    let refusals = [
+        prov::mint_floor_anchor(&p.trust_dir, "t-001", 0, &out).expect_err("zero head sequence"),
+        prov::mint_control_room_command(&p.trust_dir, "c-1", "t-001", "cancel", "s-1", 1, &out)
+            .expect_err("an expiry in the past"),
+        prov::mint_control_room_command(&p.trust_dir, "", "t-001", "cancel", "s-1", far, &out)
+            .expect_err("an empty command id"),
+    ];
+    for refused in refusals {
+        assert!(matches!(refused, prov::ProvisionError::InvalidArgument { .. }), "{refused:?}");
+        let said = refused.to_string();
+        assert!(!said.contains("trust store is not usable"), "{said}");
+        assert!(!said.contains("Moving or removing"), "{said}");
+    }
+    assert!(!out.exists(), "nothing was written for a request that was refused");
+}
+
 #[test]
 fn the_manifest_states_what_became_of_the_operator_root_without_overclaiming() {
     let dir = tempfile::tempdir().unwrap();

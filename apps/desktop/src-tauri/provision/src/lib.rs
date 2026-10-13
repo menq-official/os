@@ -338,6 +338,10 @@ pub enum ProvisionError {
     /// never re-minted over: a store that fails verification is either damaged or
     /// tampered with, and silently replacing it destroys the evidence of which.
     Corrupt { what: String, detail: String },
+    /// The CALLER asked for something that cannot be done — a head sequence of zero, an expiry
+    /// in the past, an empty id. Nothing on disk is wrong, and nothing was read to decide it.
+    /// These were reported as [`Self::Corrupt`], whose words are about a damaged store.
+    InvalidArgument { what: String, detail: String },
     /// This platform cannot do something the posture requires. Fails closed.
     Unsupported { platform: String, what: String },
     /// The trust anchor is not held where the policed account cannot write it — the one
@@ -357,6 +361,11 @@ impl std::fmt::Display for ProvisionError {
                 write!(f, "trust provisioning failed while {what} ({}): {source}", path.display())
             }
             ProvisionError::Canonical(e) => write!(f, "trust provisioning failed: {e}"),
+            ProvisionError::InvalidArgument { what, detail } => write!(
+                f,
+                "trust provisioning was asked for something it cannot do — {what}: {detail}. \
+                 The trust store was not touched."
+            ),
             ProvisionError::Corrupt { what, detail } => write!(
                 f,
                 "the provisioned trust store is not usable — {what}: {detail}. Nothing was \
@@ -400,6 +409,11 @@ fn io<T>(r: std::io::Result<T>, what: &str, path: &Path) -> Result<T, ProvisionE
 
 fn corrupt<T>(what: &str, detail: impl Into<String>) -> Result<T, ProvisionError> {
     Err(ProvisionError::Corrupt { what: what.to_string(), detail: detail.into() })
+}
+
+/// A refusal of what the CALLER passed in. Not [`corrupt`]: nothing on disk was looked at.
+fn invalid_argument<T>(what: &str, detail: impl Into<String>) -> Result<T, ProvisionError> {
+    Err(ProvisionError::InvalidArgument { what: what.to_string(), detail: detail.into() })
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,7 +1044,7 @@ pub fn mint_floor_anchor(
     out: &Path,
 ) -> Result<Value, ProvisionError> {
     if head_sequence < 1 {
-        return corrupt(
+        return invalid_argument(
             "an evidence-floor-anchor needs a positive head_sequence",
             format!("got {head_sequence}"),
         );
@@ -1078,7 +1092,7 @@ pub fn mint_control_room_command(
 ) -> Result<Value, ProvisionError> {
     let now = now_epoch();
     if expires_at_epoch <= now {
-        return corrupt(
+        return invalid_argument(
             "a control-room-command must expire in the future",
             format!("expires_at_epoch {expires_at_epoch} is not after {now}"),
         );
@@ -1088,7 +1102,7 @@ pub fn mint_control_room_command(
          ("session_id", session_id)]
     {
         if value.is_empty() {
-            return corrupt(
+            return invalid_argument(
                 "a control-room-command must bind the command it authorises",
                 format!("{field} is empty"),
             );
