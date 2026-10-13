@@ -213,6 +213,11 @@ pub fn record_pre_verification_block(
     reason: &str,
     now_ms: u64,
 ) -> CoreResult<ReceiptOutcome> {
+    // Bounded HERE, not by whoever calls: the row and the returned reason are then the same
+    // bounded text by construction. The one production caller bounded it first; the next one
+    // would not have had to.
+    let reason = bounded_reason(reason);
+    let reason = reason.as_str();
     in_immediate_tx(conn, |tx| {
         let stamp = now_ms.to_string();
         // Spend the challenge if it exists and is unconsumed (one shot, even on failure).
@@ -326,6 +331,10 @@ fn record(
         // => exact canonical envelope bytes + decoded 64-byte signature (+ key_id /
         // receipt_id when readable).
         CoreVerdict::Failed(ev) => {
+            // A verification error is built from the receipt — a field name, a duplicate key, a
+            // decision string — so the receipt's author sizes it, up to the envelope cap. It is
+            // bounded once, here, and that one string goes to the row and to the caller.
+            let error = bounded_reason(&ev.error);
             let attempt_id = insert_attempt(
                 tx,
                 &AttemptRow {
@@ -336,13 +345,13 @@ fn record(
                     envelope_jcs: ev.envelope_jcs.as_deref(),
                     signature: ev.signature.as_deref(),
                     outcome: "blocked",
-                    error: Some(&ev.error),
+                    error: Some(&error),
                     nonce: Some(want_nonce),
                     message_id: None,
                     stamp: &stamp,
                 },
             )?;
-            Ok(ReceiptOutcome::Blocked { attempt_id, error: ev.error })
+            Ok(ReceiptOutcome::Blocked { attempt_id, error })
         }
 
         // Signature + all pure §3 bindings passed. Now the stateful gates decide
@@ -1875,6 +1884,64 @@ mod tests {
             .query_row("SELECT consumed_at FROM receipt_challenges WHERE nonce = 'nonce-A'", [], |r| r.get(0))
             .unwrap();
         assert!(consumed.is_some(), "the nonce is terminally consumed");
+    }
+
+    /// R3-0125: `MAX_REASON_BYTES` bounded a reason only where a CALLER remembered to. A
+    /// verification error is built from the receipt itself — an unknown field's name, a
+    /// duplicate key, a decision string — so whoever shapes the receipt sizes the reason, up to
+    /// the 64 KiB envelope cap, and that string went into the evidence row and back to the UI
+    /// unbounded. Both carry the same bounded text now.
+    #[test]
+    fn a_verification_error_is_bounded_in_the_row_and_in_the_outcome_alike() {
+        let conn = db();
+        let now = 1_000_000u64;
+        let fx = Fx::new(now, "nonce-BIG");
+        seed_turn(&conn, &fx, now);
+
+        // A correctly signed envelope with one extra field whose NAME is 20 KiB.
+        let mut fields = fx.fields("receipt-BIG");
+        fields.insert("x".repeat(20 * 1024), "v".to_string());
+        let (env, sig) = fx.wire_of(&fields);
+        let out = vrec(&conn, &fx, &env, &sig, now, TrustClass::Development).unwrap();
+        let (attempt_id, error) = match out {
+            ReceiptOutcome::Blocked { attempt_id, error } => (attempt_id, error),
+            other => panic!("an unknown field must Block, got {other:?}"),
+        };
+        assert!(error.len() <= MAX_REASON_BYTES, "the outcome's reason is {} bytes", error.len());
+        assert!(error.contains("[truncated; sha256="), "and says it was cut: {}", &error[..80.min(error.len())]);
+
+        let stored: String = conn
+            .query_row(
+                "SELECT verification_error FROM receipt_verification_attempts WHERE id = ?1",
+                [&attempt_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, error, "the durable row and the reason shown are the same text");
+    }
+
+    /// The pre-verification block bounds its own reason too, instead of trusting the caller.
+    #[test]
+    fn a_pre_verification_block_bounds_the_reason_it_is_given() {
+        let conn = db();
+        let now = 1_000_000u64;
+        let fx = Fx::new(now, "nonce-PRE");
+        seed_turn(&conn, &fx, now);
+        let huge = "transport said: ".to_string() + &"z".repeat(50_000);
+        let out = record_pre_verification_block(&conn, "nonce-PRE", &huge, now).unwrap();
+        let (attempt_id, error) = match out {
+            ReceiptOutcome::Blocked { attempt_id, error } => (attempt_id, error),
+            other => panic!("got {other:?}"),
+        };
+        assert!(error.len() <= MAX_REASON_BYTES, "the outcome's reason is {} bytes", error.len());
+        let stored: String = conn
+            .query_row(
+                "SELECT verification_error FROM receipt_verification_attempts WHERE id = ?1",
+                [&attempt_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, error);
     }
 
     #[test]

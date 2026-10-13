@@ -5,16 +5,16 @@
 > `config/canon-budget.json` holds it to 8500 bytes; over that, the wall accepts only an edit that
 > shrinks it.
 
-**Active branch:** `main` — `main` @ `b54f090`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
+**Active branch:** `main` — `main` @ `ef285b2`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `b54f090`.** PR #432 on `ck-m19` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `ef285b2`.** PR #433 on `ck-m20` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** L-17, L-25, L-26, L-36 wait on the Owner; K-01, K-09 open.
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
 
-**OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 221 closed.
+**OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 222 closed.
 
 **Next: T-020's FW-1 correction MERGED as `#219` (`2a50081`) and is NOT approved.** B1-B7 and C1, C2,
 C4, C6, C7 are done and measured — the full account and the B/C list live only in `#219`'s body;
@@ -51,7 +51,7 @@ Run these. The numbers below have been wrong in every audit round so far.
 
 ```bash
 cd engine && BRO_ENV=ci python3 -m unittest discover -s tests    # 2741 OK; skips are per-env
-cd apps/desktop/src-tauri && cargo test --workspace              # 1591 passed
+cd apps/desktop/src-tauri && cargo test --workspace              # 1593 passed
 cd apps/desktop && npm ci && npm run typecheck && npm test # 1230 tests / 88 files, + test:a11y
 python3 tools/check_canon_budget.py       # the read set fits one context
 python3 tools/check_contrast.py           # 98 text pairs clear WCAG AA in both themes
