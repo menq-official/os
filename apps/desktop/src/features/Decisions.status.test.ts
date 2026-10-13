@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { DECISION_STATUS_FAMILY, DECISION_STATUSES, type DecisionStatus } from '../domain/enums';
 import { statusMeta, decisionStatusFamily, isRecognisedDecisionStatus } from './Decisions.status';
@@ -25,6 +28,8 @@ import { statusMeta, decisionStatusFamily, isRecognisedDecisionStatus } from './
  * found (a non-atomic migration that could brick the database). The enforcement is placed where
  * this repository actually decides something: its own fixtures.
  */
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 /** The comparison itself: every status whose mapped family disagrees with the page's classifier. */
 function disagreements(map: Readonly<Record<string, string>>): string[] {
   return DECISION_STATUSES
@@ -71,8 +76,46 @@ describe('decision status vocabulary', () => {
   it('the desktop store writes exactly one of these, and it is declared', () => {
     // `repo.rs::decisions::create` hardcodes 'proposed'; nothing in the desktop updates a decision
     // status afterwards. If that ever changes, the new value has to arrive here first.
-    expect(DECISION_STATUSES).toContain('proposed' as DecisionStatus);
+    //
+    // That is READ now. This body compared two TypeScript constants and never opened the store,
+    // so its title was a sentence about Rust that a change to Rust could not falsify (R3-1317).
+    // A text scan, with a text scan's reach: it sees a literal in an `INSERT INTO decisions` or
+    // an `UPDATE decisions` in repo.rs, and a status that arrives as a bound parameter is
+    // refused here as unreadable rather than passed.
+    const rust = readFileSync(resolve(HERE, '../../src-tauri/core/src/repo.rs'), 'utf8');
+    const written: string[] = [];
+    for (const m of rust.matchAll(/INSERT INTO decisions\s*\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)/g)) {
+      const columns = m[1].split(',').map((c) => c.trim());
+      const values = m[2].split(',').map((v) => v.trim());
+      const value = values[columns.indexOf('status')] ?? '';
+      expect(value, 'the INSERT must write status as a quoted literal').toMatch(/^'[^']*'$/);
+      written.push(value.slice(1, -1));
+    }
+    expect(rust, 'a decision status is updated somewhere: read that statement too').not.toMatch(/UPDATE\s+decisions\b/);
+    expect(written).toEqual(['proposed']);
+    for (const status of written) expect(DECISION_STATUSES).toContain(status as DecisionStatus);
     expect(DECISION_STATUS_FAMILY.proposed).toBe('waiting');
+  });
+
+  it('the recognised words are the classifier\'s own patterns, not a second copy of them', () => {
+    // R3-0786: `isRecognisedDecisionStatus` restated both of `statusMeta`'s regexes. A word added
+    // to one copy and not the other would be classified and still called unrecognised, or the
+    // reverse. Every fragment either pattern matches must be recognised AND land in its family.
+    const blocked = ['block', 'reject', 'den', 'fail', 'abort', 'error'];
+    const waiting = ['wait', 'pend', 'propos', 'review', 'hold', 'open', 'draft'];
+    for (const word of blocked) {
+      expect(decisionStatusFamily(word), word).toBe('blocked');
+      expect(isRecognisedDecisionStatus(word), word).toBe(true);
+    }
+    for (const word of waiting) {
+      expect(decisionStatusFamily(word), word).toBe('waiting');
+      expect(isRecognisedDecisionStatus(word), word).toBe(true);
+    }
+    // The third pattern belongs to recognition alone: these are known words that settle.
+    for (const word of ['accept', 'supersede', 'settle', 'final', 'closed', 'adopted']) {
+      expect(decisionStatusFamily(word), word).toBe('settled');
+      expect(isRecognisedDecisionStatus(word), word).toBe(true);
+    }
   });
 
   it('an empty or absent status does not read as blocked', () => {

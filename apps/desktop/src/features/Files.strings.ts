@@ -53,11 +53,6 @@ export const STR = {
     hy: 'Խմբագրել',
     ru: 'Редактировать',
   },
-  readonly: {
-    en: 'Read-only',
-    hy: 'Միայն ընթերցում',
-    ru: 'Только чтение',
-  },
   refresh: {
     en: 'Refresh',
     hy: 'Թարմացնել',

@@ -233,7 +233,6 @@ export function Files() {
   // First read of this path still in flight — drives the honest header posture.
   const dirReading = s.loading && s.data === null;
   const queryRef = useRef<HTMLInputElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
 
   const entries = useMemo(() => s.data?.entries ?? [], [s.data]);
   const folderCount = useMemo(() => entries.filter((e) => e.isDir).length, [entries]);
@@ -527,7 +526,6 @@ export function Files() {
             )}
             {s.data && hits.length > 0 && (
               <div
-                ref={gridRef}
                 className="fx-grid"
                 role="grid"
                 tabIndex={0}
@@ -678,7 +676,7 @@ export function Files() {
         @keyframes fx-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) {
           .fx-fade { animation: none; }
-          .fx-row, .fx-chip { transition: none; }
+          .fx-row { transition: none; }
         }
       `}</style>
     </div>

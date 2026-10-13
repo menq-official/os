@@ -66,6 +66,76 @@ describe('Group chat handoffs — real transcript-derived chain', () => {
     expect(within(chain).getByText('Analyst')).toBeInTheDocument();
     // 3 distinct nodes ⇒ exactly 2 handoffs (speaker changes).
     expect(within(chain).getAllByRole('listitem')).toHaveLength(3);
+    // And the NUMBER the page prints. It sits in the section's head, outside the list, and
+    // this test was named for it while reading only the list: any figure passed (R3-1314).
+    const head = (chain.closest('section') as HTMLElement).querySelector('.cr-head') as HTMLElement;
+    expect(head).toHaveTextContent(STR.handoffsUnit.en);
+    expect((head.querySelector('b') as HTMLElement).textContent).toBe('2');
+  });
+});
+
+// R3-0785: "the first two agents" was written twice — as the roster a new room is given when
+// nobody is picked, and as who answers in a room that has no roster — with a comment relying on
+// the two agreeing. It is one function now; both call sites are held here, with THREE agents so
+// that "two" is a cut and not the whole list.
+describe('Group chat — a room with nobody picked defaults to the first two agents', () => {
+  const THREE = [agent('scout', 'Scout'), agent('analyst', 'Analyst'), agent('auditor', 'Auditor')];
+  const backend = (extra: (cmd: string, args?: Record<string, unknown>) => unknown) => {
+    invokeMock.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === 'list_conversations') return Promise.resolve([ROOM]);
+      if (cmd === 'list_messages') return Promise.resolve(MSGS);
+      if (cmd === 'list_agents') return Promise.resolve(THREE);
+      if (cmd === 'list_conversation_participants') return Promise.resolve([]);
+      if (cmd === 'ai_status') return Promise.resolve({ provider: 'claude-cli', model: 'm', ready: true, detail: 'ok', governed: false });
+      if (cmd === 'search_all') return Promise.resolve([]);
+      const answer = extra(cmd, args);
+      return answer === undefined ? Promise.resolve(null) : answer;
+    });
+    render(<AppProvider><ToastProvider><Conversations kind="group" /></ToastProvider></AppProvider>);
+  };
+
+  it('the new room is given the first two as its roster', async () => {
+    backend((cmd) => (cmd === 'create_conversation'
+      ? Promise.resolve({ ...ROOM, id: 'g-2', title: 'Launch room' }) : undefined));
+    await screen.findAllByText('Design room');
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Launch room' } });
+    // The chips are drawn — so the agent list has loaded — and none is pressed.
+    await within(dialog).findByRole('button', { name: 'Auditor' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(invokeMock.mock.calls.some((c) => c[0] === 'set_conversation_participants')).toBe(true));
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'set_conversation_participants') as unknown[];
+    expect(Object.values(call[1] as Record<string, unknown>)).toContainEqual(['Scout', 'Analyst']);
+  });
+
+  it('a room without a roster is answered by the same first two, in order', async () => {
+    // Each reply stays open until the test lets it return, so the order of events is the
+    // test's and not the scheduler's.
+    const release: Array<() => void> = [];
+    backend((cmd, args) => {
+      if (cmd === 'post_user_message') return Promise.resolve(msg('m-9', 'You', 'user', String(args?.body ?? '')));
+      if (cmd === 'stream_reply') return new Promise<null>((done) => { release.push(() => done(null)); });
+      return undefined;
+    });
+    fireEvent.click((await screen.findAllByText('Design room'))[0]);
+    // The room list on the rail names the third agent once the agent read has landed.
+    await screen.findByText('Auditor');
+    const composer = await screen.findByLabelText('Message, mention @agent…');
+    fireEvent.change(composer, { target: { value: 'where are we' } });
+    fireEvent.submit(composer.closest('form') as HTMLFormElement);
+    const asked = () => invokeMock.mock.calls
+      .filter((c) => c[0] === 'stream_reply')
+      .map((c) => (c[1] as { agent: string }).agent);
+    await waitFor(() => expect(asked()).toEqual(['Scout']));
+    await waitFor(() => expect(document.querySelector('.thread.streaming')).not.toBeNull());
+    release[0]();
+    await waitFor(() => expect(asked()).toEqual(['Scout', 'Analyst']));
+    release[1]();
+    // The turn ENDS here. A third responder would have been asked instead, its reply would
+    // never return, and the thread would go on streaming.
+    await waitFor(() => expect(document.querySelector('.thread.streaming')).toBeNull());
+    expect(asked()).toEqual(['Scout', 'Analyst']);
   });
 });
 

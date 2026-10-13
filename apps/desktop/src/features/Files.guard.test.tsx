@@ -108,11 +108,15 @@ describe('Files — a sealed file is refused, and the page says why', () => {
   });
 
   it('a readable file still opens — the guard is a gate, not a wall', async () => {
-    mount((path) => Promise.resolve({ path, content: 'PLAINTEXTBODY', readonly: true }));
+    mount((path) => Promise.resolve({ path, content: 'PLAINTEXTBODY', readonly: false, sizeBytes: 13 }));
     await open('notes.txt');
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith('read_file',
         expect.objectContaining({ path: '/home/gev/notes.txt' })));
+    // The file OPENED: its body is on the page. This control used to answer `readonly: true`
+    // with no size and look only for the absence of an alert — a reply the page draws as the
+    // "not text" line, so nothing ever showed that a readable file's content arrives (R3-1318).
+    expect(await screen.findByText('PLAINTEXTBODY')).toBeInTheDocument();
     // A successful read must not raise the guard alert. This is the control that stops the
     // three tests above from passing against a build where EVERY open is refused.
     expect(screen.queryByRole('alert')).toBeNull();

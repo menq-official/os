@@ -30,7 +30,6 @@ const styles = `
 .v-decisions .ledger:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--menq-color-focus); }
 .v-decisions .ledger { border-radius: var(--r); outline: none; max-height: 62vh; overflow-y: auto; padding-right: 2px; }
 .v-decisions .led { grid-template-columns: auto 1fr auto; cursor: pointer; animation: dec-reveal var(--menq-motion-med, .3s) ease both; }
-.v-decisions .led.dec-stamp { animation: dec-stamp var(--menq-motion-med, .4s) cubic-bezier(0.2, 1.2, 0.3, 1) both; }
 .v-decisions .ch-verdict { align-items: center; }
 .v-decisions .vcore .mark { width: 46px; height: 46px; }
 .dec-meta { display: flex; flex-wrap: wrap; gap: var(--s5, 18px); margin: var(--s4, 14px) 0; }
@@ -49,15 +48,8 @@ const styles = `
 .v-decisions .dec-engine-said p:last-child { margin-bottom: 0; }
 .v-decisions .dec-engine-attr { letter-spacing: .06em; }
 @keyframes dec-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-/* The 100% keyframe MUST restate opacity. This row carries the "rise" class, which is opacity:0
-   until an animation lifts it, and .led.dec-stamp REPLACES that animation with this one using
-   "both". A property missing from the last keyframe gets an implicit 100% built from the
-   UNDERLYING value - rise's opacity:0 - so a stamped decision row animated in and then faded
-   back out to nothing. Same family as the fifth audit's A-01, and found by the check written in
-   answer to it (tools/check_c1_tokens.py::animation_clobber). */
-@keyframes dec-stamp { 0% { opacity: 0; transform: scale(1.12); } 60% { opacity: 1; transform: scale(0.98); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .v-decisions .led, .v-decisions .led.dec-stamp { animation: none; }
+  .v-decisions .led { animation: none; }
   /* Keep the .now / .live colours (they carry meaning) but drop the motion. */
   .v-decisions .chain b.now { animation: none; }
   .v-decisions .dec-chain-strip .wire.live::after { animation: none; }
@@ -72,13 +64,13 @@ export function Decisions() {
   const s = useAsync<Decision[]>(() => desktop.listDecisions());
 
   const [selectedIndex, setSelectedIndex] = useState(0);
-  // Which decision's evidence viewer is open. The evidence chain itself has no
-  // desktop-facing command — opening it reveals the honest `blocked` (evidence
-  // sealed) state the spec requires, never fabricated evidence.
+  // Which decision's evidence viewer is open. Opening it reads the engine's evidence
+  // chain for that decision through `read_evidence_chain` (the effect below) and draws
+  // whichever of the three states came back — never fabricated evidence.
   const [evidenceOpenId, setEvidenceOpenId] = useState<string | null>(null);
-  // Real, READ-ONLY engine evidence-chain read for the open decision. Steady state in
-  // Phase-2 is `blocked`/`unreachable` (the engine chain read is not answering yet) —
-  // rendered honestly, never as fabricated evidence. `null` = still reading.
+  // Real, READ-ONLY engine evidence-chain read for the open decision: `ok` (records,
+  // possibly none), `blocked` or `unreachable`. Each is rendered as what it is, never
+  // as fabricated evidence. `null` = still reading.
   const [evidenceRead, setEvidenceRead] = useState<GovernanceRead | null>(null);
   const [announce, setAnnounce] = useState('');
 
@@ -98,8 +90,10 @@ export function Decisions() {
     return d === null ? v : dateFmt.format(d);
   };
 
-  // Append-only ledger order: oldest → newest (new decisions land at the end,
-  // matching log semantics and the `stamp`-on-append motion).
+  // Append-only ledger order: oldest → newest (a newer decision sorts to the end, matching
+  // log semantics). The table is read once per mount; nothing on this page re-reads it after a
+  // successful read, which is why the "stamp a newly appended row" effect that stood below
+  // could never fire and was removed with its class and keyframes.
   const ledger = useMemo(() => {
     const list = s.data ?? [];
     return [...list].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
@@ -127,27 +121,6 @@ export function Decisions() {
   const selIdx = ledger.length === 0 ? 0 : Math.min(selectedIndex, ledger.length - 1);
   const selected: Decision | null = ledger[selIdx] ?? null;
   const evidenceOpen = selected != null && evidenceOpenId === selected.id;
-
-  // `stamp` the rows that appear after the first load (a genuinely new
-  // decision), not the whole initial ledger.
-  const seen = useRef<Set<string>>(new Set());
-  const [stampIds, setStampIds] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    if (s.data === null) return;
-    const prev = seen.current;
-    const first = prev.size === 0;
-    const fresh = new Set<string>();
-    const next = new Set<string>();
-    for (const d of s.data) {
-      next.add(d.id);
-      if (!prev.has(d.id)) fresh.add(d.id);
-    }
-    seen.current = next;
-    if (first || fresh.size === 0) return;
-    setStampIds(fresh);
-    const timer = window.setTimeout(() => setStampIds(new Set()), 700);
-    return () => window.clearTimeout(timer);
-  }, [s.data]);
 
   // Consume a command-palette deep-link (e.g. a global-search hit) that targets
   // a specific decision: select it once the ledger has loaded, then clear focus.
@@ -245,7 +218,7 @@ export function Decisions() {
               key={d.id}
               ref={isSel ? selRowRef : undefined}
               id={`dec-row-${d.id}`}
-              className={`led surface soft rise state-${m.face}${isSel ? ' on' : ''}${stampIds.has(d.id) ? ' dec-stamp' : ''}`}
+              className={`led surface soft rise state-${m.face}${isSel ? ' on' : ''}`}
               /* `aria-readonly` was here and is not an allowed attribute on a role-less `div`
                  (axe `aria-allowed-attr`, critical — found by the real-browser sweep). The
                  intent was real: this ledger is append-only. But an invalid ARIA attribute

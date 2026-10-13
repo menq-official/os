@@ -1,10 +1,10 @@
-// Decisions view strings. Extracted verbatim from the previous inline bilingual
-// (EN + HY) helper so the visible copy is re-sourced, never re-authored: the EN and
-// HY values are byte-for-byte what the fail-closed governance view showed before, and
-// a natural RU translation is added so the Russian locale is no longer broken.
+// Decisions view strings (EN + HY + RU). They began as the previous inline bilingual
+// (EN + HY) helper with a RU translation added, and have been reworded since where the
+// copy claimed something the page does not do — each such key says so beside itself
+// (`deliberationEyebrow`, `chamberEmpty`). They are not a verbatim copy of the old view.
 //
-// Only the visible strings live here. No status/Ok/Blocked/Unreachable logic, no
-// evidence-chain honest-state semantics, and no test-asserted role text is changed.
+// Only the visible strings live here: no status/Ok/Blocked/Unreachable logic and no
+// evidence-chain honest-state semantics.
 //
 // A handful of keys are prefixes/suffixes for runtime-interpolated messages (a
 // decision title or a count is spliced between them at the call site); those are

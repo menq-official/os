@@ -1,7 +1,8 @@
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useApp } from '../app/store';
 import {
   Badge, StatusPill, Async, Modal, FormRow, Input, Textarea, Select, Button, EmptyState,
+  usePrefersReducedMotion,
 } from '../components/ui';
 import { Mark } from '../components/Ambient';
 import { useToast } from '../components/toast';
@@ -63,23 +64,9 @@ const styles = `
 // Ported from the mockup's `init()` motion gate: the reactor orbit/sweep and the
 // trace pulse are decorative continuous motion, so they must go static under
 // prefers-reduced-motion. The shared aios.css already freezes the orbit/sweep;
-// this hook lets React drop the traveling pulse + dispatch beat entirely so
-// nothing keeps animating for motion-sensitive operators.
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState<boolean>(() =>
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      : false);
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const sync = () => setReduced(mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
-  }, []);
-  return reduced;
-}
+// the shared `usePrefersReducedMotion` (components/ui) lets React drop the traveling
+// pulse + dispatch beat entirely so nothing keeps animating for motion-sensitive
+// operators. This file carried its own copy of that hook.
 
 // Honest RunStep status → trace presentation. Only the node/rs CSS state mirrors
 // the real step status; nothing is shown as done/now unless the data says so. The
@@ -321,7 +308,7 @@ function RunConsole({ run, onChanged }: { run: Run; onChanged: () => void }) {
                 {dispatchBlocked ? `⛒ ${L('dispatchBlocked')}` : `⚠ ${L('dispatchFailed')}`}
               </span>
               {dispatchBlocked && <span className="micro muted">{L('dispatchBlockedNote')}</span>}
-              {/* The engine's words, never paraphrased — the reason IS the finding. */}
+              {/* The backend's words, never paraphrased — the reason IS the finding. */}
               <span className="cmd-outcome-reason">{execError}</span>
             </p>
           )}
@@ -427,8 +414,9 @@ export function Command() {
           >
             <div className="dock">
               {/* Decoration on a text input — it reflects no backend state, so it must
-                  not render as `live`. The dock's real posture is the `executing` pill,
-                  which is bound to an actual run. */}
+                  not render as `live`. The dock itself shows no run state; the one pill
+                  bound to an actual run is LIVE in the dispatch-trace header, drawn while
+                  a step is `executing`. */}
               <Mark state="idle" className="dock-mark" style={{ width: 26, height: 26 }} />
               <input
                 className="dock-input"

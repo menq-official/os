@@ -262,6 +262,58 @@ describe('Command — a rejected write says why', () => {
   });
 });
 
+// The page had its own copy of `usePrefersReducedMotion`; it reads the shared one from
+// components/ui now (R3-0784). What the copy was for is held here: while a step streams, the
+// traveling pulse and the reactor's dispatch beat are drawn only when motion is allowed.
+describe('Command — decorative motion follows prefers-reduced-motion', () => {
+  async function whileExecuting(reduce: boolean) {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: reduce && query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === 'list_runs') return Promise.resolve([RUN]);
+        if (cmd === 'list_run_steps') return Promise.resolve([STEP]);
+        // Never settles: the step stays `executing` for the whole test.
+        if (cmd === 'stream_run_step') return new Promise(() => {});
+        return Promise.resolve(null);
+      });
+      const { container } = render(<AppProvider><ToastProvider><Command /></ToastProvider></AppProvider>);
+      fireEvent.click(await screen.findByRole('button', { name: /Draft the quarterly report/ }));
+      await screen.findByText('Gather the source figures');
+      fireEvent.click(screen.getByRole('button', { name: 'Execute step' }));
+      // The LIVE pill is the page's own sign that a step is executing.
+      await screen.findByText('LIVE');
+      return {
+        pulse: container.querySelector('.cmd-trace .cmd-pulse'),
+        beat: container.querySelector('.reactor.dispatching'),
+      };
+    } finally {
+      window.matchMedia = original;
+    }
+  }
+
+  it('motion allowed: the pulse and the dispatch beat are drawn while a step executes', async () => {
+    const { pulse, beat } = await whileExecuting(false);
+    expect(pulse).not.toBeNull();
+    expect(beat).not.toBeNull();
+  });
+
+  it('reduced motion: neither is drawn, though the step is executing', async () => {
+    const { pulse, beat } = await whileExecuting(true);
+    expect(pulse).toBeNull();
+    expect(beat).toBeNull();
+  });
+});
+
 // `stepMeta` knew `done` and `active` and sent everything else to `wait`: a FAILED step and a
 // SKIPPED one wore the amber "waiting" pill, beside a status word that said otherwise.
 describe('Command — a failed or skipped step is not styled as a waiting one', () => {

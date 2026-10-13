@@ -183,6 +183,11 @@ export function mentionedAgents(body: string, agentNames: readonly string[]): st
   return found.sort((a, b) => a.at - b.at).map((f) => f.name);
 }
 
+// A group room nobody was picked for: the first two agents. `NewRoomForm` writes this as the
+// room's roster, and `send()` answers with it in a room that has no roster — one definition,
+// because the form's comment relies on the two being the same people.
+const defaultRoster = (agentNames: readonly string[]): string[] => agentNames.slice(0, 2);
+
 export function fmtTime(raw: string): string {
   const d = parseTimestamp(raw);
   if (!d) return '';
@@ -282,7 +287,6 @@ function MessageThread({ conversation, onActivity, onDelegation, reloadSignal }:
   const [streamingText, setStreamingText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [replyError, setReplyError] = useState<string | null>(null);
-  // Stop button: a ref the responder loop checks so it can break out immediately.
   // WHICH TURN OWNS THE STREAM UI. Each `send()` takes the next id; Stop (and unmount) retire the
   // current one by moving the counter on. A turn is "live" only while the counter still equals
   // the id it took.
@@ -428,7 +432,7 @@ function MessageThread({ conversation, onActivity, onDelegation, reloadSignal }:
       const responders = mentioned.length
         ? mentioned
         : isGroup
-          ? (roster.length ? roster : agentNames.slice(0, 2).length ? agentNames.slice(0, 2) : ['Bro'])
+          ? (roster.length ? roster : defaultRoster(agentNames).length ? defaultRoster(agentNames) : ['Bro'])
           : [selectedAgent];
       for (const who of responders) {
         if (!live()) break;
@@ -861,7 +865,7 @@ function NewRoomForm({ onClose, onCreated, onRosterFailed }: {
       .createConversation('group', name.trim())
       .then(async (c) => {
         // Persist the chosen roster (default to the first two agents when none picked).
-        const roster = picked.length ? picked : agentNames.slice(0, 2);
+        const roster = picked.length ? picked : defaultRoster(agentNames);
         if (roster.length) {
           // Non-fatal: the room is created either way; if the roster write fails the reply
           // fan-out falls back to the first two agents. It is SAID, on the page — this was a
@@ -963,7 +967,7 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
   /** Passed to the open thread: see `MessageThread`. */
   reloadSignal?: number;
 }) {
-  const { t, lang, focus, clearFocus, setSelectedConversation } = useApp();
+  const { t, lang, focus, clearFocus } = useApp();
   const L = (k: keyof typeof STR) => STR[k][lang] ?? STR[k].en;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1003,22 +1007,14 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
   // The thread ACTUALLY on screen: the explicit pick when there is one, the first row when there
   // is not, and null when neither resolves (still loading, empty list, or a selected id that is
   // not in this kind's list — all of which render the "pick a conversation" state). Derived once
-  // here so the rail's active highlight, the main pane and the published selection cannot drift.
+  // here so the rail's active highlight, the main pane and the delegation surface below cannot
+  // drift. It stays in this component: it was also published to the app store, for surfaces
+  // that never read it (the delegation surface takes it as a prop, and the group page's
+  // consensus deck keeps its own room picker).
   const loadedConversations = s.data ?? [];
   const activeConversation =
     loadedConversations.find((c) => c.id === (selectedId ?? loadedConversations[0]?.id)) ?? null;
   const activeId = activeConversation?.id ?? null;
-
-  // Lift the selection out of this component's private state. `selectedId` is still owned here —
-  // this only PUBLISHES the resolved thread, keyed by kind, so surfaces that cannot reach into
-  // this component (the delegation ledger beside the direct chat, the consensus deck under the
-  // group rooms) can follow what the owner is looking at instead of guessing or asking again.
-  useEffect(() => {
-    setSelectedConversation(kind, activeId);
-  }, [kind, activeId, setSelectedConversation]);
-  // Leaving the screen retracts the claim. A stale id left behind would have those surfaces
-  // filtering by a conversation nothing is showing — worse than showing everything.
-  useEffect(() => () => setSelectedConversation(kind, null), [kind, setSelectedConversation]);
 
   // A different thread is a different ledger. The fold already refuses a frame belonging to
   // another conversation, so this is not what keeps the two apart — it is what stops the
@@ -1125,10 +1121,12 @@ export function Conversations({ kind, onListChanged, reloadSignal }: {
                           type="button"
                           className="chat-item-action chat-item-action--danger"
                           // Disabled, and wired to nothing. `delete_conversation` is denied to this
-                          // window and the control is parked until T-011. It used to carry an
-                          // `onClick` that staged a confirm dialog, with a delete handler, busy
+                          // window, and its handler refuses unconditionally: a hard delete stays
+                          // forbidden until it gains soft-delete with undo or a native
+                          // confirmation (`forbidden_hard_delete`, commands.rs). It used to carry
+                          // an `onClick` that staged a confirm dialog, with a delete handler, busy
                           // state and a "delete refused" panel behind it — none of which a
-                          // disabled button can reach. That flow returns with the command.
+                          // disabled button can reach.
                           disabled
                           title={t('action.deleteDisabledSafety')}
                           aria-label={t('action.deleteDisabledSafety')}

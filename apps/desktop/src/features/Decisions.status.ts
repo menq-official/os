@@ -21,10 +21,13 @@ import type { DecisionStatusFamily } from '../domain/enums';
  * block/refusal (which reads `alert`). Colour on the ledger dot is carried by `--st-rgb`; a settled
  * decision simply reads neutral, never approved-green.
  */
+const BLOCKED_WORDS = /block|reject|den|fail|abort|error/;
+const WAITING_WORDS = /wait|pend|propos|review|hold|open|draft/;
+
 export function statusMeta(status: string): { face: string; mark: string; tone: string } {
   const v = (status || '').toLowerCase();
-  if (/block|reject|den|fail|abort|error/.test(v)) return { face: 'blocked', mark: 'alert', tone: 'var(--danger-rgb)' };
-  if (/wait|pend|propos|review|hold|open|draft/.test(v)) return { face: 'waiting', mark: 'idle', tone: 'var(--warning-rgb)' };
+  if (BLOCKED_WORDS.test(v)) return { face: 'blocked', mark: 'alert', tone: 'var(--danger-rgb)' };
+  if (WAITING_WORDS.test(v)) return { face: 'waiting', mark: 'idle', tone: 'var(--warning-rgb)' };
   return { face: 'idle', mark: 'idle', tone: 'var(--muted-rgb)' };
 }
 
@@ -48,7 +51,7 @@ export function decisionStatusFamily(status: string): DecisionStatusFamily {
  */
 export function isRecognisedDecisionStatus(status: string): boolean {
   const v = (status || '').toLowerCase();
-  return /block|reject|den|fail|abort|error/.test(v)
-    || /wait|pend|propos|review|hold|open|draft/.test(v)
+  return BLOCKED_WORDS.test(v)
+    || WAITING_WORDS.test(v)
     || /accept|supersede|settle|final|closed|adopted/.test(v);
 }

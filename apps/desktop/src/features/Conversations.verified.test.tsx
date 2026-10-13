@@ -238,7 +238,9 @@ describe('Chat — a conversation the backend did not create is reported', () =>
   });
 });
 
-// The delete control is hard-disabled until T-011. It carried an onClick that staged a confirm
+// The delete control is hard-disabled: `delete_conversation` is denied to this window and refuses
+// unconditionally until a hard delete gains soft-delete with undo or a native confirmation
+// (`forbidden_hard_delete`, commands.rs). It carried an onClick that staged a confirm
 // dialog with a delete handler, busy state and a "delete refused" panel behind it — a flow a
 // disabled button cannot reach, described in the source as "the expected path".
 describe('Chat — delete stays parked: disabled, with its reason, wired to nothing', () => {
@@ -254,10 +256,25 @@ describe('Chat — delete stays parked: disabled, with its reason, wired to noth
     expect(invokeMock.mock.calls.some((c) => c[0] === 'delete_conversation')).toBe(false);
   });
 
-  it('the page carries no delete call at all', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { resolve } = await import('node:path');
-    const src = readFileSync(resolve(process.cwd(), 'src/features/Conversations.tsx'), 'utf8');
-    expect(src).not.toMatch(/\.deleteConversation\s*\(/);
+  // This was a regex over the page's SOURCE TEXT for a `deleteConversation` member call, read through
+  // `process.cwd()`: a destructured or aliased call, or a raw `invoke('delete_conversation')`,
+  // passed it (R3-1315, R3-1316). Every route to the command ends at the IPC boundary, so that
+  // is where it is looked for — after every control of a conversation row has been used.
+  it('no control of a conversation row reaches delete_conversation', async () => {
+    setup([msg('m-1', null)]);
+    await openTheRoom('reply m-1');
+    const row = document.querySelector('.chat-item-row') as HTMLElement;
+    expect(row).not.toBeNull();
+    const controls = [...row.querySelectorAll('button')];
+    // The pick, the rename and the delete: a row that grew a control is a row to read again.
+    expect(controls).toHaveLength(3);
+    for (const control of controls) {
+      fireEvent.click(control);
+      fireEvent.keyDown(control, { key: 'Delete' });
+      fireEvent.keyDown(control, { key: 'Backspace' });
+    }
+    // The rename control did open its dialog, so the clicks above were real ones.
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(invokeMock.mock.calls.some((c) => c[0] === 'delete_conversation')).toBe(false);
   });
 });
