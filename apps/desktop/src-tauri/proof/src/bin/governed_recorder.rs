@@ -716,6 +716,27 @@ mod linux {
         Ok(next)
     }
 
+    /// The child's exit code, or `-1` when it did not exit by itself.
+    ///
+    /// A wait that fails leaves `status` at zero, which decodes as "exited 0" — so the result of
+    /// the wait is what is read, and anything but this child's pid is a refusal. `EINTR` is the
+    /// one failure that means "ask again".
+    fn wait_exit_code(pid: i32) -> Result<i32, String> {
+        let mut status: i32 = 0;
+        loop {
+            let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+            if waited == pid {
+                break;
+            }
+            let e = std::io::Error::last_os_error();
+            if waited == -1 && e.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(format!("recorder: waitpid({pid}) returned {waited}: {e}"));
+        }
+        Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { -1 })
+    }
+
     pub fn recorder(args: &[String]) -> i32 {
         // ---- (0) custody FIRST: what this process will do is decided by root, not by the caller ----
         let policy = match load_policy() {
@@ -906,11 +927,10 @@ mod linux {
             let mut f = unsafe { std::fs::File::from_raw_fd(rfd) };
             let _ = f.read_to_end(&mut report);
         }
-        let mut status: i32 = 0;
-        unsafe {
-            libc::waitpid(pid, &mut status, 0);
-        }
-        let exit_code = if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { -1 };
+        let exit_code = match wait_exit_code(pid) {
+            Ok(code) => code,
+            Err(e) => return err(&e),
+        };
 
         // Fail closed: an EXECVE_FAIL report (the launcher refused) is NOT governed output. Never write it as
         // the turn's output — leave --out empty so the broker's `std::fs::read` sees no bytes and blocks.
@@ -1084,6 +1104,29 @@ mod linux {
             0
         } else {
             1
+        }
+    }
+
+    #[cfg(test)]
+    mod wait_tests {
+        use super::wait_exit_code;
+
+        #[test]
+        fn a_wait_that_failed_is_not_an_exit_code_of_zero() {
+            // pid 1 is never this process's child: the kernel answers ECHILD and leaves `status`
+            // untouched, which read as "exited 0".
+            let refused = wait_exit_code(1).expect_err("a failed wait is not a clean exit");
+            assert!(refused.contains("waitpid"), "{refused}");
+        }
+
+        #[test]
+        fn a_wait_reports_the_exit_code_the_child_really_had() {
+            let spawn = |script: &str| {
+                std::process::Command::new("/bin/sh").args(["-c", script]).spawn().expect("sh").id() as i32
+            };
+            assert_eq!(wait_exit_code(spawn("exit 0")), Ok(0));
+            assert_eq!(wait_exit_code(spawn("exit 3")), Ok(3));
+            assert_eq!(wait_exit_code(spawn("kill -9 $$")), Ok(-1), "killed is not an exit");
         }
     }
 

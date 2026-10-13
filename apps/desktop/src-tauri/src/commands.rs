@@ -1432,18 +1432,41 @@ fn is_lower_hex64(value: &str) -> bool {
 /// measurement now. On this build it returns exactly what it returned before, because
 /// [`governed_provisioning_missing`] finds all five inputs absent; the behaviour is unchanged
 /// and the tests that pin it are untouched.
-fn governed_verification_unconfigured() -> Option<&'static str> {
-    let missing = governed_provisioning_missing(
+fn governed_verification_unconfigured() -> Option<std::borrow::Cow<'static, str>> {
+    governed_unconfigured_reason(&governed_provisioning_missing(
         GOVERNED_TRUSTED_MANIFEST_PROVISIONED,
         GOVERNED_POLICY_BUNDLE_ABSENT,
         GOVERNED_CONTAINMENT_ABSENT,
         GOVERNED_ALLOWED_EXECUTORS,
         GOVERNED_ALLOWED_BUILDERS,
-    );
+    ))
+}
+
+/// How many inputs [`governed_provisioning_missing`] measures.
+const GOVERNED_PROVISIONING_INPUTS: usize = 5;
+
+/// The durable reason for a measured `missing` list; `None` when nothing is missing.
+///
+/// [`GOVERNED_VERIFICATION_UNCONFIGURED`] says "provisions NONE", which is true only when every
+/// input is absent. An install that provisions some of them is told which ones it still lacks —
+/// the measurement used to be taken and then thrown away for the fixed sentence.
+fn governed_unconfigured_reason(missing: &[&'static str]) -> Option<std::borrow::Cow<'static, str>> {
+    use std::borrow::Cow;
     if missing.is_empty() {
         return None;
     }
-    Some(GOVERNED_VERIFICATION_UNCONFIGURED)
+    if missing.len() >= GOVERNED_PROVISIONING_INPUTS {
+        return Some(Cow::Borrowed(GOVERNED_VERIFICATION_UNCONFIGURED));
+    }
+    Some(Cow::Owned(format!(
+        "governed_verification_unconfigured: this install lacks {} of the {} inputs desktop \
+         receipt verification needs — missing: {}. A governed turn therefore cannot be accepted \
+         here, for any receipt whatsoever. This is missing configuration, NOT a receipt that was \
+         checked and failed. The turn is blocked before the model is called.",
+        missing.len(),
+        GOVERNED_PROVISIONING_INPUTS,
+        missing.join(", "),
+    )))
 }
 
 /// Fail-closed pre-flight for the three governed surfaces (chat reply, Ask Bro, run step).
@@ -1464,7 +1487,7 @@ fn governed_unconfigured_block(
 ) -> Option<Result<brops_core::receipt_store::ReceiptOutcome, String>> {
     let reason = governed_verification_unconfigured()?;
     Some(
-        brops_core::receipt_store::record_pre_verification_block(conn, request_nonce, reason, now_ms)
+        brops_core::receipt_store::record_pre_verification_block(conn, request_nonce, &reason, now_ms)
             .map_err(|e| e.to_string()),
     )
 }
@@ -3253,11 +3276,28 @@ mod tests {
             ],
             "the shipped constants must leave every input unprovisioned"
         );
+        assert_eq!(missing.len(), GOVERNED_PROVISIONING_INPUTS, "the count the reason is chosen by");
         // and the pre-flight therefore still refuses, exactly as before this probe existed
         assert_eq!(
-            governed_verification_unconfigured(),
+            governed_verification_unconfigured().as_deref(),
             Some(GOVERNED_VERIFICATION_UNCONFIGURED)
         );
+    }
+
+    #[test]
+    fn a_partly_provisioned_install_is_told_what_it_lacks_not_that_it_has_nothing() {
+        let reason = governed_unconfigured_reason(&["policy-bundle digest", "allowed builder roster"])
+            .expect("two inputs are missing, so the turn is refused");
+        assert!(reason.starts_with("governed_verification_unconfigured:"), "{reason}");
+        assert!(!reason.contains("NONE"), "three of five inputs are provisioned: {reason}");
+        assert!(reason.contains("policy-bundle digest"), "{reason}");
+        assert!(reason.contains("allowed builder roster"), "{reason}");
+        for provisioned in ["trusted key manifest", "containment-evidence digest", "executor"] {
+            assert!(!reason.contains(provisioned), "`{provisioned}` is not missing: {reason}");
+        }
+        assert!(reason.contains("NOT a receipt that was checked and failed"), "{reason}");
+        // nothing missing is no refusal at all
+        assert_eq!(governed_unconfigured_reason(&[]), None);
     }
 
     #[test]

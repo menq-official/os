@@ -367,6 +367,10 @@ pub enum FloorPersistError {
     Rollback(RollbackError),
     /// The advanced floor could not be written durably. The turn is refused: a floor that did not
     /// survive is not a floor.
+    ///
+    /// It does NOT mean the file is unchanged. One failure — the directory sync — happens after
+    /// the rename, so the new floor is in place and only its durability is unknown; that message
+    /// says so in words.
     NotPersisted(String),
 }
 
@@ -479,9 +483,17 @@ pub fn write_floor_atomically(path: &std::path::Path, bytes: &[u8]) -> Result<()
             Some(p) if !p.as_os_str().is_empty() => p,
             _ => std::path::Path::new("."),
         };
-        std::fs::File::open(dir)
-            .and_then(|d| d.sync_all())
-            .map_err(|e| refused("sync directory", dir, e))?;
+        // This is the one failure that comes AFTER the rename: the floor at `path` is the new one
+        // and only its durability is unknown. The refusal stands; the message says which state
+        // the file is in, because "not persisted" alone read as "the old floor is still there".
+        std::fs::File::open(dir).and_then(|d| d.sync_all()).map_err(|e| {
+            FloorPersistError::NotPersisted(format!(
+                "sync directory {}: {e} — the floor file at {} was ALREADY REPLACED; whether \
+                 the replacement survives a power loss is unknown",
+                dir.display(),
+                path.display()
+            ))
+        })?;
     }
     Ok(())
 }
@@ -863,6 +875,38 @@ mod tests {
             Err(FloorPersistError::NotPersisted(why)) => assert!(why.starts_with("open lock "), "{why}"),
             other => panic!("an unwritable floor must refuse, got {other:?}"),
         }
+    }
+
+    /// The step AFTER the rename. A directory this process may write and search but not read
+    /// takes the temp file and the rename and then cannot be opened to be synced — so the refusal
+    /// comes back with the new floor already in place. It is still a refusal (the turn must not
+    /// proceed on a floor that may not survive a power loss), and it has to say which of the two
+    /// states the file is in: "not persisted" alone read as "the old floor is still there".
+    #[cfg(unix)]
+    #[test]
+    fn a_floor_whose_directory_cannot_be_synced_says_the_file_was_already_replaced() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("floor.json");
+        let old = AntiRollbackFloor { highest_epoch: 1, highest_hash: "old".into() };
+        let new = AntiRollbackFloor { highest_epoch: 2, highest_hash: "new".into() };
+        std::fs::write(&path, floor_json_bytes(&old)).unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o300)).unwrap();
+        if std::fs::File::open(dir.path()).is_ok() {
+            // root reads any directory; the branch cannot be reached as root
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            return;
+        }
+        let refused = write_floor_atomically(&path, &floor_json_bytes(&new));
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        match refused {
+            Err(FloorPersistError::NotPersisted(why)) => {
+                assert!(why.starts_with("sync directory "), "{why}");
+                assert!(why.contains("ALREADY REPLACED"), "the file's state is not said: {why}");
+            }
+            other => panic!("a directory that cannot be synced must refuse, got {other:?}"),
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), floor_json_bytes(&new), "and it was replaced");
     }
 
     /// The RENAME branch: the temp file is written and synced, and the final step fails because

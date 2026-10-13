@@ -215,16 +215,31 @@ mod linux {
         cur.as_i64()
     }
 
-    fn write_json(path: &Path, value: &Value) {
-        if let Ok(text) = serde_json::to_string_pretty(value) {
-            let _ = std::fs::write(path, text.as_bytes());
-        }
+    fn write_json(path: &Path, value: &Value) -> Result<(), String> {
+        let text = serde_json::to_string_pretty(value).map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::write(path, text.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    fn record_line(path: &Path, value: &Value) {
+    fn record_line(path: &Path, value: &Value) -> Result<(), String> {
         use std::io::Write;
-        if let Ok(mut fh) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(fh, "{value}");
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|mut fh| writeln!(fh, "{value}"))
+            .map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// Set once any evidence write of this run failed; [`finish`] reads it. The writers used to
+    /// drop every I/O error, so a run could report its expected outcome and exit 0 with nothing
+    /// on disk for `ladder_evidence.py` to judge.
+    static EVIDENCE_LOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// A mid-turn evidence write: a failure is said aloud and held against the run's exit status.
+    fn keep_evidence(written: Result<(), String>) {
+        if let Err(e) = written {
+            eprintln!("ladder_turn: evidence was not written — {e}");
+            EVIDENCE_LOST.store(true, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
@@ -458,7 +473,7 @@ mod linux {
                     );
                 }
             }
-            record_line(
+            keep_evidence(record_line(
                 &self.log,
                 &json!({
                     "principal": self.principal.as_str(),
@@ -466,7 +481,7 @@ mod linux {
                     "reply": response,
                     "transport_ok": reply.is_ok(),
                 }),
-            );
+            ));
             reply
         }
     }
@@ -522,7 +537,7 @@ mod linux {
                 ),
                 Err(_) => (String::new(), None),
             };
-            record_line(
+            keep_evidence(record_line(
                 &self.log,
                 &json!({
                     "protocol": protocol,
@@ -531,7 +546,7 @@ mod linux {
                     "reply_ok": reply_ok,
                     "transport_ok": reply.is_ok(),
                 }),
-            );
+            ));
             match &reply {
                 Err(why) => Refusals::set(&self.refusals.transport, why.clone()),
                 Ok(document) => {
@@ -564,9 +579,9 @@ mod linux {
             // The submit exchange, whole: `ladder_evidence.py` reads the frame for the three staged
             // digests and the challenge document, and reads the reply as the §4.6 frame it judges.
             if protocol == BRIDGE_SUBMIT_PROTOCOL {
-                write_json(&self.dir.join("submit-frame.json"), frame);
+                keep_evidence(write_json(&self.dir.join("submit-frame.json"), frame));
                 if let Ok(document) = &reply {
-                    write_json(&self.dir.join("result-frame.json"), document);
+                    keep_evidence(write_json(&self.dir.join("result-frame.json"), document));
                 }
             }
             reply
@@ -619,8 +634,15 @@ mod linux {
                 target.insert(k.clone(), v.clone());
             }
         }
-        write_json(&evidence.join("ladder-turn.json"), &document);
+        keep_evidence(write_json(&evidence.join("ladder-turn.json"), &document));
         println!("RESULT: ladder-turn outcome={outcome} expected={expect} met={matched}");
+        if EVIDENCE_LOST.load(std::sync::atomic::Ordering::SeqCst) {
+            eprintln!(
+                "ladder_turn: part of this run's evidence is not on disk (named above). The outcome \
+                 may be the one expected; a run that cannot show its evidence has not shown it."
+            );
+            return 1;
+        }
         if matched {
             0
         } else {
@@ -1010,6 +1032,39 @@ mod linux {
             return finish(&evidence, expect, "blocked:custody_row_mismatch", facts);
         }
         finish(&evidence, expect, "committed", facts)
+    }
+
+    #[cfg(test)]
+    mod evidence_tests {
+        use super::*;
+
+        /// One test, because the lost-evidence mark is process-wide and two tests would race on it.
+        #[test]
+        fn a_run_whose_evidence_could_not_be_written_does_not_exit_zero() {
+            let dir = std::env::temp_dir().join(format!("ladder-evidence-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("temp dir");
+
+            // the ordinary case: the outcome named is the outcome had, and the document is on disk
+            assert_eq!(finish(&dir, "committed", "committed", json!({})), 0);
+            assert!(dir.join("ladder-turn.json").is_file());
+            assert_eq!(finish(&dir, "committed", "blocked:setup:x", json!({})), 1);
+
+            // the outcome matches, and the driver's own document has nowhere to go
+            let nowhere = dir.join("no-such-directory");
+            assert_ne!(
+                finish(&nowhere, "committed", "committed", json!({})),
+                0,
+                "a matched outcome with no evidence document is not a pass"
+            );
+
+            // and a line lost in the middle of the turn is held against a run that then matches
+            EVIDENCE_LOST.store(false, std::sync::atomic::Ordering::SeqCst);
+            assert_eq!(finish(&dir, "committed", "committed", json!({})), 0);
+            keep_evidence(record_line(&nowhere.join("hops.jsonl"), &json!({ "hop": 1 })));
+            assert_ne!(finish(&dir, "committed", "committed", json!({})), 0);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     fn trust_state_label(state: &TrustState) -> String {
