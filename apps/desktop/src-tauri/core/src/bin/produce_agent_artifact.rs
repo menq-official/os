@@ -158,32 +158,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     std::fs::write(out.join("runs.jsonl"), runs)?;
 
-    let mut receipts = String::new();
-    {
-        let mut st = conn.prepare(
-            "SELECT run_id, bundle_digest, enforcement_regime, steps_run, touched, outcome \
-             FROM flow_receipts",
-        )?;
-        let rows = st.query_map([], |r| {
-            Ok(serde_json::json!({
-                "run_id": r.get::<_, String>(0)?,
-                "bundle_digest": r.get::<_, String>(1)?,
-                "enforcement_regime": r.get::<_, String>(2)?,
-                "steps_run": r.get::<_, i64>(3)?,
-                "touched": serde_json::from_str::<serde_json::Value>(&r.get::<_, String>(4)?)
-                    .unwrap_or(serde_json::Value::Null),
-                "outcome": r.get::<_, String>(5)?,
-            }))
-        })?;
-        for row in rows {
-            receipts.push_str(&row?.to_string());
-            receipts.push('\n');
-        }
-    }
-    std::fs::write(out.join("receipts.jsonl"), receipts)?;
+    std::fs::write(out.join("receipts.jsonl"), export_receipts(&conn)?)?;
 
     println!("bundle  {digest}");
     println!("run     {run_id}");
     println!("store   {}", store.display());
     Ok(())
+}
+
+/// `receipts.jsonl`: one line per `flow_receipts` row.
+///
+/// On its own so it can be tested. It read `touched` — the JSON list of what a run wrote — with
+/// `unwrap_or(Null)`, so a row whose list could not be parsed was exported as `"touched": null`
+/// and the export succeeded: evidence that said "nothing recorded" about a run whose record was
+/// unreadable (cockpit read R3-0106).
+fn export_receipts(conn: &rusqlite::Connection) -> Result<String, Box<dyn std::error::Error>> {
+    let mut receipts = String::new();
+    let mut st = conn.prepare(
+        "SELECT run_id, bundle_digest, enforcement_regime, steps_run, touched, outcome \
+         FROM flow_receipts",
+    )?;
+    let rows = st.query_map([], |r| {
+        Ok(serde_json::json!({
+            "run_id": r.get::<_, String>(0)?,
+            "bundle_digest": r.get::<_, String>(1)?,
+            "enforcement_regime": r.get::<_, String>(2)?,
+            "steps_run": r.get::<_, i64>(3)?,
+            // Read, or the export fails. `null` here would say the run recorded nothing.
+            "touched": serde_json::from_str::<serde_json::Value>(&r.get::<_, String>(4)?).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    4,
+                    rusqlite::types::Type::Text,
+                    format!("flow_receipts.touched is not JSON: {e}").into(),
+                )
+            })?,
+            "outcome": r.get::<_, String>(5)?,
+        }))
+    })?;
+    for row in rows {
+        receipts.push_str(&row?.to_string());
+        receipts.push('\n');
+    }
+    Ok(receipts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn receipt(conn: &rusqlite::Connection, run_id: &str, touched: &str) {
+        conn.execute(
+            "INSERT INTO flow_receipts(run_id, bundle_digest, enforcement_regime, steps_run, touched, outcome, written_at) \
+             VALUES (?1, 'digest', 'regime', 1, ?2, 'done', '0')",
+            rusqlite::params![run_id, touched],
+        )
+        .expect("insert a receipt row");
+    }
+
+    #[test]
+    fn a_receipt_whose_touched_list_cannot_be_read_fails_the_export() {
+        let conn = db::open_in_memory().expect("db");
+        receipt(&conn, "run-ok", r#"["knowledge:k-1"]"#);
+        let good = export_receipts(&conn).expect("a readable receipt exports");
+        assert!(good.contains(r#""touched":["knowledge:k-1"]"#), "{good}");
+
+        receipt(&conn, "run-bad", "not json at all");
+        let refused = export_receipts(&conn);
+        assert!(refused.is_err(), "an unreadable `touched` was exported: {refused:?}");
+        assert!(refused.unwrap_err().to_string().contains("touched"), "the refusal names the column");
+    }
 }

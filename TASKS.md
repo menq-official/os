@@ -4,7 +4,7 @@
 > [`docs/archive/TASKS_ARCHIVE_2026-08.md`](docs/archive/TASKS_ARCHIVE_2026-08.md).
 
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `ef285b2`.** PR #433 on `ck-m20` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `841a66a`.** PR #434 on `ck-m21` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** L-17, L-25, L-26, L-36 wait on the Owner; K-01, K-09 open.
 >
@@ -18,7 +18,7 @@ Status: `Todo` · `In-Progress` · `Review` · `Done` · `Blocked`. ◑ the Buil
 
 | ID | Task | Claimed by | Status | Branch / PR |
 |----|------|-----------|--------|-------------|
-| **T-145** | **The whole repository, read file by file** — three records, all findings OPEN unless struck: [first read](docs/WHOLE_REPO_READ_2026-10-01.md) 932 (682 fixed, 87 open, 36 wait on the Owner §8); [engine, tools, documents](docs/WHOLE_REPO_READ_2026-10-02.md) 1226; [the cockpit](docs/WHOLE_REPO_READ_2026-10-02_COCKPIT.md) 1370 (222 closed, 2 half, 13 wait, 1 partly refuted, 1 already covered — all marked in the record; +1 by CI), where the readers left 168 files unfinished ◑ | Bro | In-Progress | `#332` |
+| **T-145** | **The whole repository, read file by file** — three records, all findings OPEN unless struck: [first read](docs/WHOLE_REPO_READ_2026-10-01.md) 932 (682 fixed, 87 open, 36 wait on the Owner §8); [engine, tools, documents](docs/WHOLE_REPO_READ_2026-10-02.md) 1226; [the cockpit](docs/WHOLE_REPO_READ_2026-10-02_COCKPIT.md) 1370 (224 closed, 2 half, 13 wait, 1 partly refuted, 1 already covered — all marked in the record; +1 by CI), where the readers left 168 files unfinished ◑ | Bro | In-Progress | `#332` |
 | **T-169** | **The owner-command path** — [design](docs/design/OWNER_COMMAND_PATH_DESIGN.md) **REJECTED** in [review](docs/design/OWNER_COMMAND_PATH_REVIEW.md); redesign owed | — | Todo | — |
 | **T-170** | **Audits** — ledger; open `K-01`, `K-07`, `K-09`, `L-*` (12th; 20 of 43 ◑; 20 repro) | — | Todo | — |
 | **T-171** | **Standard 2.1.0 everywhere** — OS adopted, one `sync_facts`; rest next | — | In-Progress | — |
