@@ -26,6 +26,19 @@
 //!
 //! There is no flag, environment variable or file that supplies the identity in step 1. The only
 //! argument is the signer directory, and pointing it elsewhere does not change who the process is.
+//!
+//! # Exit codes
+//!
+//! This binary's own, not the relay's table in `relay.rs`. There is no 0: step 6 does not return
+//! (`brops_win_live::pipe::run_server` ends the process itself, also with 9, at each of its
+//! four `process::exit` sites).
+//!
+//! | code | meaning |
+//! |------|---------|
+//! | 2    | more than one argument (`relay::EXIT_BAD_ARGS`) |
+//! | 7    | started off Windows (`relay::EXIT_UNSUPPORTED`); nothing else is attempted |
+//! | 8    | step 3: this process is not `NT SERVICE\BroPSAuditSigner` |
+//! | 9    | every other refusal before serving: its own SID unreadable, the peer allowlist unreadable or naming this same account, the key or the anti-rollback state not loadable |
 
 fn main() {
     std::process::exit(real_main());

@@ -88,8 +88,12 @@ fn an_argument_this_shim_does_not_understand_is_refused_rather_than_ignored() {
 fn the_request_bytes_are_the_ones_python_canonical_produces() {
     // `_canonical` is json.dumps(obj, sort_keys=True, separators=(",", ":")). Sorted keys, no
     // spaces, null spelled `null`. Written out literally so a change to either canonicaliser has
-    // to change this string too.
-    let bytes = shim::canonical_request_bytes(&payload(1, H1, None, "audit-anchor-abc")).unwrap();
+    // to change this string too. An all-ASCII payload, which is the only kind the two agree on:
+    // `_canonical` keeps `ensure_ascii=True` and `canonical_bytes` mirrors `ensure_ascii=False`,
+    // so a ledger file name with a non-ASCII character would be `\uXXXX` there and UTF-8 here.
+    let bytes =
+        brops_provision::canonical::canonical_bytes(&payload(1, H1, None, "audit-anchor-abc"))
+            .unwrap();
     assert_eq!(
         String::from_utf8(bytes).unwrap(),
         "{\"artifact_type\":\"audit-head\",\"count\":1,\"issued_at_epoch\":1700000000,\
@@ -107,7 +111,7 @@ fn the_payload_survives_the_relays_json_round_trip() {
     // first.
     for previous in [None, Some(H2)] {
         let original = payload(7, H1, previous, "audit-anchor-abc");
-        let bytes = shim::canonical_request_bytes(&original).unwrap();
+        let bytes = brops_provision::canonical::canonical_bytes(&original).unwrap();
         assert_eq!(shim::parse_request(&bytes).unwrap(), original);
     }
 }
@@ -161,7 +165,7 @@ fn every_failure_exits_non_zero_with_an_empty_stdout() {
     // `_sign_anchor` reads exit 0 as "there is a document on stdout" and json.loads()es it. A
     // failure that exited 0, or that printed a diagnostic on stdout, would surface as "the signing
     // command did not return a signed document" — sending an operator to look for a crypto fault.
-    let good = shim::canonical_request_bytes(&payload(1, H1, None, "k")).unwrap();
+    let good = brops_provision::canonical::canonical_bytes(&payload(1, H1, None, "k")).unwrap();
     let cases: Vec<(&str, Vec<String>, Vec<u8>, Box<dyn Fn(&str, &Value) -> Result<Value, String>>)> = vec![
         ("bad args", args(&["--nope"]), good.clone(), Box::new(|_, _| unreachable!())),
         ("bad stdin", args(&[]), b"not json".to_vec(), Box::new(|_, _| unreachable!())),
@@ -189,7 +193,7 @@ fn every_failure_exits_non_zero_with_an_empty_stdout() {
 
 #[test]
 fn the_exit_codes_distinguish_unreachable_from_refused_from_malformed() {
-    let good = shim::canonical_request_bytes(&payload(1, H1, None, "k")).unwrap();
+    let good = brops_provision::canonical::canonical_bytes(&payload(1, H1, None, "k")).unwrap();
     let code = |r: Box<dyn Fn(&str, &Value) -> Result<Value, String>>| {
         relay::run_with(&args(&[]), &good, r).0
     };
@@ -210,7 +214,7 @@ fn the_exit_codes_distinguish_unreachable_from_refused_from_malformed() {
 /// key `nonsense`, which is the only reason it passed.
 #[test]
 fn a_malformed_reply_cannot_choose_the_refused_exit_code_by_naming_a_field() {
-    let good = shim::canonical_request_bytes(&payload(1, H1, None, "k")).unwrap();
+    let good = brops_provision::canonical::canonical_bytes(&payload(1, H1, None, "k")).unwrap();
     for reply in [
         json!({"REFUSED": 1}),
         json!({"REFUSED": "the audit-anchor signer REFUSED to sign"}),
@@ -240,7 +244,7 @@ fn a_malformed_reply_cannot_choose_the_refused_exit_code_by_naming_a_field() {
 
 #[test]
 fn a_successful_relay_prints_exactly_the_document_and_exits_zero() {
-    let good = shim::canonical_request_bytes(&payload(1, H1, None, "k")).unwrap();
+    let good = brops_provision::canonical::canonical_bytes(&payload(1, H1, None, "k")).unwrap();
     let document = json!({"payload": payload(1, H1, None, "k"), "signature": "aabb"});
     let reply = document.clone();
     let (code, stdout, message) =
@@ -387,7 +391,7 @@ fn the_compiled_relay_prints_no_document_when_nothing_answers_the_pipe() {
     use std::process::{Command, Stdio};
 
     let pipe = format!("brops-anchor-relay-contract-nobody-{}", std::process::id());
-    let request = shim::canonical_request_bytes(&payload(1, H1, None, "k")).unwrap();
+    let request = brops_provision::canonical::canonical_bytes(&payload(1, H1, None, "k")).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_brops-anchor-relay"))
         .args([relay::PIPE_ARG, pipe.as_str()])
         .stdin(Stdio::piped())
@@ -568,6 +572,94 @@ fn the_key_is_minted_once_and_never_replaced_by_a_later_start() {
     assert_eq!(first.public_key, second.public_key);
 }
 
+/// Cockpit read R3-0083. Several starts race for one empty signer directory. Exactly one may
+/// mint; every other must come back holding THAT key. The key file used to be created empty
+/// and filled afterwards, so a loser that looked in between read zero characters and returned
+/// the "does not hold a 32-byte seed" refusal for a key that was a moment from being whole.
+///
+/// A race, so it is run many times rather than once. Measured on the unfixed code on this box:
+/// at 300 rounds it went red in 6 runs of 11 (rounds 0, 0, 45, 103, 104, 166), which is why
+/// there are 3000. A green run is evidence only in that number.
+#[test]
+fn starts_racing_for_one_directory_all_end_up_holding_the_one_minted_key() {
+    const STARTS: usize = 8;
+    const ROUNDS: usize = 3000;
+    for round in 0..ROUNDS {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = std::sync::Barrier::new(STARTS);
+        let outcomes: Vec<Result<(String, bool), String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..STARTS)
+                .map(|_| {
+                    scope.spawn(|| {
+                        gate.wait();
+                        custody::load_or_mint(dir.path(), "S-1-5-80-1-2-3-4-5")
+                            .map(|held| (held.public_key, held.freshly_minted))
+                            .map_err(|e| e.to_string())
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let mut keys = Vec::new();
+        let mut minted = 0;
+        for outcome in &outcomes {
+            match outcome {
+                Ok((public, fresh)) => {
+                    keys.push(public.clone());
+                    minted += usize::from(*fresh);
+                }
+                Err(why) => panic!("round {round}: a racing start was refused: {why}"),
+            }
+        }
+        keys.dedup();
+        assert_eq!(keys.len(), 1, "round {round}: the racing starts hold different keys");
+        assert_eq!(minted, 1, "round {round}: {minted} starts each claim to have minted");
+        // Nothing but the three files the module doc names: a temporary left beside the key
+        // would be a second copy of the seed.
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [spec::KEY_FILE_NAME, spec::CUSTODY_FILE_NAME].map(str::to_string),
+            "round {round}: the signer directory holds something other than the key and its record"
+        );
+    }
+}
+
+/// A start that died between staging the seed and publishing it leaves `anchor.key.<pid>.<n>.tmp`
+/// behind. A later process that is handed the same pid must not be stopped by it: the staging
+/// file was never named by anything, so it is cleared and the mint goes ahead.
+///
+/// The counter `<n>` is private to the library and shared with every other test in this binary,
+/// so the leftovers are planted for every value it can have reached, and the test then counts
+/// them: exactly one must be gone, or the mint did not meet a leftover at all and this proved
+/// nothing.
+#[test]
+fn a_staging_file_left_by_a_dead_start_does_not_stop_the_next_mint() {
+    const PLANTED: usize = 40_000;
+    let dir = tempfile::tempdir().unwrap();
+    let staged = |n: usize| {
+        dir.path().join(format!("{}.{}.{n}.tmp", spec::KEY_FILE_NAME, std::process::id()))
+    };
+    for n in 0..PLANTED {
+        std::fs::write(staged(n), "a seed nothing ever named\n").unwrap();
+    }
+    let held = custody::load_or_mint(dir.path(), "S-1-5-80-1-2-3-4-5")
+        .expect("a leftover staging file refused the mint");
+    assert!(held.freshly_minted);
+    let left = (0..PLANTED).filter(|n| staged(*n).exists()).count();
+    assert_eq!(
+        left,
+        PLANTED - 1,
+        "the mint did not use one of the planted staging names, so this test met no leftover"
+    );
+    let key = std::fs::read_to_string(dir.path().join(spec::KEY_FILE_NAME)).unwrap();
+    assert_eq!(key.trim(), brops_provision::hex(held.key.as_bytes()), "the key is not the seed held");
+}
+
 #[test]
 fn the_published_custody_record_carries_the_public_half_and_no_secret() {
     let dir = tempfile::tempdir().unwrap();
@@ -584,14 +676,14 @@ fn the_published_custody_record_carries_the_public_half_and_no_secret() {
     // Second: is there a FIELD that would carry one? Checked as key names, not as substrings of
     // the whole document, because MINT_LOCATION_NOTE legitimately contains the word "seed" while
     // explaining that this file does not hold it.
-    let fields = shim::field_names(&record);
+    let fields = record.as_object().expect("the custody record is a JSON object");
     for field in ["private_key", "seed", "secret", "signing_key"] {
-        assert!(!fields.iter().any(|f| f == field), "the published record has a {field} field");
+        assert!(!fields.contains_key(field), "the published record has a {field} field");
     }
 }
 
 #[test]
-fn a_custody_record_that_leaked_a_secret_is_refused_by_every_reader() {
+fn a_custody_record_that_leaked_a_secret_is_refused_by_read_custody() {
     let dir = tempfile::tempdir().unwrap();
     custody::load_or_mint(dir.path(), "S-1-5-80-1-2-3-4-5").unwrap();
     let path = dir.path().join(spec::CUSTODY_FILE_NAME);

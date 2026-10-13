@@ -70,8 +70,9 @@ struct Fixture {
     _temp: tempfile::TempDir,
     trust_dir: PathBuf,
     anchor_dir: PathBuf,
-    /// The app-side store as it was before the case ran, so a case that mutates it (they all
-    /// do) cannot poison the next one or the next RUN. Restored by `Drop`.
+    /// The app-side store as it was before the case ran, so a case that mutates it cannot
+    /// poison the next one or the next RUN. One does: `case_pin_rewrite` deletes every file in
+    /// `trust/keys`. Restored by `Drop`.
     snapshot: PathBuf,
     work: PathBuf,
     pipe: String,
@@ -82,8 +83,10 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         // The anchor is sealed and nothing here could restore it if a case had damaged it — but
         // nothing can damage it either, which is the point. What DOES need restoring is the
-        // app-side half: every case below rewrites the registry, deletes private halves, or
-        // both, and the fixture is shared and permanent.
+        // app-side half, because `case_pin_rewrite` deletes every private half in `trust/keys`
+        // and the fixture is shared and permanent. No case rewrites the registry: it is inside
+        // the sealed anchor, and the two cases that try assert `PermissionError` and unchanged
+        // bytes.
         let _ = std::fs::remove_dir_all(&self.trust_dir);
         copy_tree(&self.snapshot, &self.trust_dir).expect("restore the app-side trust store");
     }
@@ -479,9 +482,13 @@ fn an_anchor_signed_by_any_key_the_app_holds_is_refused_by_the_real_verifier() {
 ///   64-character hex run in every file is tried as an Ed25519 seed — the operator root's private
 ///   half is nowhere, and the same search finds every key that IS there, so a null result is not
 ///   the search being broken;
-/// * the attack is then attempted anyway with each private half the app DOES hold: re-sign the
-///   registry, add a rogue `audit-anchor` key, raise the floor, fix the manifest. The real
-///   `bro_signature.load_trusted_keys` must refuse every one of them at the external pin;
+/// * the attack is then attempted anyway with each private half the app DOES hold: a registry
+///   carrying a rogue `audit-anchor` key is built and signed with it, and then INSTALLING that
+///   registry and raising the floor must each raise `PermissionError` — the operating system's
+///   refusal, since both files are inside the sealed anchor — with the bytes of both read back
+///   unchanged. The case does not touch the manifest, and no re-signed registry ever reaches
+///   `bro_signature.load_trusted_keys`, which is called only to show the untouched registry
+///   still resolves the signer's key;
 /// * and the positive control still passes in the same run.
 #[test]
 fn the_registry_can_no_longer_be_re_signed_because_the_root_no_longer_exists() {
@@ -522,12 +529,15 @@ fn the_registry_can_no_longer_be_re_signed_because_the_root_no_longer_exists() {
 ///    `PermissionError`, and the pin\'s bytes are read back afterwards and are unchanged. A
 ///    refusal by intent would be a refusal some future edit could remove; this one is the
 ///    kernel\'s.
-/// 2. **and the forgery fails anyway.** The attack is then carried as far as it can go —
-///    the registry IS app-writable, so it really is re-signed under the rogue root, and a
-///    rogue anchor is really installed over the truncated ledger — and the REAL
-///    `bro_signature.load_trusted_keys` refuses the re-signed registry against the untouched
-///    pin, the REAL `bro_audit_log.verify()` refuses the forged head, and the positive control
-///    still passes in the same run so "refused" cannot mean "everything is refused now".
+/// 2. **and the forgery fails anyway.** The attack is then carried as far as it can go. The
+///    registry is NOT app-writable: it is inside the sealed anchor, so the write that would
+///    install the registry re-signed under the rogue root is one more `PermissionError`, its
+///    bytes are read back unchanged, and `bro_signature.load_trusted_keys` is asked only
+///    whether the untouched registry still resolves the signer's key. What does land on disk is
+///    the ledger half, which is the app's own: the ledger is truncated and a rogue anchor
+///    really is installed over it. The REAL `bro_audit_log.verify()` refuses that forged head,
+///    and the positive control still passes in the same run so "refused" cannot mean
+///    "everything is refused now".
 ///
 /// The second assertion is what makes the first worth having, and vice versa. Either alone is
 /// the failure mode this item keeps landing in: a boundary nobody tried to cross, or a check

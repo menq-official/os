@@ -18,9 +18,13 @@
 //!   variable the ledger's own writer could repoint.
 //! * **stdin** — `_sign_anchor` calls `subprocess.run(argv, input=_canonical(payload), text=True,
 //!   timeout=_SIGNER_TIMEOUT)`. `_canonical` is `json.dumps(obj, sort_keys=True,
-//!   separators=(",", ":"))`, i.e. exactly the bytes
-//!   [`brops_provision::canonical::canonical_bytes`] produces. One JSON object, no trailing
-//!   newline, and **the stream is closed** — there is no length prefix and no second request.
+//!   separators=(",", ":"))` with the default `ensure_ascii=True`: the bytes
+//!   [`brops_provision::canonical::canonical_bytes`] produces **for an all-ASCII payload only**.
+//!   That function mirrors `ensure_ascii=False` and writes a non-ASCII character as UTF-8 where
+//!   `_canonical` writes `\uXXXX`, and `payload.ledger` is a file name. Nothing here depends on
+//!   the two agreeing: the shim parses stdin and forwards the value, never the bytes. One JSON
+//!   object, no trailing newline, and **the stream is closed** — there is no length prefix and
+//!   no second request.
 //! * **stdout** — `json.loads(proc.stdout)` must yield a `dict`, and `verify_signed_payload`
 //!   refuses any document whose key set is not exactly `{"payload", "signature"}`. So stdout
 //!   carries **one JSON object and nothing else**. Every diagnostic goes to stderr, which the
@@ -64,7 +68,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use brops_provision::audit_signer as spec;
 
@@ -246,15 +250,6 @@ pub fn parse_request(stdin_bytes: &[u8]) -> Result<Value, String> {
     Ok(value)
 }
 
-/// The exact bytes `bro_audit_log._canonical` would have produced for `payload`.
-///
-/// Used by the tests to prove the wire carries what the engine sent, and by nothing else — the
-/// relay forwards the parsed value, and the *signature* is computed by
-/// [`brops_provision::audit_signer::sign_anchor`] over its own canonicalisation.
-pub fn canonical_request_bytes(payload: &Value) -> Result<Vec<u8>, String> {
-    brops_provision::canonical::canonical_bytes(payload).map_err(|e| e.to_string())
-}
-
 /// Why a pipe reply is not a document to print — the two cases the shim's exit code tells apart.
 ///
 /// A type, not a sentence. The exit code used to be chosen by searching the MESSAGE for the word
@@ -337,9 +332,4 @@ pub fn document_stdout_bytes(document: &Value) -> Vec<u8> {
     let mut bytes = serde_json::to_vec(document).unwrap_or_else(|_| b"{}".to_vec());
     bytes.push(b'\n');
     bytes
-}
-
-/// Sorted field names of a JSON object, for diagnostics.
-pub fn field_names(v: &Value) -> Vec<String> {
-    v.as_object().map(Map::keys).map(|k| k.cloned().collect()).unwrap_or_default()
 }

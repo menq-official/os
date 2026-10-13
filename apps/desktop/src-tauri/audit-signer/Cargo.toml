@@ -3,7 +3,7 @@ name = "brops-audit-signer"
 version = "0.1.0"
 publish = false
 edition = "2021"
-description = "The audit-head anchor SECOND PRINCIPAL, made real: a service that owns the anchor key and serves it over the peer-authenticated named pipe, plus the unprivileged relay shim BRO_AUDIT_ANCHOR_SIGNER points at. All the DECISIONS live in brops-provision::audit_signer; this crate is the process, the transport and the custody of the key on disk."
+description = "The audit-head anchor signer's core and transport: the process that would own the anchor key and serve it over the peer-authenticated named pipe, plus the unprivileged relay shim BRO_AUDIT_ANCHOR_SIGNER points at. NOT an installed second principal: the service binary has no Service Control Manager entry point, no installer ships it, and every test run is one account playing both parts. All the DECISIONS live in brops-provision::audit_signer; this crate is the process, the transport and the custody of the key on disk."
 
 [lib]
 name = "brops_audit_signer"

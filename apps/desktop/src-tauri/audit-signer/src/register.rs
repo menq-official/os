@@ -47,6 +47,13 @@
 //! That consequence is read from the code; it has NOT been run on a Windows machine, because
 //! no job stands the service up. What is missing is the SCM entry point; it is Windows-only
 //! code and has not been written.
+//!
+//! # And nothing shipped starts it
+//!
+//! Cockpit read R3-0297. [`apply`] and [`install_plan`] are called from this crate's tests
+//! (`tests/anchor_end_to_end.rs`, `tests/relay_contract.rs`) and from nowhere else: no binary in
+//! the workspace has an entry point for either, and no installer runs them. Step 1 above is a
+//! function a test calls, not something an install does.
 
 use std::path::Path;
 
@@ -123,7 +130,8 @@ trust anchor directory, which the app's unelevated account cannot write, and tha
 on every launch. What that does not hold against is an administrator of this machine: one \
 elevation rewrites the anchor, and no second principal here stands above it.";
 
-/// The complete elevated plan: the specification's steps, then this crate's.
+/// The complete elevated plan, as text: the specification's steps with this crate's spliced in
+/// before the start. [`apply`] does not execute this list and skips two of its steps; see there.
 pub fn install_plan(paths: &spec::SignerPaths, app_sid: &str) -> Vec<String> {
     let mut steps = spec::install_steps(paths, app_sid);
     // This crate's steps go BEFORE the start: the signer reads its peer allowlist when it
@@ -296,9 +304,19 @@ fn read_json(path: &Path) -> Result<Value, ProvisionError> {
 // Applying the plan, for real, under elevation
 // =================================================================================================
 
-/// Run the elevated half of [`install_plan`]: create the signer's directory with the protected
-/// DACL, write the peer allowlist, register the service, and **read the descriptor back** to prove
-/// what was applied.
+/// Run MOST of the elevated half of [`install_plan`]: register the service, create the signer's
+/// directory with the protected DACL, write the peer allowlist, **read the descriptor back** to
+/// prove what was applied, and start the service.
+///
+/// Two steps the plan prints are run by nothing (cockpit read R3-0561): `sc.exe description`,
+/// from `spec::install_steps`, and `sc.exe failure … actions= restart/5000`, from
+/// [`crate::additional_install_steps`]. The only `sc.exe` calls below are `create`, `sidtype`
+/// and `start`, so a service registered by this function has no description and no restart
+/// action, whatever the plan says. The plan is a list of sentences and this is a list of calls;
+/// nothing derives one from the other.
+///
+/// Called by this crate's tests and by nothing else (cockpit read R3-0297): no binary and no
+/// installer in the repository calls it, and the same is true of [`install_plan`].
 ///
 /// Elevation is checked first and refused by name. `CreateServiceW` needs
 /// `SC_MANAGER_CREATE_SERVICE`, which the SCM withholds from a standard user by design, and

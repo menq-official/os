@@ -16,9 +16,11 @@
 //!   the app or the anti-rollback guarantee is a suggestion: a forger who can rewrite the signer's
 //!   memory of what it signed can ask it to sign a truncation.
 //!
-//! # Why `create_new`, and what happens on a second start
+//! # Why the mint never replaces, and what happens on a second start
 //!
-//! The mint uses `create_new`, so a seed that already exists is **read, never replaced**. Silently
+//! The mint writes the seed to a staging file (`anchor.key.<pid>.<n>.tmp`, removed before the
+//! mint returns) and publishes it with `hard_link`, which fails on a name that already exists, so
+//! a seed that already exists is **read, never replaced**. Silently
 //! re-minting would be a rotation nobody asked for, and every anchor signed under the old key
 //! would stop verifying while the ledger still looked intact — the failure mode this whole feature
 //! exists to prevent, arriving from the other direction.
@@ -120,8 +122,26 @@ pub fn load_or_mint(signer_dir: &Path, signer_sid: &str) -> Result<SignerCustody
         spec::mint_anchor_key().map_err(|e| CustodyError::Mint(e.to_string()))?;
     let seed_hex = brops_provision::hex(key.as_bytes());
 
-    // `create_new`: if another instance of the service won the race between the `is_file` above
-    // and here, its key is the real one — read it back rather than clobber it.
+    // Written whole under a name of this start's own, then published by `hard_link`, which
+    // refuses an existing name where `rename` would replace it. So `anchor.key` either does not
+    // exist or holds a complete seed. It used to be created empty with `create_new` and filled
+    // afterwards (cockpit read R3-0083): a second instance that looked in between read zero
+    // characters and took the "does not hold a 32-byte seed" refusal above, and a start that
+    // died in between left that refusal permanent.
+    static MINT_ATTEMPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let staged = signer_dir.join(format!(
+        "{}.{}.{}.tmp",
+        spec::KEY_FILE_NAME,
+        std::process::id(),
+        MINT_ATTEMPT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    // A staging file under this exact name can only be what an earlier process with this pid
+    // left behind when it died before publishing: a seed nothing ever named.
+    match std::fs::remove_file(&staged) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return io(Err(e), "clearing a stale anchor key staging file", &staged),
+    }
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -129,28 +149,37 @@ pub fn load_or_mint(signer_dir: &Path, signer_sid: &str) -> Result<SignerCustody
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    match options.open(&key_file) {
-        Ok(mut file) => {
-            use std::io::Write;
-            io(file.write_all(format!("{seed_hex}\n").as_bytes()), "writing the anchor key", &key_file)?;
-            io(file.sync_all(), "flushing the anchor key", &key_file)?;
-            drop(file);
-            io(
-                brops_provision::secure_owner_only_file(&key_file),
-                "restricting the anchor key to its owner",
-                &key_file,
-            )?;
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return load_or_mint(signer_dir, signer_sid)
-        }
-        Err(e) => {
-            return Err(CustodyError::Io {
-                what: "creating the anchor key".to_string(),
-                path: key_file.display().to_string(),
-                source: e,
-            })
-        }
+    let mut file = io(options.open(&staged), "creating the anchor key staging file", &staged)?;
+    let written = (|| {
+        use std::io::Write;
+        io(file.write_all(format!("{seed_hex}\n").as_bytes()), "writing the anchor key", &staged)?;
+        io(file.sync_all(), "flushing the anchor key", &staged)?;
+        // 0600 on POSIX. Off POSIX this call does nothing (`brops_provision`'s non-unix body is
+        // `Ok(())`), and Windows is the only place the service runs: there the key file is
+        // protected by the DACL it inherits from the signer directory, which the installer
+        // stamps, and by nothing this function does (cockpit read R3-0940).
+        io(
+            brops_provision::secure_owner_only_file(&staged),
+            "setting the anchor key's POSIX mode to owner-only",
+            &staged,
+        )
+    })();
+    drop(file);
+    // The link is a second name for the staged file, so it carries that file's mode.
+    let published = written.and_then(|()| match std::fs::hard_link(&staged, &key_file) {
+        Ok(()) => Ok(true),
+        // Another instance of the service won the race between the `is_file` above and here;
+        // its key is the real one — read it back rather than clobber it.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(e) => io(Err(e), "publishing the anchor key", &key_file),
+    });
+    // The staged name goes whatever happened above: left behind it is a second name for the
+    // seed (published) or a seed nobody will ever use (not published).
+    let cleared = io(std::fs::remove_file(&staged), "removing the anchor key staging file", &staged);
+    let published = published?;
+    cleared?;
+    if !published {
+        return load_or_mint(signer_dir, signer_sid);
     }
     write_custody(&custody_file, &key_id, &public, signer_sid)?;
     Ok(SignerCustody { key, key_id, public_key: public, freshly_minted: true })
@@ -186,8 +215,9 @@ fn write_custody(
     )
 }
 
-/// Read the published custody record. Used by provisioning (which must learn the key id and the
-/// public half without ever seeing the seed) and by the tests.
+/// Read the published custody record. Called by this crate's tests and by nothing else
+/// (cockpit read R3-0941): the app reads the record through a different function,
+/// `brops_provision::published_anchor_custody`, which does not call this one.
 pub fn read_custody(signer_dir: &Path) -> Result<Value, CustodyError> {
     let path = signer_dir.join(spec::CUSTODY_FILE_NAME);
     let raw = io(std::fs::read(&path), "reading the custody record", &path)?;
@@ -196,7 +226,10 @@ pub fn read_custody(signer_dir: &Path) -> Result<Value, CustodyError> {
         detail: e.to_string(),
     })?;
     // The record must not contain a secret. Checked on the READ side too, so a record written by
-    // some future edit that leaked the seed is refused by every reader rather than trusted.
+    // some future edit that leaked the seed is refused by THIS reader rather than trusted. It is
+    // not every reader: the app's is `brops_provision::published_anchor_custody`, which checks
+    // only that the record is JSON; the parse that follows it, `AnchorKey::from_custody`,
+    // refuses `private_key` and `seed` and does not look for `secret`.
     if let Some(obj) = value.as_object() {
         for suspicious in ["private_key", "seed", "secret"] {
             if obj.contains_key(suspicious) {

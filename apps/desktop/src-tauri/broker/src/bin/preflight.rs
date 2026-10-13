@@ -12,11 +12,20 @@
 //! argument: the §2.5 integrity floor is decided against it and no config names it, so without it
 //! that row is unmeasurable too.
 //!
-//! Exit codes — deliberately three, so "ready" cannot be collapsed with "could not tell":
+//! Exit codes of a REPORT — deliberately three, so "ready" cannot be collapsed with "could not
+//! tell":
 //!
 //! * `0` every requirement measured and met
 //! * `1` at least one requirement NOT met
 //! * `2` nothing not-met, but something could not be measured here
+//!
+//! Two more when no report is made, both before anything is measured:
+//!
+//! * `64` the arguments were not understood (`--socket` with no path, `--login-uid` with no
+//!   numeric uid, or an unknown argument); the reason is on stderr
+//! * `0` for `-h` / `--help`, which prints the usage line and nothing else. That is the same
+//!   code as "every requirement measured and met", so a caller that passes `--help` and reads
+//!   only the exit code reads "ready" from a run that measured nothing.
 //!
 //! This binary is a REPORT. It opens no socket, spawns no process, writes no file, and cannot make
 //! any governed surface reachable — an all-met report still leaves

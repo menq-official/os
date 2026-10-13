@@ -21,7 +21,10 @@
 //! | 4    | the signer service could not be reached at all |
 //! | 5    | the signer service refused to sign |
 //! | 6    | the signer service answered with something that is not a document |
-//! | 7    | this platform has no signer service |
+//!
+//! The shim never exits 7. Off Windows its roundtrip returns an error, which [`run_with`] maps to
+//! 4 like any other unreachable signer. [`EXIT_UNSUPPORTED`] (7) is declared here and returned
+//! only by the SERVICE binary, `bin/service.rs`, when it is started off Windows.
 
 use std::io::Read;
 
@@ -61,6 +64,7 @@ pub const EXIT_BAD_STDIN: i32 = 3;
 pub const EXIT_UNREACHABLE: i32 = 4;
 pub const EXIT_REFUSED: i32 = 5;
 pub const EXIT_BAD_REPLY: i32 = 6;
+/// The SERVICE binary's code for "started off Windows". Nothing in this module returns it.
 pub const EXIT_UNSUPPORTED: i32 = 7;
 
 /// What the shim decided to do, before any I/O has happened.
