@@ -477,3 +477,35 @@ describe('a conduit with no trigger is not announced as firing on any event', ()
     expect(lane.getAttribute('aria-label')).toContain('every: 5m');
   });
 });
+
+// R3-0050, the half still open: `run_automation`, `set_automation_enabled` and
+// `delete_automation` are local commands over a local SQLite store. When one of them was
+// denied, the panel was titled "Blocked by the wall" and its advice began "A guard tripped or
+// the wall denied this action" — but the engine's wall is not on that path at all.
+describe('a local command the backend denied is not attributed to the wall', () => {
+  it('the panel is titled as a backend refusal and its reason is the backend\'s own', async () => {
+    setup({ runs: [OLD_RUN], onRun: 'refuse' });
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    const title = await waitFor(() => {
+      const el = document.querySelector('.au-blocked .au-blocked-title');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(title).toHaveTextContent(AU_STR.backendRefused.en);
+    const panel = title.closest('.au-blocked') as HTMLElement;
+    expect(panel).toHaveTextContent(/run_automation not allowed/);
+    expect(panel.textContent).not.toMatch(/the wall/i);
+  });
+
+  it('in no language does the title or the advice name the wall or a guard', () => {
+    for (const lang of ['en', 'hy', 'ru'] as const) {
+      // `պատ` as a whole word: `պատուհան` (window) and `պատճառ` (reason) begin with it.
+      for (const key of ['backendRefused', 'guardFix', 'fixCommandNotGranted'] as const) {
+        expect(AU_STR[key][lang], `${key}.${lang}`).not.toMatch(/\bwall\b|guard|(?<!\p{L})պատ(ը|ով|ից|ի)?(?!\p{L})|պահապան|(?<!\p{L})стен|страж/iu);
+      }
+      // What the advice was already corrected to say stays said.
+      expect(AU_STR.guardFix[lang]).toMatch(/no command|հրաման չկա|нет команды/);
+    }
+  });
+});

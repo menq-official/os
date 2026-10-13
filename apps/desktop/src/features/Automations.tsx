@@ -88,7 +88,7 @@ const REFUSAL_FIX: Record<RefusalReason, keyof typeof STR> = {
   action_verb_unknown: 'fixVocabulary',
   action_reaches_model: 'fixNoGovernedPath',
   automation_disabled: 'fixEnable',
-  command_denied: 'guardFix',
+  command_denied: 'fixCommandNotGranted',
   risk_above_local_ceiling: 'fixNoGovernedPath',
 };
 
@@ -710,7 +710,9 @@ export function Automations() {
   );
 
   // ── the blocked (wall/guard denial) panel ────────────────────────────────────
-  const renderBlocked = (reason: string, fix: string, title: string = L('blockedByWall')) => (
+  // The title is always given: there is no default, because the old default — "Blocked by the
+  // wall" — is how three different refusals came to be attributed to the wall.
+  const renderBlocked = (reason: string, fix: string, title: string) => (
     <div className="au-blocked" role="alert">
       <div className="au-blocked-title">
         <span aria-hidden="true">⛔</span>
@@ -855,6 +857,7 @@ export function Automations() {
         {err?.reason === undefined && denial && isDenial(denial) && renderBlocked(
           denial,
           L('guardFix'),
+          L('backendRefused'),
         )}
         {err?.reason === undefined && denial && !isDenial(denial) && <div className="form-error">{denial}</div>}
         {/* A standing seal is shown even before anything is pressed: this rule cannot run. */}

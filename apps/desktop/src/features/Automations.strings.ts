@@ -281,11 +281,23 @@ export const STR = {
   newN: { en: 'New  ( n )', hy: 'Նոր  ( n )', ru: 'Новый  ( n )' },
 
   // ── blocked (wall/guard denial) ──────────────────────────────────────────────
-  blockedByWall: { en: 'Blocked by the wall', hy: 'Արգելափակված է պատով', ru: 'Заблокировано стеной' },
+  // The title over a denial of one of this page's own commands. They are local commands over a
+  // local store; the engine's wall is not on that path, so the title does not say it was.
+  backendRefused: { en: 'Refused by the backend', hy: 'Մերժվել է backend-ի կողմից', ru: 'Отклонено бэкендом' },
+  // The advice under a denial of one of this page's own commands. It used to begin "A guard
+  // tripped or the wall denied this action": these are local commands, and neither is on
+  // their path.
   guardFix: {
-    en: 'A guard tripped or the wall denied this action. Resolve the guard condition, then retry. Arming an automation also needs a confirmed approval, and there is no command in this build that requests one.',
-    hy: 'Պահապանը գործարկվեց կամ պատը մերժեց այս գործողությունը։ Լուծեք պահապանի պայմանը, ապա կրկնեք։ Ավտոմատացումը զինելուն պետք է նաև հաստատված թույլտվություն, իսկ այս տարբերակում այդպիսին պահանջող հրաման չկա։',
-    ru: 'Сработал страж или стена отклонила это действие. Устраните условие стража, затем повторите. Чтобы взвести автоматизацию, нужно ещё и подтверждённое одобрение, а в этой сборке нет команды, которая его запрашивает.',
+    en: 'The backend refused this action; the reason above is what it returned. Arming an automation needs a confirmed approval, and there is no command in this build that requests one.',
+    hy: 'Backend-ը մերժեց այս գործողությունը․ վերևի պատճառը հենց այն է, ինչ վերադարձվել է։ Ավտոմատացումը զինելուն պետք է հաստատված թույլտվություն, իսկ այս տարբերակում այդպիսին պահանջող հրաման չկա։',
+    ru: 'Бэкенд отклонил это действие; причина выше — то, что он вернул. Чтобы взвести автоматизацию, нужно подтверждённое одобрение, а в этой сборке нет команды, которая его запрашивает.',
+  },
+  // The advice under THIS PAGE's own `command_denied` refusal, where nothing was called at all.
+  // It borrowed `guardFix`, whose first sentence is about a call the backend refused.
+  fixCommandNotGranted: {
+    en: 'This window\'s capability policy does not grant the run command, so nothing was called. Only a change to that policy grants it.',
+    hy: 'Այս պատուհանի կարողությունների քաղաքականությունը չի թույլատրում գործարկման հրամանը, ուստի ոչինչ չի կանչվել։ Այն թույլատրում է միայն այդ քաղաքականության փոփոխությունը։',
+    ru: 'Политика возможностей этого окна не разрешает команду запуска, поэтому ничего не вызывалось. Разрешить её может только изменение этой политики.',
   },
   // `list_automations` only locks the local database and queries it. There is no mode, scope or
   // approval behind that read, so a refusal of it is not described as one that any of them opens.

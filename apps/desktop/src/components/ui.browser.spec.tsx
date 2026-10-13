@@ -95,3 +95,40 @@ describe('the pill tone vocabulary is styled, not just applied', () => {
       .not.toBe(no.color);
   });
 });
+
+// R3-0286 said `aios.css`'s `.grid { repeat(auto-fill, minmax(280px, 1fr)) }` overrides `ui.css`'s
+// `.grid-3` on `TileGroup`, which carries both classes. MEASURED, it does not: the two rules
+// have the same specificity, and `ui.css` arrives AFTER `aios.css` (`main.tsx` imports
+// `styles.css` first; `ui.css` comes in with `ui.tsx`), so `.grid-3` wins and the group is three
+// columns. The finding read the order the wrong way round.
+//
+// The measurement stays, because what it found is that the layout rests on IMPORT ORDER. With
+// the `.grid-3` rule removed this test reads four tracks — so it goes red the day the order
+// flips, which is the day the finding becomes true.
+describe('TileGroup is the three columns its class asks for', () => {
+  it('lays four tiles out in three columns at desktop width', async () => {
+    const { TileGroup, StatTile } = await import('./ui');
+    // The spec frame is phone-wide by default, where `.grid-3` is one column on purpose; this
+    // measures the desktop layout, so it says so. (My first run of this test measured the
+    // 720px breakpoint and was red for that reason, not for the defect.)
+    const { page } = await import('vitest/browser');
+    await page.viewport(1440, 900);
+    const { container } = render(
+      <div style={{ width: 1400 }}>
+        <TileGroup label="Overview">
+          <StatTile glyph="a" value={1} label="One" onActivate={() => {}} />
+          <StatTile glyph="b" value={2} label="Two" onActivate={() => {}} />
+          <StatTile glyph="c" value={3} label="Three" onActivate={() => {}} />
+          <StatTile glyph="d" value={4} label="Four" onActivate={() => {}} />
+        </TileGroup>
+      </div>,
+    );
+    const group = container.querySelector('.tile-group') as Element;
+    const tracks = getComputedStyle(group).gridTemplateColumns.split(' ').filter(Boolean);
+    // `auto-fill, minmax(280px, 1fr)` resolves to four 338px tracks here (measured).
+    const width = window.innerWidth;
+    await page.viewport(414, 896);
+    expect(width).toBe(1440);
+    expect(tracks).toHaveLength(3);
+  });
+});

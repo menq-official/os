@@ -1598,8 +1598,11 @@ mod tests {
         let env = envelope(&f);
         let k = keys(&f);
         let mut ledger = InMemoryLedger::new();
-        // Different evidence bytes, correctly signed — but their SHA-256 no longer equals the envelope's
-        // attestation_evidence_sha256, so the binding fails BEFORE the turn-binding parse.
+        // A correctly signed attestation about ANOTHER receipt is refused. That is all this test
+        // shows: two checks refuse this input — the envelope's digest of the evidence, and the
+        // receipt_id comparison after it — with the same `UpstreamBlocked`, so it stays green with
+        // either one deleted (measured for the digest check, cockpit read R3-0076). The digest
+        // check has its own test, `nm_xbind_13_…`, just below, which varies the bytes only.
         let other_evidence =
             evidence_jcs_with(&f.system, &f.history, &f.generation, &f.output_sha256, &[Ev("receipt_id", "receipt-OTHER".into())]);
         let sig = sign_b64(&signing_key(9), &other_evidence);
