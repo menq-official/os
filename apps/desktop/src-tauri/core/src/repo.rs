@@ -2857,7 +2857,17 @@ pub mod automations {
     ) -> CoreResult<Vec<AutomationRun>> {
         let mut fired = Vec::new();
         let mut first_error: Option<CoreError> = None;
-        for a in list(conn)? {
+        // The LIST failing is one more failure the agent half must not depend on. This was
+        // `for a in list(conn)?`, the one `?` left in a function whose doc says each half is
+        // attempted regardless of the other.
+        let automations = match list(conn) {
+            Ok(all) => all,
+            Err(e) => {
+                first_error.get_or_insert(e);
+                Vec::new()
+            }
+        };
+        for a in automations {
             if !a.enabled {
                 continue;
             }
@@ -3116,6 +3126,8 @@ pub mod agent_runs {
 
     /// The refusal a run carries when the stored digest is not a bundle digest at all (audit L-41).
     pub const MALFORMED_DIGEST_REASON: &str = "bundle_digest_malformed";
+    /// The refusal a queued run gets when its bundle is no longer armed at the moment of dispatch.
+    pub const DISARMED_REASON: &str = "bundle_not_armed";
 
     /// A bundle digest is exactly 64 lowercase hexadecimal characters — what
     /// `agent_bundle::build` returns and nothing else.
@@ -3280,15 +3292,15 @@ pub mod agent_runs {
         session_id: &str,
         now_ms: i64,
     ) -> CoreResult<Option<String>> {
-        let next: Option<(String, String)> = conn
+        let next: Option<(String, String, String)> = conn
             .query_row(
-                "SELECT id, bundle_digest FROM flow_runs WHERE state = 'queued' \
+                "SELECT id, bundle_digest, bundle_id FROM flow_runs WHERE state = 'queued' \
                  AND claim_attempt_id IS NULL ORDER BY due_at LIMIT 1",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
-        let (run_id, digest) = match next {
+        let (run_id, digest, bundle_id) = match next {
             Some(v) => v,
             None => return Ok(None),
         };
@@ -3301,6 +3313,18 @@ pub mod agent_runs {
         // EXECUTED, so it refuses on its own account rather than trusting how the row got here.
         if !is_bundle_digest(&digest) {
             finish(conn, &run_id, &digest, "refused", Some(MALFORMED_DIGEST_REASON), 0, &[])?;
+            return Ok(Some(run_id));
+        }
+        // Still ARMED, asked now. Disarming is the stop button, and a run that was already queued
+        // when it was pressed used to be dispatched all the same: the claim read `flow_runs` and
+        // never `agent_bundle_active`. The run is settled as refused, so it is not retried.
+        let armed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM agent_bundle_active WHERE bundle_id = ?1 AND bundle_digest = ?2",
+            rusqlite::params![bundle_id, digest],
+            |r| r.get(0),
+        )?;
+        if armed == 0 {
+            finish(conn, &run_id, &digest, "refused", Some(DISARMED_REASON), 0, &[])?;
             return Ok(Some(run_id));
         }
         let bundle = match agent_bundle::verify(&store_root.join(&digest), now_ms / 1000) {
@@ -4012,6 +4036,30 @@ pub mod agent_runs {
             assert!(error.chars().count() <= MAX_TICK_ERROR_CHARS);
         }
 
+        /// R3-0136: `run_due`'s doc says each half of a tick is attempted regardless of the
+        /// other. One `?` did not agree: `for a in list(conn)?` returned before the agent half
+        /// when the automation LIST could not be read — so one unreadable table stopped every
+        /// produced agent, every minute, while the doc said it could not.
+        #[test]
+        fn an_unreadable_automation_list_does_not_stop_the_agent_half() {
+            let (conn, dir, _d) = fixture();
+            conn.execute_batch("ALTER TABLE automations RENAME TO automations_gone").unwrap();
+            let failed = {
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                std::env::set_var("BROPS_AGENT_STORE", dir.path());
+                let out = super::super::automations::run_due(&conn, 1_000_000_000);
+                std::env::remove_var("BROPS_AGENT_STORE");
+                out
+            };
+            // The tick still fails, and still says why…
+            let error = failed.expect_err("the automation half failed").to_string();
+            assert!(error.contains("automations"), "{error}");
+            // …and the agent half ran anyway: the due bundle was found and enqueued.
+            let rows = tick_rows(&conn);
+            assert_eq!(rows.len(), 1);
+            assert_eq!((rows[0].1, rows[0].2), (1, 1), "the agent half was not attempted: {rows:?}");
+        }
+
         // ---- a run that errors, or whose process died (flow_runs is reconciled) ----
 
         /// `(state, refusal_reason)` plus the receipt's `(outcome, steps_run, touched)`.
@@ -4282,6 +4330,31 @@ pub mod agent_runs {
             let active: i64 = conn
                 .query_row("SELECT COUNT(*) FROM agent_bundle_active", [], |r| r.get(0)).unwrap();
             assert_eq!(active, 0, "the stop button must work with no ceremony");
+        }
+
+        /// R3-0140: disarming is the stop button — "the only way to stop a running agent". A run
+        /// that was already QUEUED when the bundle was disarmed was dispatched anyway: the claim
+        /// looked at `flow_runs` and never at `agent_bundle_active`.
+        #[test]
+        fn a_run_queued_before_its_bundle_was_disarmed_is_refused_not_run() {
+            let conn = crate::db::open(":memory:").unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let digest = agent_bundle::build(dir.path(), &spec(1_000_000)).unwrap();
+            register_and_arm(&conn, &digest);
+
+            let (_, enqueued, _) = enqueue_due(&conn, 1_000_000_000, dir.path()).unwrap();
+            assert_eq!(enqueued, 1, "the armed bundle is due and queued");
+            // The operator presses stop before the tick gets to it.
+            set_active(&conn, "agt-t", &digest, 60_000, false, audit::Actor::local_operator()).unwrap();
+            let notes_before: i64 = conn.query_row("SELECT COUNT(*) FROM knowledge_notes", [], |r| r.get(0)).unwrap();
+
+            let run_id = claim_and_run(&conn, dir.path(), "scheduler", 1_000_000_000).unwrap().expect("the queued run is settled");
+            let (state, reason): (String, Option<String>) = conn
+                .query_row("SELECT state, refusal_reason FROM flow_runs WHERE id = ?1", [&run_id], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap();
+            assert_eq!((state.as_str(), reason.as_deref()), ("refused", Some(DISARMED_REASON)));
+            let notes_after: i64 = conn.query_row("SELECT COUNT(*) FROM knowledge_notes", [], |r| r.get(0)).unwrap();
+            assert_eq!(notes_after, notes_before, "a disarmed bundle's step wrote something");
         }
 
         /// THE POINT OF T-058: the tick RUNS an armed bundle. Before this it
