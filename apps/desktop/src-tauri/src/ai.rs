@@ -605,11 +605,7 @@ pub async fn status() -> AiStatus {
                 model: env_nonempty("BROPS_CLAUDE_MODEL").unwrap_or_else(|| "claude (subscription)".into()),
                 ready: ok,
                 governed: false,
-                detail: if ok {
-                    format!("Local Claude Code (`{bin}`) is available — replies use your own login, no API key.")
-                } else {
-                    format!("`{bin}` not found or not logged in. Install/login to Claude Code, set BROPS_CLAUDE_BIN, or pick another provider via BROPS_AI_PROVIDER (ungoverned providers need BROPS_ALLOW_UNGOVERNED=1).")
-                },
+                detail: claude_cli_detail(&bin, ok),
             }
         }
         // No probe is issued here (a status poll must never spend metered tokens
@@ -626,7 +622,8 @@ pub async fn status() -> AiStatus {
         Provider::Ollama { model, url } => {
             // Same URL restrictions as the send path — never even probe a
             // disallowed (non-local / redirecting) host.
-            let url_ok = validate_ollama_url(&url).is_ok();
+            let url_check = validate_ollama_url(&url);
+            let url_ok = url_check.is_ok();
             let reachable = if url_ok {
                 match no_redirect_client() {
                     Ok(c) => c
@@ -646,8 +643,8 @@ pub async fn status() -> AiStatus {
                 model,
                 ready: reachable,
                 governed: false,
-                detail: if !url_ok {
-                    format!("BROPS_OLLAMA_URL not allowed ({url}) — must be a local host, or set BROPS_ALLOW_REMOTE_OLLAMA=1 with https.")
+                detail: if let Err(why) = &url_check {
+                    ollama_refused_detail(&url, why)
                 } else if reachable {
                     format!("Local Ollama is running at {url}.")
                 } else {
@@ -2346,6 +2343,27 @@ pub fn agent_origin(subagent_type: &str) -> AgentOrigin {
     match bro_agent_dir().and_then(|d| pack_role_tools(&d, subagent_type)) {
         Some(_) => AgentOrigin::PackRole,
         None => AgentOrigin::Unrecognized,
+    }
+}
+
+/// What the status says about a refused `BROPS_OLLAMA_URL`: the validator's own reason.
+///
+/// It used to say "must be a local host" whatever had been refused — a wrong port, a path, a
+/// scheme — and the reason `validate_ollama_url` returned was thrown away.
+fn ollama_refused_detail(url: &str, why: &str) -> String {
+    format!("BROPS_OLLAMA_URL not allowed ({url}) — {why}.")
+}
+
+/// What the status says about the local Claude Code binary.
+///
+/// Readiness here is `--version` answering, and nothing more: the status poll never asks the
+/// CLI whether it is logged in. The sentence used to call the binary "available" and blame a
+/// failure on being "not logged in", neither of which this probe can know.
+fn claude_cli_detail(bin: &str, answered: bool) -> String {
+    if answered {
+        format!("Local Claude Code (`{bin}`) was found; its login is not checked here. Replies use your own Claude Code login, no API key.")
+    } else {
+        format!("`{bin}` was not found or did not answer `--version`. Install Claude Code, set BROPS_CLAUDE_BIN, or pick another provider via BROPS_AI_PROVIDER (ungoverned providers need BROPS_ALLOW_UNGOVERNED=1).")
     }
 }
 
@@ -4155,6 +4173,34 @@ mod tests {
         // And the rule itself is intact: one prose token still discards ITS line, whole.
         assert_eq!(parse_task_grant("scope: tools (repo-relative)").0, Vec::<String>::new());
         assert_eq!(parse_task_grant("**scope:** Everything").0, Vec::<String>::new());
+    }
+
+    /// R3-0160 / R3-0161: two status lines said more than had been measured. A refused Ollama
+    /// URL was always blamed on a non-local host, whatever the validation had refused it for;
+    /// and a `claude` binary that answered `--version` was reported as available with a login
+    /// nobody had checked.
+    #[test]
+    fn a_status_says_what_was_measured_and_why_a_url_was_refused() {
+        // The reason is the validator's own, for each thing it refuses.
+        for url in ["http://127.0.0.1:9999", "http://127.0.0.1:11434/v1", "ftp://127.0.0.1:11434"] {
+            let why = validate_ollama_url(url).expect_err("refused");
+            let said = ollama_refused_detail(url, &why);
+            assert!(said.contains(&why), "the status dropped the reason `{why}`: {said}");
+            assert!(said.contains(url));
+        }
+        // A wrong port is not described as a remote host.
+        let why = validate_ollama_url("http://127.0.0.1:9999").expect_err("refused");
+        assert!(!ollama_refused_detail("http://127.0.0.1:9999", &why).contains("must be a local host"));
+
+        // `--version` answering says the binary is there. It says nothing about a login.
+        let said = claude_cli_detail("claude", true);
+        assert!(said.contains("not checked"), "the login is claimed without having been checked: {said}");
+        assert!(!said.contains("is available"), "{said}");
+        // And a probe that did not answer cannot know it was the LOGIN that was missing.
+        let said = claude_cli_detail("claude", false);
+        assert!(!said.contains("not logged in"), "{said}");
+        assert!(said.contains("--version"), "it says what was tried: {said}");
+        assert!(said.contains("BROPS_ALLOW_UNGOVERNED"), "the way out is still named: {said}");
     }
 
     // ---- The trust surface is not writable by a model turn (audit) ---------------------
