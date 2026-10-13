@@ -318,8 +318,9 @@ pub fn expire_stale_live(conn: &Connection, now_ms: i64, ttl_ms: i64) -> Result<
 const CLAIM_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Wall clock in epoch milliseconds. Only ever written to the ledger's `*_at_ms` forensic columns; no
-/// acceptance decision reads a timestamp, so a wrong clock cannot weaken the replay defence. Tests
-/// override it via [`DurableAcceptanceLedger::with_clock`].
+/// acceptance decision reads a timestamp, so a wrong clock cannot weaken the replay defence. Nothing
+/// replaces it: the ledger had a `with_clock` seam "for tests" that no test and no caller ever used
+/// (cockpit read R3-0320), and it is gone.
 fn wall_clock_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -354,7 +355,6 @@ fn wall_clock_ms() -> i64 {
 /// one file are fine (WAL + busy timeout are set here).
 pub struct DurableAcceptanceLedger {
     conn: Connection,
-    clock: fn() -> i64,
 }
 
 impl std::fmt::Debug for DurableAcceptanceLedger {
@@ -383,16 +383,7 @@ impl DurableAcceptanceLedger {
         let _: Result<String, _> =
             conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0));
         create_schema(&conn)?;
-        Ok(DurableAcceptanceLedger {
-            conn,
-            clock: wall_clock_ms,
-        })
-    }
-
-    /// Replace the forensic clock (tests only — no acceptance decision reads it).
-    pub fn with_clock(mut self, clock: fn() -> i64) -> Self {
-        self.clock = clock;
-        self
+        Ok(DurableAcceptanceLedger { conn })
     }
 
     /// The claim body, run INSIDE the owned `BEGIN IMMEDIATE`. Returning `Err` means the caller
@@ -442,7 +433,7 @@ impl AcceptanceLedger for DurableAcceptanceLedger {
         if !self.conn.is_autocommit() {
             return Err(LedgerRefusal::Fault);
         }
-        let now_ms = (self.clock)();
+        let now_ms = wall_clock_ms();
         self.conn
             .execute_batch("BEGIN IMMEDIATE;")
             .map_err(|_| LedgerRefusal::Fault)?;

@@ -200,7 +200,8 @@ fn outcome_name(result: &Result<Vec<u8>, PullError>) -> String {
 /// never match and therefore can never pass.
 ///
 /// It is EXHAUSTIVE over what [`outcome_name`] can produce, and `every_outcome_name_is_an_accepted_
-/// expectation` walks every [`PullError`] variant to keep it that way. That test earns its place: the
+/// expectation` keeps it that way: it walks every refusal in `StreamRefusal::ALL` and names the
+/// other [`PullError`] variants by hand. That test earns its place: the
 /// first version of this table omitted `length_mismatch`, which made the `truncated-chunk` negative
 /// unrunnable — a proof that could not be written rather than one that could not fail, but the same
 /// hole from the other side.
@@ -228,11 +229,12 @@ const EXPECTATIONS: [&str; 15] = [
 
 /// Rotate one character of a 43-character base64url token, staying inside the alphabet.
 ///
-/// It stays 43 characters and stays base64url on purpose. A token of the wrong LENGTH is refused by
-/// `OutputStreamCapability::from_envelope` before anything is sent, and a token with an out-of-alphabet
-/// character is refused by the supervisor's parser as `malformed` — both are real refusals about a
-/// SHAPE, and neither reaches the row lookup this negative exists to exercise. Only a well-formed token
-/// that no row matches produces `stream_unknown`.
+/// It stays 43 characters and stays base64url on purpose. A token of the wrong LENGTH and a token with
+/// an out-of-alphabet character are both refused by `OutputStreamCapability::from_envelope` as
+/// `invalid_capability`, before anything is sent — real refusals about a SHAPE, made on this side, and
+/// neither reaches the row lookup this negative exists to exercise. (The supervisor's own parser checks
+/// the length and not the alphabet, so from this driver nothing about a token's shape is ever answered
+/// `malformed`.) Only a well-formed token that no row matches produces `stream_unknown`.
 fn rotate_token(token: &str) -> String {
     let mut chars: Vec<char> = token.chars().collect();
     let last = chars.len() - 1;
@@ -644,13 +646,18 @@ mod tests {
     fn every_outcome_name_is_an_accepted_expectation() {
         // Every name `outcome_name` can produce must be spellable in `--expect`. A name it can produce
         // and `--expect` refuses is an outcome no run could ever be written to require.
-        let produced = [
-            outcome_name(&Ok(Vec::new())),
-            outcome_name(&Err(PullError::Refused(StreamRefusal::StreamUnknown))),
-            outcome_name(&Err(PullError::Refused(StreamRefusal::StreamExpired))),
-            outcome_name(&Err(PullError::Refused(StreamRefusal::StreamBindingMismatch))),
-            outcome_name(&Err(PullError::Refused(StreamRefusal::SeqOutOfRange))),
-            outcome_name(&Err(PullError::Refused(StreamRefusal::Malformed))),
+        //
+        // The refusals come from `StreamRefusal::ALL`, which is generated with `as_str` from one
+        // list (cockpit read R3-1221). They were five hand-written lines here, so a sixth reason
+        // compiled, was formatted by `outcome_name`, and left this test green while `--expect`
+        // could not spell it. The nine local outcomes are still listed by hand: `outcome_name`'s
+        // own `match` has no wildcard arm, so a new `PullError` variant cannot compile without a
+        // name, but nothing puts it in this list.
+        let mut produced = vec![outcome_name(&Ok(Vec::new()))];
+        produced.extend(
+            StreamRefusal::ALL.iter().map(|reason| outcome_name(&Err(PullError::Refused(*reason)))),
+        );
+        produced.extend([
             outcome_name(&Err(PullError::Transport("x".into()))),
             outcome_name(&Err(PullError::MalformedReply)),
             outcome_name(&Err(PullError::EchoMismatch)),
@@ -660,7 +667,7 @@ mod tests {
             outcome_name(&Err(PullError::InvalidCapability)),
             outcome_name(&Err(PullError::LengthMismatch)),
             outcome_name(&Err(PullError::DigestMismatch)),
-        ];
+        ]);
         // Exhaustive in BOTH directions: every variant produces an accepted name, and every accepted
         // name is produced by some variant. Without the second half a stale entry could sit in the
         // table forever naming an outcome nothing can reach.
@@ -690,15 +697,15 @@ mod tests {
     #[test]
     fn a_rotated_token_stays_a_well_formed_capability() {
         // The point of the `unknown-stream` negative is to reach the ROW LOOKUP. A token of the wrong
-        // length never leaves this process, and one outside the base64url alphabet is refused by the
-        // supervisor's parser as `malformed` — either way the negative would be testing a shape check
-        // rather than the absent-row verdict it names.
+        // length, or one outside the base64url alphabet, never leaves this process: `from_envelope`
+        // refuses both as `invalid_capability` — either way the negative would be testing a shape
+        // check rather than the absent-row verdict it names.
         // Every arm of `rotate_token`, including the three GENERIC ones. Mutation testing found the
         // gap: the first fixture only ever ended in 'A', 'z', '0', '-' or '_', so `c if
         // c.is_ascii_uppercase()`, `c if c.is_ascii_lowercase()` and `c if c.is_ascii_digit()` were
         // never reached, and a mutant that made the uppercase arm emit '=' — straight out of the
-        // base64url alphabet — survived. A token outside the alphabet is refused by the supervisor's
-        // parser as `malformed`, so that mutant would have turned the `unknown-stream` negative into
+        // base64url alphabet — survived. A token outside the alphabet is refused on this side as
+        // `invalid_capability`, so that mutant would have turned the `unknown-stream` negative into
         // a shape-check negative wearing the absent-row negative's name.
         for token in [
             "A".repeat(OUTPUT_STREAM_ID_LEN),

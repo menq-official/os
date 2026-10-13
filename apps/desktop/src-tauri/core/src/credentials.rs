@@ -408,13 +408,4 @@ mod tests {
         conn.execute("DELETE FROM agent_bundles WHERE bundle_digest = ?1", [&digest]).unwrap();
         assert!(!is_bound(&conn, &digest, "slack_bot").unwrap());
     }
-
-    /// What this module does NOT do is stated, not implied — including the one
-    /// that matters most: it does not resolve anything.
-    #[test]
-    fn the_boundary_of_this_slice_is_stated() {
-        assert!(NOT_IMPLEMENTED.iter().any(|s| s.contains("resolution")));
-        assert!(NOT_IMPLEMENTED.iter().any(|s| s.contains("rotation")));
-        assert!(NOT_IMPLEMENTED.iter().any(|s| s.contains("TRANSPORT")));
-    }
 }

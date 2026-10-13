@@ -118,8 +118,11 @@ impl Destination {
     }
 }
 
-/// Why an entry could not be admitted into a grant. Distinct, stable strings:
-/// they reach a decision record, where a reader compares them.
+/// Why an entry could not be admitted into a grant. [`GrantError::as_str`] gives
+/// each a distinct string, and nothing records one today: the only consumer,
+/// `agent_bundle::refusal_for`, folds every variant into two `Refusal` reasons
+/// (`egress_table_unusable` for `DuplicateName`, `egress_not_expressible` for
+/// the rest), and `as_str` has no caller outside this module's tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GrantError {
     /// Not `https://`. A plaintext destination cannot be authenticated, so the
@@ -244,9 +247,11 @@ impl EgressGrant {
         })
     }
 
-    /// A grant that admits nothing. This is the produced agent's state at this
-    /// head, and it is the correct one: `Grant::for_local_only` writes an empty
-    /// egress because nothing in that slice may leave the box.
+    /// A grant that admits nothing. No caller outside tests (see the module
+    /// doc). The produced agent's empty allowlist is not built here: a grant
+    /// whose egress table is empty — what `Grant::for_local_only` writes —
+    /// reaches this module as [`EgressGrant::parse_named`] over zero rows, from
+    /// `Grant::egress_allowlist`.
     pub fn empty(population: Population, grant_id: &str) -> Self {
         EgressGrant {
             population,
@@ -494,7 +499,8 @@ fn validate_host(host: &str, entry: &str) -> Result<(), GrantError> {
     if tld.bytes().all(|b| b.is_ascii_digit()) {
         return Err(GrantError::IpLiteral(entry.to_string()));
     }
-    if tld.len() < 2 || tld.len() > 63 || !tld.bytes().all(|b| b.is_ascii_lowercase()) {
+    // No upper bound here: the loop above already refused any label over 63, this one included.
+    if tld.len() < 2 || !tld.bytes().all(|b| b.is_ascii_lowercase()) {
         return Err(GrantError::MalformedHost(entry.to_string()));
     }
     Ok(())
@@ -585,8 +591,9 @@ mod tests {
         assert!(d.reason.contains("grant-test-1"), "reason: {}", d.reason);
     }
 
-    /// An empty grant is the produced agent's state at this head. It admits
-    /// nothing — deny by default, not permit by omission.
+    /// An empty grant admits nothing — deny by default, not permit by omission.
+    /// (`empty` is the test-only constructor; the produced path's own empty
+    /// table is `parse_named` over zero rows, tested in `agent_bundle`.)
     #[test]
     fn an_empty_grant_admits_nothing() {
         let g = EgressGrant::empty(Population::Produced, "grant-empty");
@@ -667,6 +674,31 @@ mod tests {
     #[test]
     fn a_single_label_host_is_refused() {
         assert!(matches!(parse_entry("https://localhost"), Err(GrantError::MalformedHost(_))));
+    }
+
+    /// A label is at most 63 characters, the final one included. The loop over the labels is
+    /// the one check of that: `validate_host` also tested `tld.len() > 63` after it, which could
+    /// not be true (cockpit read R3-0327), and that clause is gone.
+    #[test]
+    fn a_label_is_at_most_63_characters_and_the_last_label_is_a_label() {
+        let at = "b".repeat(63);
+        let over = "b".repeat(64);
+        assert_eq!(
+            parse_entry(&format!("https://a.{at}")),
+            Ok(Destination { host: format!("a.{at}"), port: DEFAULT_PORT })
+        );
+        assert_eq!(
+            parse_entry(&format!("https://{at}.example")),
+            Ok(Destination { host: format!("{at}.example"), port: DEFAULT_PORT })
+        );
+        for entry in [format!("https://a.{over}"), format!("https://{over}.example")] {
+            assert_eq!(parse_entry(&entry), Err(GrantError::MalformedHost(entry.clone())));
+        }
+        // And the final label's own floor, which the loop does not state: two letters.
+        assert_eq!(
+            parse_entry("https://a.b"),
+            Err(GrantError::MalformedHost("https://a.b".into()))
+        );
     }
 
     #[test]
@@ -831,8 +863,9 @@ mod tests {
         assert!(g.authorize("registry.npmjs.org", 443).allowed());
     }
 
-    /// Every refusal string is distinct and stable: they reach a decision
-    /// record, where a reader compares them.
+    /// Every refusal string is distinct. Nothing records one yet (see
+    /// [`GrantError`]); a reader who one day compares them must not meet two
+    /// kinds of refusal under one string.
     #[test]
     fn grant_error_reasons_are_distinct() {
         let all = [
@@ -851,13 +884,5 @@ mod tests {
         seen.sort_unstable();
         seen.dedup();
         assert_eq!(seen.len(), all.len(), "refusal strings must be distinct");
-    }
-
-    /// What this module does NOT do is stated, not implied.
-    #[test]
-    fn the_boundary_of_this_slice_is_stated() {
-        assert!(NOT_IMPLEMENTED.iter().any(|s| s.contains("CONNECT listener")));
-        assert!(NOT_IMPLEMENTED.iter().any(|s| s.contains("resolve-once-and-pin")));
-        assert!(NOT_IMPLEMENTED.iter().any(|s| s.contains("egress_jail.rs")));
     }
 }

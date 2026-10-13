@@ -197,18 +197,36 @@ pub enum StreamRefusal {
     Malformed,
 }
 
-impl StreamRefusal {
-    /// The wire literal. These are the exact five §4.10(f) publishes on both hops.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            StreamRefusal::StreamUnknown => "stream_unknown",
-            StreamRefusal::StreamExpired => "stream_expired",
-            StreamRefusal::StreamBindingMismatch => "stream_binding_mismatch",
-            StreamRefusal::SeqOutOfRange => "seq_out_of_range",
-            StreamRefusal::Malformed => "malformed",
-        }
-    }
+/// The variants, ONCE, as `agent_bundle.rs` lists its `Refusal`s. `StreamRefusal::ALL` and
+/// `StreamRefusal::as_str` are both generated from this list, so a variant added to the enum and
+/// not to the list is a non-exhaustive `match` — a compile error — rather than a reason the tests
+/// that walk the set never see (cockpit read R3-1221: the proof driver's `--expect` table was
+/// checked against five hand-written values).
+macro_rules! stream_refusals {
+    ($($variant:ident => $reason:literal),+ $(,)?) => {
+        impl StreamRefusal {
+            /// Every variant, in declaration order.
+            pub const ALL: &'static [StreamRefusal] = &[$(StreamRefusal::$variant),+];
 
+            /// The wire literal. These are the exact five §4.10(f) publishes on both hops.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(StreamRefusal::$variant => $reason),+
+                }
+            }
+        }
+    };
+}
+
+stream_refusals! {
+    StreamUnknown => "stream_unknown",
+    StreamExpired => "stream_expired",
+    StreamBindingMismatch => "stream_binding_mismatch",
+    SeqOutOfRange => "seq_out_of_range",
+    Malformed => "malformed",
+}
+
+impl StreamRefusal {
     /// Parse a relayed reason. `None` for anything outside the closed set — which is a malformed reply,
     /// not a new refusal.
     pub fn parse(reason: &str) -> Option<StreamRefusal> {

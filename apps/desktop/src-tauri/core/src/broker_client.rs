@@ -1,8 +1,10 @@
 //! Wave 3b-1B — renderer→broker IPC client (design-GREEN rev-30 §4.10(g)). The thin Tauri proxy uses this
 //! to forward the renderer's closed request frame to the trusted broker service and read back the framed
 //! committed/blocked reply. The roundtrip logic is PURE (an injected [`BrokerConn`] transport), so it is
-//! unit-tested without a socket; the real AF_UNIX (Linux) / named-pipe (Windows) connection is a thin
-//! platform wrapper that implements [`BrokerConn`].
+//! unit-tested without a socket; the real connection is a thin platform wrapper that implements
+//! [`BrokerConn`]. There is one, AF_UNIX on Linux (`UnixBrokerConn` in the app crate's
+//! `src/governed_turn.rs`); no named-pipe wrapper exists, and off Linux `connect_broker` there
+//! refuses with `UnsupportedPlatform`.
 
 use crate::ipc_framing::{decode_one, encode_frame, FrameError};
 

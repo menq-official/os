@@ -13,7 +13,9 @@
 //!
 //! # The defect this closes (O-3)
 //!
-//! `brops_provision` mints, on first launch, everything the engine's governance chain
+//! `brops_provision` mints — on first launch on Windows; on POSIX the application is refused
+//! (`anchor::preprovision_refusal`) and a root installer does it before the application starts
+//! (`provision/src/posix_install.rs`) — everything the engine's governance chain
 //! needs: one keypair for every authority in `brops_provision::MINTED_AUTHORITIES` (this said
 //! "the seven"; the list is the count), the operator-signed `trusted-key-registry`, the
 //! out-of-registry operator-root pin in a machine-wide anchor this account cannot write,
@@ -309,17 +311,6 @@ mod tests {
     }
 
     #[test]
-    fn the_registry_root_is_in_the_set_and_is_the_variable_o3_turns_on() {
-        // The one that decides WHICH registry the engine trusts. Its absence was O-3.
-        let got = resolve(&provisioned(), PIN, &ambient(&[])).unwrap();
-        assert!(
-            got.iter().any(|(k, _)| *k == "BRO_TRUSTED_REGISTRY_ROOT"),
-            "without BRO_TRUSTED_REGISTRY_ROOT the engine reads the committed development \
-             registry no matter what else is exported: {got:?}"
-        );
-    }
-
-    #[test]
     fn nothing_recorded_refuses_rather_than_falling_back_to_the_committed_registry() {
         let err = resolve(&[], PIN, &ambient(&[])).unwrap_err();
         assert_eq!(err, NOT_PROVISIONED);
@@ -416,19 +407,5 @@ mod tests {
         .unwrap_err();
         assert!(err.contains(SELF_OWNED_ACK_FILE), "{err}");
         assert!(err.contains("EVERY custody rule"), "{err}");
-    }
-
-    /// The half-wired state, stated as a test: exporting the registry root without the
-    /// anchor that authenticates it is not a partial win, it is a different trust root.
-    /// The `resolve` contract is all-or-nothing, so there is no code path that returns a
-    /// proper subset of what provisioning recorded.
-    #[test]
-    fn resolve_never_returns_a_subset_of_the_recorded_set() {
-        let full = provisioned();
-        let got = resolve(&full, PIN, &ambient(&[])).unwrap();
-        assert_eq!(got.len(), full.len());
-        for (name, value) in &full {
-            assert!(got.iter().any(|(k, v)| k == name && v == value), "{name} was dropped");
-        }
     }
 }

@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = out.join("produced.sqlite3");
     let conn = db::open(&db_path.to_string_lossy())?;
     // BORN DISARMED. Registering records a built bundle and arms nothing.
-    repo::agent_runs::register(&conn, &digest, &spec.bundle_id, 1, &spec.display_name)?;
+    register_built(&conn, &digest, &spec)?;
 
     // Arming is a separate act behind a grant — the same two calls
     // `commands::confirm_approval` makes. THIS BINARY CONFIRMS IT ITSELF: no OS dialog
@@ -166,6 +166,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Record the built bundle, born disarmed.
+///
+/// On its own so the row can be tested against the spec. The version passed here was a literal
+/// `1` beside the spec's own `bundle_version: 1`, so the row and the manifest agreed only while
+/// both literals were edited together (cockpit read R3-0664).
+fn register_built(
+    conn: &rusqlite::Connection,
+    digest: &str,
+    spec: &BuildSpec,
+) -> brops_core::CoreResult<()> {
+    repo::agent_runs::register(conn, digest, &spec.bundle_id, spec.bundle_version, &spec.display_name)
+}
+
 /// `receipts.jsonl`: one line per `flow_receipts` row.
 ///
 /// On its own so it can be tested. It read `touched` — the JSON list of what a run wrote — with
@@ -226,5 +239,33 @@ mod tests {
         let refused = export_receipts(&conn);
         assert!(refused.is_err(), "an unreadable `touched` was exported: {refused:?}");
         assert!(refused.unwrap_err().to_string().contains("touched"), "the refusal names the column");
+    }
+
+    /// Cockpit read R3-0664: the registered row carries the version the spec states — which is
+    /// the one `build` writes into the manifest — and not a second literal.
+    #[test]
+    fn the_registered_row_carries_the_version_the_spec_states() {
+        let conn = db::open_in_memory().expect("db");
+        let spec = BuildSpec {
+            bundle_id: "agt-versioned".into(),
+            bundle_version: 7,
+            display_name: "Versioned".into(),
+            built_for: "test".into(),
+            built_at_epoch: 0,
+            grant_expires_at_epoch: 0,
+            egress: vec![],
+            credential_slots: vec![],
+            steps: vec![],
+        };
+        let digest = "d".repeat(64);
+        register_built(&conn, &digest, &spec).expect("register");
+        let (id, version): (String, i64) = conn
+            .query_row(
+                "SELECT bundle_id, bundle_version FROM agent_bundles WHERE bundle_digest = ?1",
+                [&digest],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("the registered row");
+        assert_eq!((id.as_str(), version), ("agt-versioned", 7));
     }
 }

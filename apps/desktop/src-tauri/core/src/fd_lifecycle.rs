@@ -4,7 +4,10 @@
 //! `FD_CLOEXEC` before exec), 3/4/5 read-only store inputs, 6 the write-only output pipe, `FD_CLOEXEC`
 //! CLEARED on 3–6 so they survive, and NO descriptor ≥ 7.
 //!
-//! The actual `dup2`/`fcntl`/`fexecve` syscalls are Linux (a later launcher-crate slice). This module is
+//! The actual syscalls are Linux-only and are not here: the recorder's `dup2` is in
+//! `proof/src/bin/governed_recorder.rs`, and the launcher's `fcntl` and `fexecve` are in
+//! `launcher/src/main.rs`, which calls [`verify_launcher_fd_set`] and [`verify_store_inputs_unchanged`]
+//! before it `fexecve`s. This module is
 //! the PURE, platform-independent DECISION logic — given an observed descriptor table it returns the exact
 //! rev-30 fail-closed verdict — so every rule is unit-testable on any host without spawning a process.
 
