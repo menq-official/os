@@ -505,9 +505,14 @@ pub fn check_chain(conn: &Connection) -> CoreResult<ChainIntegrity> {
     let mut s = conn.prepare(&format!(
         "SELECT {COLUMNS}, protocol FROM store_write_records ORDER BY seq"
     ))?;
+    // The RAW tokens travel with the record. `map` substitutes a default for one outside the
+    // domain, and a row whose stored token had been that default to begin with then recomputes
+    // to its own hash — the ledger was judged intact over a row that says `blessed`.
     let rows = s.query_map([], |r| {
         let protocol: String = r.get("protocol")?;
-        Ok((map(r)?, protocol))
+        let kind: String = r.get("subject_kind")?;
+        let op: String = r.get("operation")?;
+        Ok((map(r)?, protocol, kind, op))
     })?;
 
     let mut expected_seq: i64 = 1;
@@ -516,7 +521,7 @@ pub fn check_chain(conn: &Connection) -> CoreResult<ChainIntegrity> {
     let mut records: i64 = 0;
 
     for row in rows {
-        let (rec, protocol) = row?;
+        let (rec, protocol, kind, op) = row?;
         if rec.seq != expected_seq {
             return Ok(ChainIntegrity::Broken {
                 seq: rec.seq,
@@ -527,6 +532,12 @@ pub fn check_chain(conn: &Connection) -> CoreResult<ChainIntegrity> {
             return Ok(ChainIntegrity::Broken {
                 seq: rec.seq,
                 reason: format!("unknown record protocol '{protocol}'"),
+            });
+        }
+        if SubjectKind::parse(&kind).is_none() || WriteOp::parse(&op).is_none() {
+            return Ok(ChainIntegrity::Broken {
+                seq: rec.seq,
+                reason: "subject_kind or operation is outside its domain".to_string(),
             });
         }
         if rec.prev_record_sha256 != prev {
@@ -835,6 +846,26 @@ mod tests {
         c.execute("UPDATE store_write_records SET operation = 'blessed' WHERE seq = 2", []).unwrap();
         let why = broken(state_of(&c, SubjectKind::MemoryEntry, "m-1", &mem_digest("b")));
         assert!(why.contains("domain"), "{why}");
+    }
+
+    /// R3-0120: the WHOLE-ledger check read each row through `map`, which substitutes a default
+    /// for a token outside the domain — and when the stored token had been `updated` or
+    /// `memory_entry` to begin with, the substitute IS the original, the hash recomputes, and the
+    /// chain was reported intact over a row that says `blessed`. `state_of` already refused such
+    /// a row (the test above); the check that judges the whole chain did not.
+    #[test]
+    fn check_chain_does_not_call_a_ledger_intact_over_a_token_outside_its_domain() {
+        for (column, foreign) in [("operation", "blessed"), ("subject_kind", "someone_elses_table")] {
+            let (c, _h1, _h2) = unguarded_ledger();
+            c.execute(&format!("UPDATE store_write_records SET {column} = ?1 WHERE seq = 2"), [foreign]).unwrap();
+            match check_chain(&c).unwrap() {
+                ChainIntegrity::Broken { seq, reason } => {
+                    assert_eq!(seq, 2, "{column}");
+                    assert!(reason.contains("domain"), "{column}: {reason}");
+                }
+                other => panic!("a `{column}` of `{foreign}` was judged {other:?}"),
+            }
+        }
     }
 
     #[test]

@@ -2723,8 +2723,7 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
     // set) does real multi-step work — reading files, running build/test — so it gets a
     // far larger budget, otherwise a legitimate agent task surfaces as "claude CLI timed out".
     let agent = bro_agent_dir().is_some();
-    let deadline =
-        tokio::time::Instant::now() + Duration::from_secs(if agent { 900 } else { 180 });
+    let deadline = tokio::time::Instant::now() + cli_call_budget(agent, true);
     let cwd = ai_cwd()?;
     // Taken BEFORE the child starts and settled on every exit path (including `Drop`, so a
     // timeout or a Stop is covered too). See `TrustSurfaceGuard`.
@@ -3021,6 +3020,19 @@ fn transcript(messages: &[ChatMsg]) -> String {
     format!("Conversation so far, as a JSON array of {{role, content}} turns:\n{json}")
 }
 
+/// How long one call to the Claude CLI may take, start to reaped child.
+///
+/// An AGENT turn gets fifteen minutes on either path: it reads files and runs builds and tests,
+/// and the path that carries its output back does not change how long that takes. The
+/// non-streaming path used to give every turn 120 seconds, the agent's included.
+fn cli_call_budget(agent: bool, streaming: bool) -> Duration {
+    Duration::from_secs(match (agent, streaming) {
+        (true, _) => 900,
+        (false, true) => 180,
+        (false, false) => 120,
+    })
+}
+
 async fn claude_cli(bin: &str, system: &str, messages: &[ChatMsg]) -> Result<String, String> {
     let prompt = format!(
         "{}\n\nReply to the latest User message.",
@@ -3063,7 +3075,7 @@ async fn claude_cli(bin: &str, system: &str, messages: &[ChatMsg]) -> Result<Str
     // One absolute deadline for the WHOLE call — the stdout read, the child reap,
     // AND the stderr drain — so a hostile binary that keeps an stderr fd open (via
     // a grandchild) after closing stdout can't wedge the request past the deadline.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    let deadline = tokio::time::Instant::now() + cli_call_budget(project_dir.is_some(), false);
     // Drain stderr (bounded) concurrently so a full pipe can't deadlock the read.
     let stderr = child.stderr.take();
     let stderr_task = tokio::spawn(async move {
@@ -4201,6 +4213,18 @@ mod tests {
         assert!(!said.contains("not logged in"), "{said}");
         assert!(said.contains("--version"), "it says what was tried: {said}");
         assert!(said.contains("BROPS_ALLOW_UNGOVERNED"), "the way out is still named: {said}");
+    }
+
+    /// R3-0169: an agent turn does real multi-step work — the streaming path says so and gives
+    /// it fifteen minutes. The non-streaming path runs the SAME agent (same tools, same
+    /// project directory) and gave it two, so a legitimate task timed out on one path only.
+    #[test]
+    fn an_agent_turn_has_one_budget_whichever_path_runs_it() {
+        assert_eq!(cli_call_budget(true, false), cli_call_budget(true, true));
+        assert_eq!(cli_call_budget(true, true), Duration::from_secs(900));
+        // A conversational turn keeps the budgets it had.
+        assert_eq!(cli_call_budget(false, true), Duration::from_secs(180));
+        assert_eq!(cli_call_budget(false, false), Duration::from_secs(120));
     }
 
     // ---- The trust surface is not writable by a model turn (audit) ---------------------
