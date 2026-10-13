@@ -208,7 +208,7 @@ pub const PLATFORM_EXEMPTIONS: [(&str, &str, &str); 2] = [
 ///
 /// `(file, test or "*", the cfg it is under, why it cannot be compiled on the other leg and which
 /// leg runs it)`.
-pub const COMPILED_OUT: [(&str, &str, &str, &str); 10] = [
+pub const COMPILED_OUT: [(&str, &str, &str, &str); 11] = [
     (
         "posix_install.rs",
         "*",
@@ -225,6 +225,16 @@ pub const COMPILED_OUT: [(&str, &str, &str, &str); 10] = [
          instead is asserted on both legs by \
          `the_manifest_records_what_the_platform_actually_did_about_permissions`. The \
          ubuntu-latest leg runs it.",
+    ),
+    (
+        "provision.rs",
+        "a_link_under_a_key_files_name_is_not_a_key_file",
+        "unix",
+        "it plants a symbolic link with `std::os::unix::fs::symlink`, which does not exist on \
+         Windows (and creating a link there needs a privilege a runner may not hold). The name \
+         half of the same check is asserted on both legs by \
+         `the_keys_directory_holds_only_the_key_files_provisioning_wrote`. The ubuntu-latest \
+         leg runs it.",
     ),
     (
         "audit_signer.rs",

@@ -2040,8 +2040,10 @@ fn verify_store(trust: &Path, anchor_dir: &Path) -> Result<Provisioned, Provisio
     for entry in listing {
         let entry = io(entry, "reading the key directory", &keys_dir)?;
         let name = entry.file_name().to_string_lossy().to_string();
-        let stem = name.strip_suffix(".json").unwrap_or(&name);
-        if !RETAINED_AUTHORITIES.contains(&stem) {
+        // Exactly `<authority>.json`. The suffix used to be stripped IF it was there, so a
+        // second file named for an authority with no extension passed as that authority.
+        let is_retained = name.strip_suffix(".json").is_some_and(|stem| RETAINED_AUTHORITIES.contains(&stem));
+        if !is_retained {
             return corrupt(
                 "the key directory holds private key material provisioning never wrote",
                 format!(
@@ -2049,6 +2051,15 @@ fn verify_store(trust: &Path, anchor_dir: &Path) -> Result<Provisioned, Provisio
                     keys_dir.join(&name).display(),
                     RETAINED_AUTHORITIES.join(", ")
                 ),
+            );
+        }
+        // And a regular file, asked of the entry itself (not followed): a directory or a link
+        // carrying a key file's name is not a key file provisioning wrote.
+        let kind = io(entry.file_type(), "reading the type of a key directory entry", &keys_dir)?;
+        if !kind.is_file() {
+            return corrupt(
+                "the key directory holds something that is not a regular file under a key file's name",
+                format!("{} is not a regular file. {OPERATOR_ROOT_CUSTODY}", keys_dir.join(&name).display()),
             );
         }
     }

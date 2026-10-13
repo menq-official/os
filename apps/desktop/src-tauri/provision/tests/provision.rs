@@ -786,6 +786,43 @@ fn a_store_that_grows_an_operator_root_key_file_afterwards_is_refused() {
     assert!(planted.is_file(), "refused, not repaired");
 }
 
+/// Cockpit read R3-0155: the check that the key directory holds "the retained authorities and
+/// nothing else" compared the name with `.json` stripped IF it was there. So a file named for an
+/// authority with no extension at all passed, and so did a DIRECTORY called `<authority>.json`
+/// — neither is a key file provisioning wrote.
+#[test]
+fn the_keys_directory_holds_only_the_key_files_provisioning_wrote() {
+    let authority = prov::RETAINED_AUTHORITIES[0];
+
+    // A second copy of an authority's name, without the extension.
+    let dir = tempfile::tempdir().unwrap();
+    let p = mint_at(dir.path()).unwrap();
+    fs::write(p.keys_dir.join(authority), br#"{"key_id":"planted","private_key":"00"}"#).unwrap();
+    let text = mint_at(dir.path()).expect_err("an extension-less key file must be refused").to_string();
+    assert!(text.contains("private key material provisioning never wrote"), "{text}");
+}
+
+/// The second half of R3-0155, where the platform has links. A DIRECTORY under a key file's
+/// name is already refused earlier, when the store is re-hashed ("Is a directory") — I wrote
+/// this test with a directory first and learned that from it. A LINK is not: the re-hash follows
+/// it, the bytes it reaches are the right bytes, and the store verified with a key "file" that
+/// is a pointer somebody else can re-aim.
+#[cfg(unix)]
+#[test]
+fn a_link_under_a_key_files_name_is_not_a_key_file() {
+    let authority = prov::RETAINED_AUTHORITIES[0];
+    let dir = tempfile::tempdir().unwrap();
+    let p = mint_at(dir.path()).unwrap();
+    let key_file = p.keys_dir.join(format!("{authority}.json"));
+    let elsewhere = dir.path().join("elsewhere.json");
+    fs::copy(&key_file, &elsewhere).unwrap();
+    fs::remove_file(&key_file).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &key_file).unwrap();
+
+    let refused = mint_at(dir.path()).expect_err("a link named for a key file must be refused");
+    assert!(refused.to_string().contains("regular file"), "{refused}");
+}
+
 #[test]
 fn the_manifest_states_what_became_of_the_operator_root_without_overclaiming() {
     let dir = tempfile::tempdir().unwrap();
