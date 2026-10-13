@@ -281,7 +281,12 @@ pub fn verify_image(spec: &ImageVerificationSpec, facts: &ImageFacts) -> Result<
     if facts.writable_by_login_or_runtime {
         return Err(WindowsBrokerViolation::ImageWritableByUntrusted);
     }
-    if facts.sha256 != spec.expected_sha256 {
+    // The pin has to BE a digest before anything can equal it (cockpit read R3-0865): an empty
+    // or malformed pin used to match any image that measured as the same text, an unhashable
+    // one included. One shape rule, the POSIX floor's.
+    if !crate::tcb_integrity::is_sha256_pin(&spec.expected_sha256)
+        || facts.sha256 != spec.expected_sha256
+    {
         return Err(WindowsBrokerViolation::ImageHashMismatch);
     }
     if !facts.authenticode_valid {
@@ -387,14 +392,42 @@ mod tests {
         }
     }
 
+    /// A well-formed image pin for the fixtures below. They used the three characters `abc`,
+    /// which is not a digest and now matches nothing.
+    const PINNED: &str = "abababababababababababababababababababababababababababababababab";
+
     #[test]
     fn image_verification_fails_closed() {
-        let spec = ImageVerificationSpec { expected_sha256: "abc".into() };
+        let spec = ImageVerificationSpec { expected_sha256: PINNED.into() };
         // Fully valid image (hash + authenticode + good ACL) launches.
-        assert!(verify_image(&spec, &ImageFacts { sha256: "abc".into(), authenticode_valid: true, writable_by_login_or_runtime: false }).is_ok());
-        assert_eq!(verify_image(&spec, &ImageFacts { sha256: "abc".into(), authenticode_valid: true, writable_by_login_or_runtime: true }), Err(WindowsBrokerViolation::ImageWritableByUntrusted));
+        assert!(verify_image(&spec, &ImageFacts { sha256: PINNED.into(), authenticode_valid: true, writable_by_login_or_runtime: false }).is_ok());
+        assert_eq!(verify_image(&spec, &ImageFacts { sha256: PINNED.into(), authenticode_valid: true, writable_by_login_or_runtime: true }), Err(WindowsBrokerViolation::ImageWritableByUntrusted));
         assert_eq!(verify_image(&spec, &ImageFacts { sha256: "WRONG".into(), authenticode_valid: true, writable_by_login_or_runtime: false }), Err(WindowsBrokerViolation::ImageHashMismatch));
-        assert_eq!(verify_image(&spec, &ImageFacts { sha256: "abc".into(), authenticode_valid: false, writable_by_login_or_runtime: false }), Err(WindowsBrokerViolation::ImageAuthenticodeInvalid));
+        assert_eq!(verify_image(&spec, &ImageFacts { sha256: PINNED.into(), authenticode_valid: false, writable_by_login_or_runtime: false }), Err(WindowsBrokerViolation::ImageAuthenticodeInvalid));
+    }
+
+    /// Cockpit read R3-0865. The comparison was `measured != expected` and nothing asked whether
+    /// `expected` was a digest. An EMPTY pin beside an empty measurement — what a probe that
+    /// could not hash returns — compared equal, and so did any two equal non-digests. That is
+    /// the defect `tcb_integrity` fixed for the POSIX floor.
+    #[test]
+    fn an_image_pin_that_is_not_a_digest_matches_nothing() {
+        let real = "a1".repeat(32);
+        let facts = |sha256: &str| ImageFacts {
+            sha256: sha256.into(),
+            authenticode_valid: true,
+            writable_by_login_or_runtime: false,
+        };
+        for not_a_pin in ["", "abc", &real.to_uppercase(), &real[..63], &format!("{real}0"), &"g".repeat(64)] {
+            let spec = ImageVerificationSpec { expected_sha256: not_a_pin.to_string() };
+            assert_eq!(
+                verify_image(&spec, &facts(not_a_pin)),
+                Err(WindowsBrokerViolation::ImageHashMismatch),
+                "the pin {not_a_pin:?} matched an image that measured the same text"
+            );
+        }
+        let spec = ImageVerificationSpec { expected_sha256: real.clone() };
+        assert!(verify_image(&spec, &facts(&real)).is_ok(), "a real digest still matches itself");
     }
 
     #[test]
@@ -404,9 +437,9 @@ mod tests {
         // flag would have been false, an image whose Authenticode signature is not valid MUST fail closed.
         // The `require_authenticode` toggle has been removed entirely, so no spec configuration can accept
         // an unsigned / non-Authenticode image.
-        let spec = ImageVerificationSpec { expected_sha256: "abc".into() };
+        let spec = ImageVerificationSpec { expected_sha256: PINNED.into() };
         assert_eq!(
-            verify_image(&spec, &ImageFacts { sha256: "abc".into(), authenticode_valid: false, writable_by_login_or_runtime: false }),
+            verify_image(&spec, &ImageFacts { sha256: PINNED.into(), authenticode_valid: false, writable_by_login_or_runtime: false }),
             Err(WindowsBrokerViolation::ImageAuthenticodeInvalid)
         );
     }

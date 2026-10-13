@@ -1266,6 +1266,10 @@ pub const BRO_PROTECTED_PATHS: &[&str] = &[
     // what it verifies against, and who signs (cockpit read R3-0060, R3-0061).
     "engine/config",
     "engine/tools",
+    // The source the six cross-half schemas are generated FROM. `engine/contracts` — the copies
+    // — was listed and this was not, so a turn could not edit a contract and could edit what the
+    // next sync writes over it (cockpit read R3-0873).
+    "contracts",
     "bridge",
     // — the desktop's verification core —
     "apps/desktop/src-tauri/core/src/receipt.rs",
@@ -1298,6 +1302,10 @@ pub const BRO_PROTECTED_PATHS: &[&str] = &[
     "apps/desktop/src-tauri/win-broker",
     "apps/desktop/src-tauri/win-live",
     "apps/desktop/src-tauri/provision",
+    // What `dpkg` runs as root on install — `postinst` — and the script that stages the anchor
+    // installer into the package. `provision`, which builds that installer, was listed; the
+    // script that decides how root runs it was not (cockpit read R3-0874).
+    "apps/desktop/src-tauri/deb",
     "apps/desktop/src-tauri/audit-signer",
     "apps/desktop/src-tauri/proof",
     // — and what proves all of the above —
@@ -3992,6 +4000,12 @@ mod tests {
             // could not edit the verifier and could edit what it verifies against.
             "engine/config",
             "engine/tools",
+            // The SOURCE of the six cross-half schemas: `engine/contracts` holds the copies and
+            // was protected, the source they are generated from was not (cockpit read R3-0873).
+            "contracts",
+            // The script `dpkg` runs as ROOT on install, and the anchor installer it calls
+            // (cockpit read R3-0874).
+            "apps/desktop/src-tauri/deb",
         ] {
             assert!(BRO_PROTECTED_PATHS.contains(&required), "{required} must be protected");
         }

@@ -306,6 +306,71 @@ fn a_world_sid_in_the_key_dacl_is_refused_even_when_it_only_grants_read() {
     ));
 }
 
+/// Cockpit read R3-0867. The ledger is a DIRECTORY, and on a directory two more bits change
+/// what is inside it: `FILE_DELETE_CHILD` removes any file in it whatever that file's own DACL
+/// says — the `.jsonl`, the `.head`, the `.anchor` — and `FILE_WRITE_EA` rewrites its extended
+/// attributes. The mask the signer was held to was the pipe's, which has neither, so a signer
+/// that could delete the ledger's records passed as one that could not write the ledger.
+#[test]
+fn a_signer_that_can_delete_what_is_in_the_ledger_directory_is_refused() {
+    const FILE_DELETE_CHILD: u32 = 0x0000_0040;
+    for (what, mask) in [
+        ("FILE_DELETE_CHILD", FILE_DELETE_CHILD),
+        ("FILE_WRITE_EA", anc::FILE_WRITE_EA),
+    ] {
+        assert_eq!(mask & anc::WRITE_ACCESS_BITS, 0, "{what} is not in the pipe's mask");
+        let mut facts = healthy_ledger_facts();
+        facts.allow_aces.push(ace(SIGNER, mask));
+        match anc::verify_ledger_custody(&ledger_plan(), &facts) {
+            Err(AnchorRefusal::LedgerWritableBySigner { observed_mask, .. }) => {
+                assert_eq!(observed_mask, mask, "{what}")
+            }
+            other => panic!("a signer holding {what} on the ledger directory was accepted: {other:?}"),
+        }
+    }
+    // Read on the directory is not write: listing it changes nothing in it.
+    let mut facts = healthy_ledger_facts();
+    facts.allow_aces.push(ace(SIGNER, anc::FILE_GENERIC_READ));
+    let proof = anc::verify_ledger_custody(&ledger_plan(), &facts).expect("a reading signer");
+    assert_eq!(proof.forbidden_mask & FILE_DELETE_CHILD, FILE_DELETE_CHILD, "the proof states the mask it used");
+}
+
+/// Cockpit read R3-0868. The key's DACL was judged by a DENYLIST: twelve well-known "everyone"
+/// SIDs, and the app's own. An ACE for any other principal — a local group the app's account
+/// belongs to, another user on the box — was not looked at, so read on the anchor key could be
+/// handed over under a name the list did not hold. Three principals may hold anything on the
+/// key: SYSTEM, Administrators and the signer.
+#[test]
+fn a_key_ace_for_any_principal_outside_the_three_is_refused() {
+    const LOCAL_GROUP: &str = "S-1-5-21-1111111111-2222222222-3333333333-1005";
+    const DOMAIN_USER: &str = "S-1-5-21-4444444444-5555555555-6666666666-1107";
+    for (what, sid, mask) in [
+        ("a local group, read", LOCAL_GROUP, anc::FILE_GENERIC_READ),
+        ("another user, read attributes only", DOMAIN_USER, anc::FILE_READ_ATTRIBUTES),
+        ("another user, WRITE_DAC only", DOMAIN_USER, anc::WRITE_DAC),
+    ] {
+        let mut facts = healthy_key_facts();
+        facts.allow_aces.push(ace(sid, mask));
+        match anc::verify_key_custody(&key_plan(), &facts) {
+            Err(AnchorRefusal::KeyGrantsOutsideTheTcb { grantees, .. }) => {
+                assert_eq!(grantees, vec![sid.to_string()], "{what}");
+            }
+            other => panic!("{what}: an ACE for {sid} on the key was accepted: {other:?}"),
+        }
+    }
+    // An ACE that grants nothing is not a grant, and the healthy DACL still passes.
+    let mut facts = healthy_key_facts();
+    facts.allow_aces.push(ace(LOCAL_GROUP, 0));
+    assert!(anc::verify_key_custody(&key_plan(), &facts).is_ok());
+    // The app's own ACE keeps its more specific refusal.
+    let mut facts = healthy_key_facts();
+    facts.allow_aces.push(ace(APP, anc::FILE_GENERIC_READ));
+    assert!(matches!(
+        anc::verify_key_custody(&key_plan(), &facts),
+        Err(AnchorRefusal::KeyReachableByApp { .. })
+    ));
+}
+
 #[test]
 fn a_key_the_app_owns_is_refused_because_an_owner_can_rewrite_the_dacl() {
     let mut facts = healthy_key_facts();
@@ -518,13 +583,70 @@ fn a_token_whose_groups_could_not_be_read_is_never_reported_as_a_standard_user()
     }
 }
 
+/// Cockpit read R3-0870. "This account was denied the descriptor" is the healthy answer for
+/// the signer's key, and it was read off EVERY failure to read the descriptor: `dacl_facts`
+/// returned the same refusal whatever `GetNamedSecurityInfoW` said, and the proof accepted that
+/// refusal as the property. So a key file that does not exist, a path that is not a file, a
+/// handle the system could not spare — each proved that the app is locked out of the key.
+/// Only `ERROR_ACCESS_DENIED` is a denial.
+#[test]
+fn only_access_denied_is_the_property_and_every_other_read_back_failure_is_a_refusal() {
+    let plan = key_plan();
+    let key = "C:\\ProgramData\\BroPS\\audit-signer\\anchor.key";
+    // The one code that IS the property.
+    let denied = anc::classify_descriptor_failure(key, 5);
+    assert_eq!(denied, AnchorRefusal::DescriptorDenied { path: key.into() });
+    assert!(anc::key_readback_proof(Err(denied), &plan, APP, SIGNER).is_ok());
+    // ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SHARING_VIOLATION, ERROR_INVALID_NAME,
+    // ERROR_NOT_ENOUGH_MEMORY: none of them says anything about who may read the key.
+    for code in [2u32, 3, 32, 123, 8, 0, 6] {
+        let other = anc::classify_descriptor_failure(key, code);
+        match &other {
+            AnchorRefusal::Unmeasurable { why, .. } => {
+                assert!(why.contains(&code.to_string()), "code {code}: {why}")
+            }
+            unexpected => panic!("code {code} was classified as {unexpected:?}"),
+        }
+        assert_eq!(
+            anc::key_readback_proof(Err(other.clone()), &plan, APP, SIGNER),
+            Err(other),
+            "a read-back that failed with code {code} was accepted as proof of the separation"
+        );
+    }
+}
+
+/// Cockpit read R3-0869. The Windows read-back kept ACE type 0 and skipped every other type as
+/// "a deny ACE". Three of the types it skipped GRANT access. The numbers are the binding's own
+/// (`windows::Win32::System::SystemServices`), read from its source on 2026-10-13.
+#[test]
+fn only_the_four_deny_types_are_skipped_and_an_unknown_ace_type_is_not_a_denial() {
+    use anc::AceKind::{Allow, Deny, Unreadable};
+    assert_eq!(anc::classify_ace_type(0), Allow, "ACCESS_ALLOWED");
+    for (name, ty) in [("DENIED", 1u8), ("DENIED_OBJECT", 6), ("DENIED_CALLBACK", 10), ("DENIED_CALLBACK_OBJECT", 12)] {
+        assert_eq!(anc::classify_ace_type(ty), Deny, "ACCESS_{name}");
+    }
+    for (name, ty) in [
+        ("ACCESS_ALLOWED_COMPOUND", 4u8),
+        ("ACCESS_ALLOWED_OBJECT", 5),
+        ("ACCESS_ALLOWED_CALLBACK", 9),
+        ("ACCESS_ALLOWED_CALLBACK_OBJECT", 11),
+        ("SYSTEM_AUDIT", 2),
+        ("SYSTEM_ALARM", 3),
+    ] {
+        assert_eq!(anc::classify_ace_type(ty), Unreadable, "{name} was skipped or decoded");
+    }
+    // Total: every one of the 256 values is one of the three, and exactly five are not Unreadable.
+    let known = (0..=u8::MAX).filter(|t| anc::classify_ace_type(*t) != Unreadable).count();
+    assert_eq!(known, 5);
+}
+
 /// A descriptor that was READ, with an ACL that could not be enumerated to the end, is a refusal —
 /// and it must not be mistaken for the one read-back failure that is the healthy case.
 ///
 /// `dacl_facts` dropped whatever it could not read: a `GetAce` that failed was a `continue`, a
 /// grantee SID that would not convert was skipped, a failed `GetAclInformation` left the list
 /// empty. A dropped allow ACE under-reports access, and the key proof passes on "the app's mask
-/// is 0". It refuses now, with a refusal of its own, because `Unmeasurable` on the key is
+/// is 0". It refuses now, with a refusal of its own, because `DescriptorDenied` on the key is
 /// ACCEPTED: that one means this account was denied the descriptor itself.
 #[test]
 fn an_acl_that_could_not_be_enumerated_is_a_refusal_and_never_the_property() {
@@ -533,7 +655,7 @@ fn an_acl_that_could_not_be_enumerated_is_a_refusal_and_never_the_property() {
 
     // The healthy case: denied the descriptor outright. Accepted, and recorded as NOT a read-back.
     let denied = anc::key_readback_proof(
-        Err(AnchorRefusal::Unmeasurable { path: key.into(), why: "GetNamedSecurityInfoW: 5".into() }),
+        Err(AnchorRefusal::DescriptorDenied { path: key.into() }),
         &plan,
         APP,
         SIGNER,

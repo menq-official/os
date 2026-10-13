@@ -624,17 +624,28 @@ mod linux {
         Ok(handle)
     }
 
+    /// Measure every directory that has to be crossed to reach `path` and hold each to the TCB
+    /// custody rule: a root-owned directory nobody else can write. A writable ancestor is a
+    /// rename-and-replace vector for everything below it, whatever the file's own mode says.
+    ///
+    /// The policy was the only path this was asked of. The launcher, the executor and the lease
+    /// were measured as FILES and reached through directories nobody had looked at (cockpit read
+    /// R3-0866).
+    fn check_ancestry(what: &str, path: &str) -> Result<(), String> {
+        let mut measured = Vec::new();
+        for dir in guard::ancestor_dirs(path) {
+            let facts =
+                lstat_facts(&dir).ok_or_else(|| format!("cannot stat {what} ancestor {dir}"))?;
+            measured.push((dir, facts));
+        }
+        guard::check_ancestors(path, &measured).map_err(|e| format!("{what} {path}: {e}"))
+    }
+
     /// Load the ROOT-OWNED policy from the compile-time path, refusing anything whose custody is not
     /// root's — including a writable directory anywhere on the way to it.
     fn load_policy() -> Result<Policy, String> {
         let path = guard::POLICY_PATH;
-        let mut measured = Vec::new();
-        for dir in guard::ancestor_dirs(path) {
-            let facts =
-                lstat_facts(&dir).ok_or_else(|| format!("cannot stat policy ancestor {dir}"))?;
-            measured.push((dir, facts));
-        }
-        guard::check_ancestors(path, &measured)?;
+        check_ancestry("policy", path)?;
         let (facts, bytes) = read_measured(path)?;
         if !facts.is_regular {
             return Err(format!("recorder policy {path} is not a regular file"));
@@ -714,6 +725,23 @@ mod linux {
         // failed became an EMPTY digest inside a published, content-addressed report. What is
         // recorded now is what was measured, when it was measured, and there is no failed read left
         // to turn into a blank.
+        //
+        // The directories first (cockpit read R3-0866). Each of the three is hashed on a
+        // descriptor and then named BY PATH to the kernel — `execve` of the launcher here, and
+        // the launcher's own opens of the lease and the executor — so the digest is of the file
+        // that was at the path when it was read. What keeps it the same file afterwards is that
+        // no directory on the way can be written by anyone but root, and that is now measured.
+        // The exec is still by path: handing the measured descriptor to `fexecve` would close
+        // the window outright and has not been done.
+        for (what, path) in [
+            ("launcher", plan.launcher.as_str()),
+            ("executor", plan.executor.as_str()),
+            ("lease", plan.lease.as_str()),
+        ] {
+            if let Err(e) = check_ancestry(what, path) {
+                return err(&e);
+            }
+        }
         let launcher_sha256 =
             match verify_image("launcher", &plan.launcher, &plan.launcher_sha256, true) {
                 Ok(measured) => measured,
@@ -1044,6 +1072,42 @@ mod linux {
             0
         } else {
             1
+        }
+    }
+
+    #[cfg(test)]
+    mod ancestry_tests {
+        use super::check_ancestry;
+
+        /// The rule passes on a path whose every directory is root's — the shape of the kit's
+        /// TCB directory — so the refusals below are refusals of the directory, not of the walk.
+        #[test]
+        fn a_path_under_root_owned_directories_passes() {
+            assert_eq!(check_ancestry("env", "/usr/bin/env"), Ok(()));
+        }
+
+        /// Cockpit read R3-0866. A file below a directory somebody else can write is refused
+        /// before it is hashed, whatever its own custody. The temporary directory is such a
+        /// directory on every host this runs on: world-writable, or the test user's own.
+        #[test]
+        fn a_path_below_a_directory_others_can_write_is_refused() {
+            let dir = std::env::temp_dir().join(format!("r3-0866-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("a directory under the temporary directory");
+            let image = dir.join("privileged-launcher.bin");
+            std::fs::write(&image, b"x").expect("write");
+            let verdict = check_ancestry("launcher", image.to_str().expect("utf-8"));
+            let _ = std::fs::remove_dir_all(&dir);
+            let why = verdict.expect_err("a launcher under a temporary directory passed");
+            assert!(why.starts_with("launcher "), "{why}");
+            assert!(why.contains("writable") || why.contains("not root-owned"), "{why}");
+        }
+
+        /// A directory on the way that cannot be measured is a refusal, not a pass.
+        #[test]
+        fn a_missing_ancestor_is_refused() {
+            let why = check_ancestry("lease", "/no-such-directory-r3-0866/executor.lease")
+                .expect_err("an unmeasurable ancestor passed");
+            assert!(why.contains("cannot stat lease ancestor"), "{why}");
         }
     }
 }
@@ -1524,6 +1588,18 @@ mod tests {
             assert_eq!(run.matches(in_the_report).count(), 1, "{in_the_report}");
         }
         assert_eq!(run.matches("guard::containment_report(").count(), 1, "the report is built elsewhere");
+
+        // R3-0866: the three paths' directories are measured, and BEFORE the first image is hashed.
+        let ancestry = run.find("if let Err(e) = check_ancestry(what, path) {").expect("no ancestry check");
+        let first_hash = run.find("let launcher_sha256 =").expect("no launcher digest");
+        assert!(ancestry < first_hash, "the directories are measured after the files");
+        for named in [
+            "(\"launcher\", plan.launcher.as_str()),",
+            "(\"executor\", plan.executor.as_str()),",
+            "(\"lease\", plan.lease.as_str()),",
+        ] {
+            assert_eq!(run.matches(named).count(), 1, "the ancestry check no longer covers {named}");
+        }
     }
 
     // ---------------------------------------------------------------------------------------------

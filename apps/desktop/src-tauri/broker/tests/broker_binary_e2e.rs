@@ -239,11 +239,31 @@ fn a_socket_path_without_the_sock_suffix_is_refused_before_any_file_is_touched()
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Cockpit read R3-0857. With no uid argument the broker used to admit ITS OWN uid as the
+/// renderer — the collapse of the two principals the peer check exists to keep apart, reached
+/// by leaving an argument out. Whoever starts the broker names a renderer or there is no broker.
+#[test]
+fn a_broker_started_without_a_renderer_uid_does_not_start() {
+    let dir = private_dir();
+    let socket = dir.join("broker.sock");
+    assert_eq!(
+        exit_code(&[socket.as_os_str()]),
+        Some(EXIT_BAD_ARGUMENT),
+        "a broker with no renderer named must refuse to start (None = it is serving)"
+    );
+    assert_eq!(
+        std::fs::read_dir(&dir).expect("the test dir").count(),
+        0,
+        "the refusal comes before any database or socket is created"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_renderer_uid_argument_that_is_not_a_uid_is_refused_at_startup() {
     // An unparsable uid used to become the BROKER'S OWN uid, silently: the peer allowlist then
-    // admitted a principal nobody named. An absent argument still defaults (every other test in this
-    // file would notice if it stopped); a present one that cannot be read does not.
+    // admitted a principal nobody named. An absent argument is refused too (the test above); a
+    // present one that cannot be read is refused here.
     for bad in ["10o0", "-1", "", "4294967296", "1000 "] {
         let dir = private_dir();
         let socket = dir.join("broker.sock");

@@ -171,14 +171,20 @@ mod linux {
         let socket_path = args
             .next()
             .unwrap_or_else(|| "/run/brops/broker.sock".to_string());
-        // The default applies to an ABSENT argument only. A uid argument that is present and does
-        // not parse used to fall through to the same default — `.and_then(|s| s.parse().ok())` —
-        // so a typo in the launcher's uid made the broker admit ITS OWN uid as the renderer, with
-        // no error and no log line. Whoever starts the broker named a renderer; if that name cannot
-        // be read the answer is not a different principal, it is no broker.
+        // There is NO default (cockpit read R3-0857). An absent argument used to mean "this
+        // broker's own uid", and before that so did one that would not parse: either way the
+        // peer allowlist admitted the broker's own principal as the renderer, the collapse the
+        // check exists to prevent, with no error and no log line. Whoever starts the broker
+        // names a renderer; if no name can be read the answer is not a different principal, it
+        // is no broker.
         let allowed_uid = match args.next() {
-            // SAFETY: getuid never fails and touches no memory.
-            None => unsafe { libc::getuid() },
+            None => {
+                eprintln!(
+                    "brops-broker: no allowed-renderer uid was given; refusing to start rather \
+                     than admit this broker's own uid in its place"
+                );
+                return Err(EXIT_BAD_ARGUMENT);
+            }
             Some(raw) => match raw.parse::<u32>() {
                 Ok(uid) => uid,
                 Err(_) => {
@@ -300,6 +306,14 @@ mod linux {
 
         let fail_closed = || -> Box<dyn GovernedExecutor> { Box::new(UpstreamBlockedExecutor) };
 
+        // NOT refused here, and it was for one push (cockpit read R3-0857, the second half): a
+        // renderer named as this broker's OWN uid. The live kit's product-binary proof starts
+        // the broker exactly that way — `brops-broker "$sock" "$BROKER_UID"`, the frame sent by
+        // a Python client running as the broker — and says in its own banner that the renderer
+        // being the broker's uid is what it does not yet prove. Serving that run fail-closed
+        // turned the only live proof that this binary takes a turn into `blocked`. Closing the
+        // collapse needs a renderer principal in the kit first; until then the two-principal
+        // rule is the deployment's (`principals.seven_distinct_accounts` in the preflight).
         let path = match std::env::var("BROPS_BROKER_CONFIG") {
             Ok(p) if !p.is_empty() => p,
             _ => return fail_closed(),

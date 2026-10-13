@@ -139,6 +139,24 @@ pub fn approval_request_document(
     Ok(doc)
 }
 
+/// Every object key in `value`, lowercased, at every depth: through nested objects and through
+/// the elements of arrays. Iterative, so a deeply nested reply cannot spend the stack.
+fn field_names(value: &Value, out: &mut Vec<String>) {
+    let mut pending = vec![value];
+    while let Some(next) = pending.pop() {
+        match next {
+            Value::Object(map) => {
+                for (key, inner) in map {
+                    out.push(key.to_ascii_lowercase());
+                    pending.push(inner);
+                }
+            }
+            Value::Array(items) => pending.extend(items),
+            _ => {}
+        }
+    }
+}
+
 /// Read one reply. Nothing here is believed that the reply does not say in the engine's own words.
 ///
 /// `sent_request_id` is the id of the request THIS reply is supposed to answer. A reply is
@@ -173,8 +191,14 @@ pub fn classify(reply: Result<Value, String>, sent_request_id: &str) -> Approval
     }
     // A reply that carries a decision word is refused whatever else it says. This is invariant 2 on
     // the way back, and it is checked BEFORE `ok`, so an `ok: true` cannot buy its way past it.
+    //
+    // At ANY depth (cockpit read R3-0861): this scanned `object.keys()` only, so the word one
+    // level down, or in an object inside an array, was not seen. Keys, never values — the
+    // engine's own note reads "recorded, not adjudicated".
+    let mut names = Vec::new();
+    field_names(&doc, &mut names);
     for word in DECISION_WORDS {
-        if object.keys().any(|k| k.to_ascii_lowercase().contains(word)) {
+        if names.iter().any(|k| k.contains(word)) {
             return ApprovalOutcome::Blocked {
                 reason: format!(
                     "the engine reply carries a `{word}`-shaped field; only an owner-signed \
@@ -300,6 +324,30 @@ mod tests {
             base[k] = v;
         }
         base
+    }
+
+    /// Cockpit read R3-0861. "A reply that carries a decision word is refused whatever else it
+    /// says" looked at the TOP-LEVEL keys only, so the same word one level down — in an object,
+    /// or in an object inside an array — was a reply this side rendered as a clean record.
+    #[test]
+    fn a_decision_word_is_refused_at_any_depth_of_the_reply() {
+        for (what, extra) in [
+            ("in a nested object", json!({"detail": {"approved": true}})),
+            ("two levels down", json!({"detail": {"more": {"Owner_Verdict": "yes"}}})),
+            ("inside an array", json!({"notes": [{"plain": 1}, {"decision": "approve"}]})),
+            ("an array in an array", json!({"notes": [[{"signed_by": "owner"}]]})),
+        ] {
+            match classify(Ok(reply(extra)), SENT) {
+                ApprovalOutcome::Blocked { reason } => {
+                    assert!(reason.contains("-shaped field"), "{what}: {reason}")
+                }
+                other => panic!("{what}: a reply carrying a decision word was read as {other:?}"),
+            }
+        }
+        // The control: nesting alone is not what refuses. A VALUE that spells a decision word
+        // is not a field either — the engine's own note says "not adjudicated".
+        let plain = reply(json!({"detail": {"plain": [1, {"also_plain": "approved"}]}}));
+        assert!(matches!(classify(Ok(plain), SENT), ApprovalOutcome::Recorded { .. }));
     }
 
     // --- what may be sent -------------------------------------------------------------------

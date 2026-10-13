@@ -285,6 +285,16 @@ pub const WRITE_ACCESS_BITS: u32 = FILE_WRITE_DATA
     | WRITE_DAC
     | WRITE_OWNER;
 
+/// On a directory: delete any entry in it, whatever that entry's own DACL says.
+pub const FILE_DELETE_CHILD: u32 = 0x0000_0040;
+
+/// [`WRITE_ACCESS_BITS`] plus the two bits that change a DIRECTORY's contents and are not in
+/// the pipe's mask: [`FILE_DELETE_CHILD`], which removes the ledger's `.jsonl`, `.head` and
+/// `.anchor` from above, and [`FILE_WRITE_EA`]. The ledger is a directory; the signer was held
+/// to the mask of a pipe (cockpit read R3-0867). A superset, so the drift test that pins
+/// `WRITE_ACCESS_BITS` to `pipe_acl`'s still holds.
+pub const LEDGER_WRITE_ACCESS_BITS: u32 = WRITE_ACCESS_BITS | FILE_DELETE_CHILD | FILE_WRITE_EA;
+
 /// Any bit that lets a holder *see* the bytes. Used for the key file, where the question is
 /// not "can the app write" but "can the app read at all".
 pub const READ_ACCESS_BITS: u32 = FILE_READ_DATA | FILE_READ_EA;
@@ -721,8 +731,9 @@ impl ReadbackProof {
 /// "no access"); it is protected, so nothing inherited in behind our back; no `GENERIC_*`
 /// bit makes the masks unreadable; no world SID hands the app access by group membership;
 /// the owner is a TCB principal, because an owner can rewrite the DACL at will; the app's own
-/// ACE grants **zero** bits; and the signer really can read and write, or the design is
-/// broken in the other direction and the service will fail at first start.
+/// ACE grants **zero** bits; NO principal but SYSTEM, Administrators and the signer is granted
+/// anything; and the signer really can read and write, or the design is broken in the other
+/// direction and the service will fail at first start.
 pub fn verify_key_custody(
     plan: &DaclPlan,
     facts: &DaclFacts,
@@ -736,6 +747,25 @@ pub fn verify_key_custody(
             path: facts.path.clone(),
             app_sid: plan.app_sid.clone(),
             observed_mask: app_mask,
+        });
+    }
+    // An ALLOWLIST of three (cockpit read R3-0868). The checks above are a denylist — twelve
+    // "everyone" SIDs and the app's own — so an ACE for any other principal was never looked
+    // at. A local group, or a second account, could hold read on the key under a name no list
+    // carried, and this check cannot see whether the app's account is a member of it.
+    let mut strangers: Vec<String> = facts
+        .allow_aces
+        .iter()
+        .filter(|a| a.mask != 0)
+        .filter(|a| !TCB_SIDS.contains(&a.sid.as_str()) && a.sid != plan.signer_sid)
+        .map(|a| a.sid.clone())
+        .collect();
+    strangers.sort();
+    strangers.dedup();
+    if !strangers.is_empty() {
+        return Err(AnchorRefusal::KeyGrantsOutsideTheTcb {
+            path: facts.path.clone(),
+            grantees: strangers,
         });
     }
     let signer_mask = direct_mask(facts, &plan.signer_sid);
@@ -762,7 +792,7 @@ pub fn verify_key_custody(
 
 /// Prove, from a read-back, that the **signer cannot write the audit ledger**.
 ///
-/// Same order, inverted: the signer's ACE must carry no bit of [`WRITE_ACCESS_BITS`], and the
+/// Same order, inverted: the signer's ACE must carry no bit of [`LEDGER_WRITE_ACCESS_BITS`], and the
 /// app's must carry write, or the engine cannot append and the ledger is useless.
 pub fn verify_ledger_custody(
     plan: &DaclPlan,
@@ -773,7 +803,7 @@ pub fn verify_ledger_custody(
     allowed.push(plan.app_sid.as_str());
     check_owner(facts, &allowed)?;
     let signer_mask = direct_mask(facts, &plan.signer_sid);
-    if signer_mask & WRITE_ACCESS_BITS != 0 {
+    if signer_mask & LEDGER_WRITE_ACCESS_BITS != 0 {
         return Err(AnchorRefusal::LedgerWritableBySigner {
             path: facts.path.clone(),
             signer_sid: plan.signer_sid.clone(),
@@ -792,7 +822,7 @@ pub fn verify_ledger_custody(
     Ok(ReadbackProof {
         path: facts.path.clone(),
         excluded_sid: plan.signer_sid.clone(),
-        forbidden_mask: WRITE_ACCESS_BITS,
+        forbidden_mask: LEDGER_WRITE_ACCESS_BITS,
         observed_mask: signer_mask,
         required_mask: need,
         required_sid: plan.app_sid.clone(),
@@ -948,6 +978,62 @@ pub enum ReadProbe {
 
 /// Classify the OS error of a failed `open()` — the decision half of `winimpl::app_can_read`.
 ///
+/// What one ACE in a DACL is, to a read-back that only models allow ACEs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AceKind {
+    /// `ACCESS_ALLOWED_ACE_TYPE`: the one shape the read-back can decode — a mask and one SID.
+    Allow,
+    /// A deny ACE of any of the four layouts. Skipped: ignoring a denial can only make a
+    /// principal look MORE privileged than it is, which is fail-closed for both questions.
+    Deny,
+    /// Anything else. It may grant access, and this read-back cannot say to whom.
+    Unreadable,
+}
+
+/// The numeric ACE types, as `windows::Win32::System::SystemServices` defines them.
+pub const ACE_TYPE_ALLOWED: u8 = 0;
+pub const ACE_TYPE_DENIED: u8 = 1;
+pub const ACE_TYPE_DENIED_OBJECT: u8 = 6;
+pub const ACE_TYPE_DENIED_CALLBACK: u8 = 10;
+pub const ACE_TYPE_DENIED_CALLBACK_OBJECT: u8 = 12;
+
+/// Sort an ACE by its header's type.
+///
+/// The read-back used to keep type 0 and `continue` past everything else, on the reasoning
+/// that everything else was a deny ACE (cockpit read R3-0869). It is not: allow-object (5),
+/// allow-callback (9) and allow-callback-object (11) ACEs GRANT access, with a layout this
+/// module does not decode, and dropping one under-reports who can reach the object — the
+/// direction that lets `verify_key_custody` pass on "the app's mask is 0". Only the four
+/// deny types are skipped by name; any other type makes the ACL unreadable to the end.
+pub fn classify_ace_type(ace_type: u8) -> AceKind {
+    match ace_type {
+        ACE_TYPE_ALLOWED => AceKind::Allow,
+        ACE_TYPE_DENIED
+        | ACE_TYPE_DENIED_OBJECT
+        | ACE_TYPE_DENIED_CALLBACK
+        | ACE_TYPE_DENIED_CALLBACK_OBJECT => AceKind::Deny,
+        _ => AceKind::Unreadable,
+    }
+}
+
+/// What a FAILED read of a security descriptor says, from the code it failed with.
+///
+/// Only [`ERROR_ACCESS_DENIED`] is a denial, by the same rule as [`classify_failed_key_open`].
+/// Every other code — the file is not there, the path is not a file, the system was short of
+/// something — is [`AnchorRefusal::Unmeasurable`]: it says the question could not be asked, and
+/// nothing about who may read the object. Pure, so the split is tested on every host;
+/// `winimpl::dacl_facts` hands it the code `GetNamedSecurityInfoW` returned.
+pub fn classify_descriptor_failure(path: &str, win32_code: u32) -> AnchorRefusal {
+    if i64::from(win32_code) == i64::from(ERROR_ACCESS_DENIED) {
+        AnchorRefusal::DescriptorDenied { path: path.to_string() }
+    } else {
+        AnchorRefusal::Unmeasurable {
+            path: path.to_string(),
+            why: format!("GetNamedSecurityInfoW returned WIN32_ERROR({win32_code})"),
+        }
+    }
+}
+
 /// Only `ERROR_ACCESS_DENIED` is a denial. `ERROR_SHARING_VIOLATION` used to be counted as one
 /// as well, under a comment that called it "denied". It is not: it means ANOTHER PROCESS has
 /// the file open with a share mode that excludes this open — the signer mid-read, an on-access
@@ -1034,6 +1120,9 @@ pub enum AnchorRefusal {
     WorldInDacl { path: String, grantees: Vec<String> },
     UntrustedOwner { path: String, owner_sid: String },
     KeyReachableByApp { path: String, app_sid: String, observed_mask: u32 },
+    /// The key's DACL grants something to a principal that is neither SYSTEM, Administrators
+    /// nor the signer.
+    KeyGrantsOutsideTheTcb { path: String, grantees: Vec<String> },
     SignerCannotUseItsOwnKey { path: String, signer_sid: String, observed_mask: u32 },
     LedgerWritableBySigner { path: String, signer_sid: String, observed_mask: u32 },
     LedgerNotWritableByApp { path: String, app_sid: String, observed_mask: u32 },
@@ -1042,12 +1131,18 @@ pub enum AnchorRefusal {
     KeyActuallyReadable { path: String },
     /// The security descriptor could not be read back at all, so nothing was proved.
     Unmeasurable { path: String, why: String },
+    /// This account was DENIED the security descriptor: the read-back failed with
+    /// `ERROR_ACCESS_DENIED` and with nothing else. For the signer's key that is the healthy
+    /// case, and [`key_readback_proof`] accepts this refusal — and only this one — as the
+    /// property. Split from [`AnchorRefusal::Unmeasurable`], which carried every failure code
+    /// alike (cockpit read R3-0870).
+    DescriptorDenied { path: String },
     /// The descriptor WAS read, and its ACL could not be enumerated to the end — a count that
     /// would not come back, an ACE that would not, a grantee whose SID could not be named.
     ///
-    /// Deliberately not [`AnchorRefusal::Unmeasurable`]. That one means "this account was denied
-    /// the descriptor", which for the signer's key is the healthy case and is accepted as such
-    /// by [`key_readback_proof`]. This one means the read-back saw PART of the grants: a proof
+    /// Deliberately not [`AnchorRefusal::DescriptorDenied`]. That one means "this account was
+    /// denied the descriptor", which for the signer's key is the healthy case and is accepted as
+    /// such by [`key_readback_proof`]. This one means the read-back saw PART of the grants: a proof
     /// computed over the part would under-report whoever was in the rest, and "the app's mask
     /// is 0" over a list with an entry missing is not a proof that the app is absent.
     AclNotEnumerable { path: String, why: String },
@@ -1136,6 +1231,12 @@ impl AnchorRefusal {
                  {observed_mask:#010x}. It must grant ZERO — not merely no read: WRITE_DAC alone \
                  would let the app grant itself read and then sign its own anchors"
             ),
+            AnchorRefusal::KeyGrantsOutsideTheTcb { path, grantees } => format!(
+                "the DACL read back from {path} grants access to {grantees:?}. Only SYSTEM, \
+                 BUILTIN\\Administrators and the signer's own account may hold anything on the \
+                 signer's key: any other principal may be one the app's account is a member of, \
+                 and this check cannot see group membership"
+            ),
             AnchorRefusal::SignerCannotUseItsOwnKey { path, signer_sid, observed_mask } => format!(
                 "the DACL read back from {path} grants the signer {signer_sid} \
                  {observed_mask:#010x}, which lacks read and/or write. The service would fail at \
@@ -1146,7 +1247,7 @@ impl AnchorRefusal {
                  {observed_mask:#010x}, which contains write bits ({:#010x}). A signer that can \
                  write the ledger can write a chain to match any head it feels like signing, so \
                  its signature would prove nothing",
-                observed_mask & WRITE_ACCESS_BITS
+                observed_mask & LEDGER_WRITE_ACCESS_BITS
             ),
             AnchorRefusal::LedgerNotWritableByApp { path, app_sid, observed_mask } => format!(
                 "the DACL read back from {path} grants the app {app_sid} {observed_mask:#010x}, \
@@ -1157,6 +1258,12 @@ impl AnchorRefusal {
                  reach the signer's private key, so it can sign its own anchors. This check is \
                  the one that cannot be fooled by ACE ordering, generic mappings, deny ACEs or \
                  ownership, and it says the separation does not exist"
+            ),
+            AnchorRefusal::DescriptorDenied { path } => format!(
+                "this account was denied the security descriptor of {path} (ERROR_ACCESS_DENIED). \
+                 A process denied all access to a file is also denied READ_CONTROL on it; for \
+                 the signer's key that is the separation working, and anywhere else it means the \
+                 read-back must be run by the installer (elevated) or by the signer"
             ),
             AnchorRefusal::Unmeasurable { path, why } => format!(
                 "the security descriptor of {path} could not be read back ({why}), so NOTHING \
@@ -1775,7 +1882,21 @@ pub mod winimpl {
         OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SID_NAME_USE, TOKEN_GROUPS,
         TOKEN_QUERY, TOKEN_USER, TokenGroups, TokenUser,
     };
-    use windows::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
+    use windows::Win32::System::SystemServices::{
+        ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, ACCESS_DENIED_CALLBACK_ACE_TYPE,
+        ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE, ACCESS_DENIED_OBJECT_ACE_TYPE,
+    };
+
+    // The five numbers `classify_ace_type` sorts by are written out in the portable half, so
+    // that the rule is tested on every host. Here they are held to the binding's own: if one
+    // ever differs, the Windows build stops instead of sorting ACEs by a stale number.
+    const _: () = {
+        assert!(ACCESS_ALLOWED_ACE_TYPE == super::ACE_TYPE_ALLOWED as u32);
+        assert!(ACCESS_DENIED_ACE_TYPE == super::ACE_TYPE_DENIED as u32);
+        assert!(ACCESS_DENIED_OBJECT_ACE_TYPE == super::ACE_TYPE_DENIED_OBJECT as u32);
+        assert!(ACCESS_DENIED_CALLBACK_ACE_TYPE == super::ACE_TYPE_DENIED_CALLBACK as u32);
+        assert!(ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE == super::ACE_TYPE_DENIED_CALLBACK_OBJECT as u32);
+    };
     use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     /// `SE_DACL_PROTECTED`.
@@ -1925,10 +2046,9 @@ pub mod winimpl {
                 &mut psd,
             );
             if rc != ERROR_SUCCESS {
-                return Err(AnchorRefusal::Unmeasurable {
-                    path: p,
-                    why: format!("GetNamedSecurityInfoW returned {rc:?}"),
-                });
+                // The CODE decides what this failure means (cockpit read R3-0870): only
+                // ERROR_ACCESS_DENIED is this account being denied the descriptor.
+                return Err(super::classify_descriptor_failure(&p, rc.0));
             }
             let owner_sid = sid_string(owner).unwrap_or_default();
             let dacl_present = !dacl.is_null();
@@ -1966,9 +2086,20 @@ pub mod winimpl {
                         let hdr = &*(pace as *const ACE_HEADER);
                         // Deny ACEs are skipped, exactly as `tcb_floor` does: ignoring them can
                         // only over-report a principal's access, which is the fail-closed
-                        // direction for both questions asked here.
-                        if hdr.AceType as u32 != ACCESS_ALLOWED_ACE_TYPE {
-                            continue;
+                        // direction for both questions asked here. Every OTHER type that is
+                        // not a plain allow ACE stops the read-back: see `classify_ace_type`.
+                        match super::classify_ace_type(hdr.AceType) {
+                            super::AceKind::Allow => {}
+                            super::AceKind::Deny => continue,
+                            super::AceKind::Unreadable => {
+                                enumeration_failure = Some(format!(
+                                    "ACE {i} of {} has type {}, which is neither a plain allow \
+                                     ACE nor a deny ACE; it may grant access this read-back \
+                                     cannot decode",
+                                    info.AceCount, hdr.AceType
+                                ));
+                                break;
+                            }
                         }
                         let inheritable = hdr.AceFlags as u32 & 0x03 != 0;
                         let ace = &*(pace as *const ACCESS_ALLOWED_ACE);
@@ -2250,10 +2381,13 @@ pub struct AnchorStatus {
 /// Three answers, and only one of them is quiet:
 ///
 /// * the descriptor was read → the full read-back proof, [`verify_key_custody`];
-/// * [`AnchorRefusal::Unmeasurable`] → this account was denied the descriptor itself. Denied
+/// * [`AnchorRefusal::DescriptorDenied`] → this account was denied the descriptor itself. Denied
 ///   `READ_CONTROL` means denied everything measured here, the behavioural probe in step 3 is
 ///   what established it, and the proof records that rather than a read-back that did not
 ///   happen. This is the expected, healthy case;
+/// * [`AnchorRefusal::Unmeasurable`] → the read-back failed for some OTHER reason — the file is
+///   absent, the path is wrong — and that is a refusal. It used to be accepted as the case
+///   above, because the two were one refusal;
 /// * anything else → a refusal. In particular [`AnchorRefusal::AclNotEnumerable`], a descriptor
 ///   that WAS read and whose ACL could not be listed to the end, is not "the property": this
 ///   account read the descriptor, and what it read is incomplete.
@@ -2265,7 +2399,7 @@ pub fn key_readback_proof(
 ) -> Result<ReadbackProof, AnchorRefusal> {
     match readback {
         Ok(facts) => verify_key_custody(key_plan, &facts),
-        Err(AnchorRefusal::Unmeasurable { path, .. }) => Ok(ReadbackProof {
+        Err(AnchorRefusal::DescriptorDenied { path }) => Ok(ReadbackProof {
             path: format!("{path} (descriptor unreadable by this account — which is the property)"),
             excluded_sid: app_sid.to_string(),
             forbidden_mask: READ_ACCESS_BITS | WRITE_ACCESS_BITS | READ_CONTROL,
@@ -2293,7 +2427,7 @@ pub fn key_readback_proof(
 /// 4. the **read-back** proof over the ledger directory's real DACL, computing that the
 ///    signer holds no write bit and the app does;
 /// 5. the key file's read-back proof, *if* this process can read the descriptor — which it
-///    cannot when the separation is working, so a `Unmeasurable` there is accepted and
+///    cannot when the separation is working, so a `DescriptorDenied` there is accepted and
 ///    recorded as "proved behaviourally instead", and anything else is a refusal.
 ///
 /// Any failure returns [`AnchorRefusal`] and the caller must leave the ledger unanchored.

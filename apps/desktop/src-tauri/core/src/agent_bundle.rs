@@ -20,9 +20,10 @@
 //!
 //! The grant is written **by this module**, from values the runtime holds — never
 //! from a prompt. `Grant::written_by` records which component wrote it, and
-//! [`Grant::is_prose_writer`] refuses a writer that names a Markdown or prompt
-//! file, because a grant stated in a prompt is a grant stated in prose. That is
-//! the defect `docs/ARCHITECTURE.md` already records for `scope`.
+//! [`verify`] refuses every value but [`GRANT_WRITER`], because a grant stated in a
+//! prompt is a grant stated in prose. That is the defect `docs/ARCHITECTURE.md`
+//! already records for `scope`. The label is the grant's own statement: it can
+//! lower trust and cannot raise it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -145,7 +146,7 @@ pub struct Flow {
 ///
 /// `egress` is a TABLE, not a list of URLs, so the flow can name a row and
 /// never a destination (§2.3 rule 6). Written by the runtime; a grant whose
-/// `written_by` names prose is refused.
+/// `written_by` is anything but [`GRANT_WRITER`] is refused.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Grant {
     pub schema: u32,
@@ -156,8 +157,9 @@ pub struct Grant {
     /// an empty table can mean and the state `for_local_only` writes.
     pub egress: Vec<EgressEntry>,
     pub credential_slots: Vec<String>,
-    /// Which runtime component wrote this grant. Not decorative: the gate and
-    /// [`Grant::is_prose_writer`] both refuse a writer that names prose.
+    /// Which runtime component wrote this grant. Not decorative: [`verify`] loads a grant
+    /// only when this is exactly [`GRANT_WRITER`], and `tools/check_produced_artifact.py`
+    /// separately refuses a grant that names a prompt or a document.
     pub written_by: String,
     pub expires_at_epoch: i64,
 }
@@ -192,12 +194,6 @@ pub const GRANT_WRITER: &str = "brops_core::agent_bundle::write_grant";
 pub const GRANT_SCHEMA: u32 = 2;
 
 impl Grant {
-    /// A writer naming a Markdown or prompt file means the grant came from prose.
-    pub fn is_prose_writer(writer: &str) -> bool {
-        let w = writer.to_ascii_lowercase();
-        w.ends_with(".md") || w.ends_with(".txt") || w.contains("prompt")
-    }
-
     /// Written by the runtime from values it holds. There is no parameter here
     /// that a prompt could reach.
     pub fn for_local_only(expires_at_epoch: i64) -> Self {
@@ -569,7 +565,14 @@ pub fn verify(dir: &Path, now_epoch: i64) -> Result<VerifiedBundle, Refusal> {
     }
     let grant: Grant =
         serde_json::from_slice(grant_bytes).map_err(|_| Refusal::GrantUnparseable)?;
-    if Grant::is_prose_writer(&grant.written_by) {
+    // The allowlist of one (cockpit read R3-0860). This asked only whether the writer LOOKED like
+    // prose — a suffix of `.md` or `.txt`, or the word "prompt" — so any other string the grant
+    // chose to call itself passed.
+    // `written_by` is the grant's own statement; it cannot prove the runtime wrote it (whoever
+    // can write this file can write this name), so all it can do is lower trust, and it does so
+    // for every value but the runtime's exact name. The refusal keeps its code: it has always
+    // meant "this grant does not say the runtime wrote it".
+    if grant.written_by != GRANT_WRITER {
         return Err(Refusal::GrantFromProse);
     }
     if now_epoch > grant.expires_at_epoch {
@@ -788,6 +791,46 @@ mod tests {
         verify(&renamed, 1_000_000)
     }
 
+    /// Cockpit read R3-0860. "Written by the runtime, never from a prompt" was a DENYLIST over a
+    /// label the grant states about itself: a writer ending `.md` or `.txt`, or containing
+    /// "prompt", was refused and every other string passed. The label can only ever lower
+    /// trust, so the rule is the allowlist of one: the runtime's own name, exactly.
+    ///
+    /// It also reaches `verify`'s refusal through a whole bundle, which nothing did before: the
+    /// test this replaces asked a predicate directly and never loaded a grant. The four prose
+    /// names it listed are refused here by the same rule as every other.
+    #[test]
+    fn a_grant_naming_any_writer_but_the_runtime_is_refused_at_load() {
+        for writer in [
+            "prompts/grant.md",
+            "GRANT.md",
+            "system_prompt.txt",
+            "the-prompt",
+            "some-other-component",
+            "brops_core::agent_bundle::write_grant ",
+            "BROPS_CORE::AGENT_BUNDLE::WRITE_GRANT",
+            "",
+        ] {
+            let (dir, digest) = built(1_000_000);
+            let path = dir.path().join(&digest).join("grant.json");
+            let mut grant: Grant = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(grant.written_by, GRANT_WRITER, "the build writes the runtime's name");
+            grant.written_by = writer.to_string();
+            let body = serde_json::to_vec_pretty(&grant).unwrap();
+            assert_eq!(
+                rewrite_grant(dir.path(), &digest, &body).map(|_| ()),
+                Err(Refusal::GrantFromProse),
+                "a grant written by {writer:?} was loaded"
+            );
+        }
+        // The control: the same rewrite with the runtime's own name loads.
+        let (dir, digest) = built(1_000_000);
+        let path = dir.path().join(&digest).join("grant.json");
+        let grant: Grant = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let body = serde_json::to_vec_pretty(&grant).unwrap();
+        assert!(rewrite_grant(dir.path(), &digest, &body).is_ok());
+    }
+
     /// §1.9 step 3. The refusal is ABSENT GRANT, specifically -- never
     /// "no restrictions". The two must not be confusable at a call site.
     #[test]
@@ -864,16 +907,6 @@ mod tests {
     fn an_expired_grant_is_refused() {
         let (dir, digest) = built(1_000_000);
         assert_eq!(verify(&dir.path().join(&digest), 1_000_000 + 3601), Err(Refusal::GrantExpired));
-    }
-
-    /// A grant whose writer names prose is refused: a grant stated in a prompt
-    /// is a grant stated in prose, which is the defect ARCHITECTURE.md records.
-    #[test]
-    fn a_grant_written_by_a_prompt_file_is_refused() {
-        for writer in ["prompts/grant.md", "GRANT.md", "system_prompt.txt", "the-prompt"] {
-            assert!(Grant::is_prose_writer(writer), "{writer} should be refused");
-        }
-        assert!(!Grant::is_prose_writer(GRANT_WRITER));
     }
 
     /// Load-time capability check: a step requiring more than the grant carries

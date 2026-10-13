@@ -299,7 +299,7 @@ pub fn verify_pinned_role<'m>(
 
 /// A content pin is 64 lowercase hex characters, the form `engine/ci/live/build_tcb_pin_manifest.py`
 /// writes. Anything else — empty above all — is not a digest and matches no file.
-fn is_sha256_pin(pin: &str) -> bool {
+pub(crate) fn is_sha256_pin(pin: &str) -> bool {
     pin.len() == 64 && pin.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 

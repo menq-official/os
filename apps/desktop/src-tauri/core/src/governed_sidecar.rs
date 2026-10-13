@@ -428,8 +428,17 @@ impl SidecarPrincipal {
                 invoker[last]
             ));
         }
-        // The prefix must actually CHANGE principal. Position matters: at index 0 the account name
-        // would be the program, and at the last index it would be standing where `env` must stand.
+        // The prefix must NAME the account somewhere between the program and `env`. Position
+        // matters: at index 0 the account name would be the program, and at the last index it
+        // would be standing where `env` must stand.
+        //
+        // This is a SPELLING check and nothing more (cockpit read R3-0862). It used to be
+        // described as "the prefix must actually CHANGE principal", which it cannot establish:
+        // the token is not required to follow `-u`, so a prefix that mentions the account as an
+        // argument to something else passes. Whether the child really runs as that account is
+        // decided where it can be — by the supervisor and every sidecar-facing service, which
+        // read the peer's uid. Tightening the grammar itself is `L-36`, and waits on the Owner
+        // because the rule is stated twice, here and in the kit's Python config writer.
         if !invoker[1..last].iter().any(|t| t == &account) {
             return Err(format!(
                 "`sidecar.{INVOKER_KEY}` never names the account `{account}`, so it does not change \
