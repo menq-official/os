@@ -84,6 +84,10 @@ export const SURFACE_STR = {
       + 'Ни один выбранный Bro уровень не применяется. Приложение отклоняет их при запуске, поэтому '
       + 'итог ниже должен сообщить об остановке; попытка показана, потому что список запретов её не отменяет.',
   },
+  /** The two short labels beside the agent's name for an origin that is neither a tier nor a
+   *  pack role. Without them every such agent was called a pack role. */
+  originOutsideLabel: { en: 'NOT DEFINED HERE', hy: 'ԱՅՍՏԵՂ ՉԻ ՍԱՀՄԱՆՎԵԼ', ru: 'НЕ ОПРЕДЕЛЁН ЗДЕСЬ' },
+  originUnstatedLabel: { en: 'ORIGIN UNSTATED', hy: 'ԾԱԳՈՒՄԸ ՉԻ ՀԱՂՈՐԴՎԵԼ', ru: 'ИСТОЧНИК НЕ УКАЗАН' },
   /** The backend said nothing about where the name came from — an older build. Not a verdict
    *  either way, and it must not be shown as one. */
   originUnstated: {
@@ -189,7 +193,16 @@ function PathList({ paths }: { paths: readonly string[] }) {
 export function DelegationCard({ delegation: d }: { delegation: Delegation }) {
   const L = useL();
   const badge = outcomeBadge(d.outcome);
-  const kindKey: ChatStringKey = d.tier ? 'tierLabel' : 'packRoleLabel';
+  // The label says where the NAME came from. `tier ? TIER : PACK ROLE` called every agent
+  // without a tier a pack role — including one this app never defined, on the card whose own
+  // note says it is outside the capability model. An unstated origin claims neither, unless
+  // the record itself carries a tier.
+  const kindKey: AnyStringKey =
+    d.agentOrigin === 'app_tier' ? 'tierLabel'
+    : d.agentOrigin === 'pack_role_file' ? 'packRoleLabel'
+    : originIsUnbounded(d.agentOrigin) ? 'originOutsideLabel'
+    : d.tier ? 'tierLabel'
+    : 'originUnstatedLabel';
 
   // Which sentence sits under the tool row. Capability is the enforced half — but ONLY for
   // `agent_definition`, the tier list this app actually handed the CLI. Each weaker source gets

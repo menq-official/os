@@ -246,7 +246,10 @@ describe('a delegation reported on the live stream reaches the chat screen', () 
     await screen.findByText('general-purpose');
     expect(screen.getByText(STR.capabilityUnknown.en)).toBeInTheDocument();
     expect(screen.queryByText(STR.capabilityEnforced.en)).not.toBeInTheDocument();
-    expect(screen.getByText(STR.packRoleLabel.en)).toBeInTheDocument();
+    // This frame states no origin, and this is a CLI built-in — the assertion here used to be
+    // that the card says PACK ROLE, which pinned the defect (R3-0276) rather than caught it.
+    expect(screen.getByText(SURFACE_STR.originUnstatedLabel.en)).toBeInTheDocument();
+    expect(screen.queryByText(STR.packRoleLabel.en)).not.toBeInTheDocument();
     // `grant: null` is a fact the backend stated, not a missing field to paper over.
     expect(screen.getByText(STR.grantNotStated.en)).toBeInTheDocument();
     expect(screen.queryByText(STR.mayTouch.en)).not.toBeInTheDocument();

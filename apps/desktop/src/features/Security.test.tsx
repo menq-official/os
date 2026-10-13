@@ -135,3 +135,33 @@ describe('Security — the reason integrity is unconfirmed is the one the read r
     expect(when.textContent).toMatch(/2023/);
   });
 });
+
+// R3-0263 / R3-0264: the reason the chain read gave was printed twice — once under a label
+// that credited it to the engine even when the desktop wrote it and the engine was never
+// reached, and once inside the control-plane DIGEST section, which reads nothing at all.
+describe('Security — a read\'s reason is shown once, and not credited to the engine', () => {
+  const mountChain = (chain: unknown) => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_security_summary')
+        return Promise.resolve({ pendingApprovals: 0, decidedApprovals: 0, auditEvents: 0, sensitiveEvents: [] });
+      if (cmd === 'read_evidence_chain') return Promise.resolve(chain);
+      return Promise.resolve(null);
+    });
+    return render(<AppProvider><ToastProvider><Security /></ToastProvider></AppProvider>);
+  };
+
+  it('a reason the desktop wrote is labelled "Reason", never "Engine reason"', async () => {
+    mountChain({ state: 'unreachable', surface: 'evidenceChain', reason: 'broker_unavailable', authenticated: false });
+    await waitFor(() => expect(document.querySelector('.mc-reason')).not.toBeNull());
+    expect(document.querySelector('.mc-reason')?.textContent).toBe('Reason: broker_unavailable');
+    expect(document.body.textContent).not.toMatch(/Engine reason/);
+  });
+
+  it('the digest section does not print the evidence-chain read\'s reason as its own', async () => {
+    mountChain({ state: 'unreachable', surface: 'evidenceChain', reason: 'broker_unavailable', authenticated: false });
+    await waitFor(() => expect(document.querySelector('.mc-reason')).not.toBeNull());
+    expect(document.querySelector('.sec-digest-row')).not.toBeNull();
+    expect(document.querySelector('.sec-reason')).toBeNull();
+    expect(document.body.textContent?.split('broker_unavailable').length).toBe(2);
+  });
+});

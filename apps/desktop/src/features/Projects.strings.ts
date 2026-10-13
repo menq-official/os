@@ -49,7 +49,7 @@ export const STR = {
     hy: 'Կապը տվյալների շերտի հետ կորավ — հոսքերն անհասանելի են։',
     ru: 'Связь со слоем данных потеряна — потоки недоступны.',
   },
-  emptyTitle: { en: 'No workstreams yet', hy: 'Ակտիվ հոսքեր չկան', ru: 'Пока нет потоков' },
+  emptyTitle: { en: 'No workstreams yet', hy: 'Հոսքեր դեռ չկան', ru: 'Пока нет потоков' },
   emptyHint: {
     en: 'When a project is created it appears here as its own energy line.',
     hy: 'Երբ ստեղծվի նախագիծ, այն կհայտնվի այստեղ՝ որպես առանձին էներգիայի գիծ։',

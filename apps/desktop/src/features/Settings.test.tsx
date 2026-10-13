@@ -290,3 +290,13 @@ describe('Settings — the blocked governed provider is described as what it is'
     expect(screen.queryByRole('button', { name: 'Re-check' })).toBeNull();
   });
 });
+
+// R3-0265: the System panel's region carried the PAGE's name, so a screen reader's landmark
+// list had two "Settings" and no "System".
+describe('Settings — the System panel is a region with its own name', () => {
+  it('is named System, and no region repeats the page name', async () => {
+    setup();
+    expect(await screen.findByRole('region', { name: 'System' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Settings' })).toBeNull();
+  });
+});

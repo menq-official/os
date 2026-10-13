@@ -689,6 +689,29 @@ mod tests {
         assert_eq!(repo::automations::parse_interval_ms("every: 153722867280913m"), None);
     }
 
+    // R3-0274: the renderer's `parseIntervalMs` says what THIS parser will do, and the two were
+    // tested by separate lists that shared no case — `every: +5m` fired here and read
+    // "unrecognised" there. Both suites now read one file.
+    #[test]
+    fn the_interval_parser_agrees_with_the_fixture_the_renderer_reads() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/interval_triggers.json")).unwrap();
+        let cases = fixture["cases"].as_array().unwrap();
+        assert!(cases.len() > 25, "the fixture lost its cases");
+        // Every disagreement is collected, so one run names all of them.
+        let mut wrong = Vec::new();
+        for case in cases {
+            let trigger = case["trigger"].as_str().unwrap();
+            let fires = case["fires"].as_bool().unwrap();
+            let ms = case.get("ms").and_then(|m| m.as_i64());
+            let got = repo::automations::parse_interval_ms(trigger);
+            if got.is_some() != fires || (ms.is_some() && got != ms) {
+                wrong.push(format!("{trigger:?}: fires={fires} ms={ms:?}, got {got:?}"));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
     // The same defect where it did its damage: an ENABLED row the scheduler meets on a tick.
     // The tick must skip it, fire its neighbour, and return — a panic here poisons the mutex
     // every other database command needs.

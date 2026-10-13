@@ -248,3 +248,41 @@ describe('the Chat screen carries the surface', () => {
       expect(invokeMock).toHaveBeenCalledWith('list_delegations', { conversationId: 'c-1' }));
   });
 });
+
+// R3-0276: the label beside the agent's name was `tier ? TIER : PACK ROLE` — so an agent this
+// app never defined, which has no tier, was called a pack role on the very card whose note
+// says it is outside the capability model.
+describe('Chat delegation card — the label beside the name says where the name came from', () => {
+  const card = async (extra: Record<string, unknown>) => {
+    const view = mount(() => Promise.resolve([{ ...RECORD, ...extra }]));
+    await waitFor(() => expect(document.querySelector('.dg-card')).not.toBeNull());
+    const label = document.querySelector('.dg-top .micro')?.textContent;
+    view.unmount();
+    return label;
+  };
+
+  it('an agent this app did not define is never labelled a pack role', async () => {
+    for (const agentOrigin of ['cli_builtin', 'unrecognized']) {
+      const label = await card({
+        subagentType: 'general-purpose', agentOrigin, tools: [], toolsSource: 'unresolved',
+      });
+      expect(label, agentOrigin).toBe(SURFACE_STR.originOutsideLabel.en);
+    }
+  });
+
+  it('a tier and a pack role keep their own labels, and an unstated origin claims neither', async () => {
+    expect(await card({ agentOrigin: 'app_tier' })).toBe(STR.tierLabel.en);
+    // The origin is what the backend STATED; it is not re-derived from the name here.
+    expect(await card({ subagentType: 'boundary-auditor', agentOrigin: 'app_tier' })).toBe(STR.tierLabel.en);
+    expect(await card({
+      subagentType: 'boundary-auditor', agentOrigin: 'pack_role_file', toolsSource: 'pack_role_file',
+    })).toBe(STR.packRoleLabel.en);
+    expect(await card({
+      subagentType: 'boundary-auditor', agentOrigin: undefined, toolsSource: 'unresolved', tools: [],
+    })).toBe(SURFACE_STR.originUnstatedLabel.en);
+    // An older build states no origin, but the name itself is one of the three tiers.
+    expect(await card({ subagentType: 'builder', agentOrigin: undefined })).toBe(STR.tierLabel.en);
+    // And a tier NAME does not outvote an origin that says the app did not define the agent.
+    expect(await card({ subagentType: 'builder', agentOrigin: 'unrecognized' })).toBe(SURFACE_STR.originOutsideLabel.en);
+  });
+});

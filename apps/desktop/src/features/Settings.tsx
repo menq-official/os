@@ -448,7 +448,7 @@ export function Settings() {
         </section>
 
         {/* — SYSTEM IDENTITY · real About values only — */}
-        <section className="surface soft set-panel set-sys reveal" aria-label={t('nav.settings')}>
+        <section className="surface soft set-panel set-sys reveal" aria-label={L('systemHeading')}>
           <div className="sec-head">
             <h2>{L('systemHeading')}</h2>
             {/* `sysPill`, not `data?.ready ? 'live' : 'off'`: readiness that is UNKNOWN (still

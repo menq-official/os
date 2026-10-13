@@ -177,26 +177,37 @@ export interface TriggerParse {
   raw: string;
 }
 
+/** What Rust's `str::trim` removes: Unicode `White_Space`. JavaScript's `trim()` is a different
+ *  set — it also strips U+FEFF and leaves U+0085 — so it cannot stand in for it here. */
+const RUST_WS = '\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
+const RUST_TRIM = new RegExp(`^[${RUST_WS}]+|[${RUST_WS}]+$`, 'g');
+const rustTrim = (s: string): string => s.replace(RUST_TRIM, '');
+/** The largest interval the scheduler's `i64` can hold; past it `checked_mul` answers `None`. */
+const I64_MAX = 9_223_372_036_854_775_807n;
+
 /**
- * Port of `repo::automations::parse_interval_ms` — `every: <N>{m|h|d}`, N > 0. Kept equivalent
- * (lowercase, `every:` prefix, trailing unit character, trimmed numeric head) because the whole
- * point is to tell the truth about what the SCHEDULER will do; a looser parser here would claim
- * fires that never happen.
+ * Port of `repo::automations::parse_interval_ms` — `every: <N>{m|h|d}`, N > 0, digits only.
+ * Kept equivalent because the whole point is to tell the truth about what the SCHEDULER will
+ * do; a looser parser here would claim fires that never happen. "Equivalent" is not a comment's
+ * word for it: both parsers are run against `src-tauri/core/tests/fixtures/interval_triggers.json`.
+ *
+ * The number returned is for display. An interval above 2^53 ms still fires in the scheduler,
+ * so it is still non-null here, but it is the nearest double and not the exact count.
  */
 export function parseIntervalMs(trigger: string): number | null {
-  const lowered = trigger.trim().toLowerCase();
+  const lowered = rustTrim(trigger).toLowerCase();
   if (!lowered.startsWith('every:')) return null;
-  const rest = lowered.slice('every:'.length).trim();
+  const rest = rustTrim(lowered.slice('every:'.length));
   if (rest.length < 2) return null;
-  const num = rest.slice(0, -1).trim();
+  const num = rustTrim(rest.slice(0, -1));
   const unit = rest.slice(-1);
   if (!/^\d+$/.test(num)) return null;
-  const n = Number(num);
-  if (!Number.isSafeInteger(n) || n <= 0) return null;
-  if (unit === 'm') return n * 60_000;
-  if (unit === 'h') return n * 3_600_000;
-  if (unit === 'd') return n * 86_400_000;
-  return null;
+  const unitMs = unit === 'm' ? 60_000n : unit === 'h' ? 3_600_000n : unit === 'd' ? 86_400_000n : null;
+  if (unitMs === null) return null;
+  const n = BigInt(num);
+  if (n <= 0n) return null;
+  const ms = n * unitMs;
+  return ms > I64_MAX ? null : Number(ms);
 }
 
 /** Classify a trigger: scheduled, deliberately manual, or a string the scheduler ignores. The
@@ -465,8 +476,16 @@ export interface RunClassification {
  *  counts as executed; any unknown outcome string is treated as a failure. */
 export function classifyRun(run: AutomationRun): RunClassification {
   if (run.outcome === 'ok') return { kind: 'executed', reason: null };
+  const detail = run.detail.trim();
+  // The store says "unknown action verb" for every verb it does not run. `parseAction` keeps
+  // two answers for those, and a stored row gets the same one: a model-reaching verb is a
+  // governance gap, not a typo. The store lowercases the verb before it writes it.
+  const unknown = /^unknown action verb '([^']*)'/i.exec(detail);
+  if (unknown && (MODEL_REACHING_VERBS as readonly string[]).includes(unknown[1])) {
+    return { kind: 'refused', reason: 'action_reaches_model' };
+  }
   for (const { re, reason } of STORE_REFUSALS) {
-    if (re.test(run.detail.trim())) return { kind: 'refused', reason };
+    if (re.test(detail)) return { kind: 'refused', reason };
   }
   return { kind: 'failed', reason: null };
 }

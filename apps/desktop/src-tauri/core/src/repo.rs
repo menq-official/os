@@ -2793,7 +2793,13 @@ pub mod automations {
         } else {
             return None;
         };
-        let n: i64 = num.trim().parse().ok()?;
+        // Digits only. `i64::from_str` also takes a leading `+`, which is not in the vocabulary
+        // and which the page's own parser reads as unrecognised (R3-0274).
+        let num = num.trim();
+        if num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let n: i64 = num.parse().ok()?;
         if n <= 0 {
             return None;
         }

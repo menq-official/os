@@ -153,3 +153,28 @@ describe('Tasks — Enter on a card\'s own button is that button\'s', () => {
     await waitFor(() => expect(live()).toMatch(/Draft the specification → /));
   });
 });
+
+// R3-0266: the card prints `High`; the two selects that SET the same value offered `high`.
+describe('Tasks — a priority is named the same where it is chosen as where it is shown', () => {
+  const optionTexts = () => [...document.querySelectorAll('[role="dialog"] option')].map((o) => o.textContent);
+
+  it('the edit form offers the localised labels', async () => {
+    setup();
+    await waitFor(() => expect(document.querySelector('article.mtask')).not.toBeNull());
+    const card = document.querySelector('article.mtask') as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: 'Enter' });
+    await screen.findByRole('dialog');
+    expect(optionTexts()).toEqual(expect.arrayContaining(['Low', 'Normal', 'High', 'Critical']));
+    expect(optionTexts()).not.toContain('high');
+  });
+
+  it('the new-task form offers the localised labels', async () => {
+    setup();
+    await waitFor(() => expect(document.querySelector('article.mtask')).not.toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    await screen.findByRole('dialog');
+    expect(optionTexts()).toEqual(expect.arrayContaining(['Low', 'Normal', 'High', 'Critical']));
+    expect(optionTexts()).not.toContain('high');
+  });
+});

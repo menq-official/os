@@ -50,7 +50,7 @@ const PRIO_CLS: Record<string, string> = {
 const laneOf = (status: string) => LANES.find((l) => l.statuses.includes(status));
 
 function NewTaskForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const { t } = useApp();
+  const { t, lang } = useApp();
   const projects = useAsync(() => desktop.listProjects(), []);
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('normal');
@@ -76,7 +76,7 @@ function NewTaskForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
       </FormRow>
       <FormRow label={t('field.priority')}>
         <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
-          {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          {PRIORITIES.map((p) => <option key={p} value={p}>{priorityLabel(p, lang)}</option>)}
         </Select>
       </FormRow>
       <FormRow label={t('field.project')}>
@@ -154,7 +154,7 @@ function TaskDetail({ task, onClose, onSaved }: { task: Task; onClose: () => voi
       </FormRow>
       <FormRow label={t('field.priority')}>
         <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
-          {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          {PRIORITIES.map((p) => <option key={p} value={p}>{priorityLabel(p, lang)}</option>)}
         </Select>
       </FormRow>
 

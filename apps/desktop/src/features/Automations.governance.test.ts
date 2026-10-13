@@ -147,6 +147,22 @@ describe('parseIntervalMs — the truth about what the scheduler will fire', () 
     }
   });
 
+  it('agrees with the scheduler on every case of the fixture both suites read', () => {
+    // `parse_interval_ms` in core/src/repo.rs is tested against the same file. A case that
+    // fires there and reads "unrecognised" here — or the reverse — is the page lying about
+    // what the scheduler will do.
+    const fixture = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'src-tauri/core/tests/fixtures/interval_triggers.json'), 'utf8'),
+    ) as { cases: Array<{ trigger: string; fires: boolean; ms?: number }> };
+    expect(fixture.cases.length).toBeGreaterThan(25);
+    // Every disagreement is collected, so one run names all of them.
+    const wrong = fixture.cases
+      .map((c) => ({ c, got: parseIntervalMs(c.trigger) }))
+      .filter(({ c, got }) => (got !== null) !== c.fires || (c.ms !== undefined && got !== c.ms))
+      .map(({ c, got }) => `${JSON.stringify(c.trigger)}: fires=${c.fires} ms=${c.ms}, got ${got}`);
+    expect(wrong).toEqual([]);
+  });
+
   it('classifies a trigger as interval / manual / unrecognised', () => {
     expect(parseTrigger('every: 10m')).toMatchObject({ kind: 'interval', intervalMs: 600_000 });
     expect(parseTrigger('manual')).toMatchObject({ kind: 'manual' });
@@ -234,6 +250,18 @@ describe('classifyRun — a stored row is read, never flattered', () => {
       .toEqual({ kind: 'refused', reason: 'action_malformed' });
     expect(classifyRun(run({ outcome: 'failed', detail: "action 'notify' has no argument" })))
       .toEqual({ kind: 'refused', reason: 'action_argument_missing' });
+  });
+
+  it('a stored run of a model-reaching verb is a governance gap, not a typo', () => {
+    // The store has one sentence for every verb it does not run. The page keeps two answers
+    // for them — and a stored row must get the same one the pre-flight would have given.
+    for (const verb of ['ask', 'webhook', 'summarise']) {
+      expect(classifyRun(run({ outcome: 'failed', detail: `unknown action verb '${verb}' (supported: notify, task, note)` })), verb)
+        .toEqual({ kind: 'refused', reason: 'action_reaches_model' });
+    }
+    // A verb that merely STARTS like one is still unknown.
+    expect(classifyRun(run({ outcome: 'failed', detail: "unknown action verb 'asking' (supported: notify, task, note)" })))
+      .toEqual({ kind: 'refused', reason: 'action_verb_unknown' });
   });
 
   it('an ordinary failure stays a failure', () => {

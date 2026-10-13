@@ -1,0 +1,157 @@
+{
+ "_about": "One list for two parsers: repo::automations::parse_interval_ms (the scheduler) and parseIntervalMs in automationsGovernance.ts (what the page says the scheduler will do). `fires` is whether the scheduler schedules the trigger; `ms` is the interval where it fits a JSON number exactly. Both suites read this file, so the two cannot drift apart again (R3-0274).",
+ "cases": [
+  {
+   "trigger": "every: 5m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every: 2h",
+   "fires": true,
+   "ms": 7200000
+  },
+  {
+   "trigger": "every: 3d",
+   "fires": true,
+   "ms": 259200000
+  },
+  {
+   "trigger": " Every: 5M ",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "EVERY:1h",
+   "fires": true,
+   "ms": 3600000
+  },
+  {
+   "trigger": "every:5m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every: 05m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every: 5 m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "\u0085every: 5m\u0085",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every:\u00a05m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every: 153722867280912m",
+   "fires": true
+  },
+  {
+   "trigger": "manual",
+   "fires": false
+  },
+  {
+   "trigger": "",
+   "fires": false
+  },
+  {
+   "trigger": "cron",
+   "fires": false
+  },
+  {
+   "trigger": "daily",
+   "fires": false
+  },
+  {
+   "trigger": "every: 0m",
+   "fires": false
+  },
+  {
+   "trigger": "every: -5m",
+   "fires": false
+  },
+  {
+   "trigger": "every: +5m",
+   "fires": false
+  },
+  {
+   "trigger": "every: 5x",
+   "fires": false
+  },
+  {
+   "trigger": "every: m",
+   "fires": false
+  },
+  {
+   "trigger": "every: 1.5h",
+   "fires": false
+  },
+  {
+   "trigger": "every : 5m",
+   "fires": false
+  },
+  {
+   "trigger": "every: 5",
+   "fires": false
+  },
+  {
+   "trigger": "every: 5\u043c",
+   "fires": false
+  },
+  {
+   "trigger": "every: \uff15m",
+   "fires": false
+  },
+  {
+   "trigger": "EVERY: 5\u0130",
+   "fires": false
+  },
+  {
+   "trigger": "\ufeffevery: 5m",
+   "fires": false
+  },
+  {
+   "trigger": "every: 5m\ufeff",
+   "fires": false
+  },
+  {
+   "trigger": "every: 153722867280913m",
+   "fires": false
+  },
+  {
+   "trigger": "every: 9223372036854775807d",
+   "fires": false
+  },
+  {
+   "trigger": "every: 99999999999999999999m",
+   "fires": false
+  },
+  {
+   "trigger": "every:\u00855m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every: 5\u0085m",
+   "fires": true,
+   "ms": 300000
+  },
+  {
+   "trigger": "every:\ufeff5m",
+   "fires": false
+  },
+  {
+   "trigger": "every: 5\ufeffm",
+   "fires": false
+  }
+ ]
+}

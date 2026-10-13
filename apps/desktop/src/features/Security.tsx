@@ -239,7 +239,7 @@ export function Security() {
           <span className={`pill ${PILL_BY_INTEGRITY[integrity]}`}>{integrityLabel}</span>
           <p className="mc-detail">{integrityDetail}</p>
           {chainReason ? (
-            <p className="mc-reason micro">{L('engineReason')}{chainReason}</p>
+            <p className="mc-reason micro">{L('readReason')}{chainReason}</p>
           ) : null}
         </div>
       </div>
@@ -313,10 +313,9 @@ export function Security() {
         <span className="micro">SHA-256</span>
         <code className="sec-digest-val mono">—</code>
       </div>
+      {/* Nothing here reads a digest, so this section has no reason of its own to give. It
+          used to print the EVIDENCE-CHAIN read's reason, which is section 1's. */}
       {blockedNote('digestBlockedNote')}
-      {chainReason ? (
-        <p className="note sec-reason micro">{L('engineReason')}{chainReason}</p>
-      ) : null}
     </>,
   );
 
@@ -503,7 +502,6 @@ const SEC_STYLE = `
   background: rgb(var(--warning-rgb)/.07); border: 1px solid rgb(var(--warning-rgb)/.26);
 }
 .v-security .sec-blocked .note { font-size: var(--t-small); }
-.v-security .sec-reason { margin: var(--s3) 0 0; }
 
 .v-security .sec-digest-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--s3); }
 .v-security .sec-digest-val {

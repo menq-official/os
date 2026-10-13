@@ -73,10 +73,14 @@ function statusLabel(L: Localize, status: string): string {
 //
 // The held id is why saving is a backend command taking the id — the app window never receives
 // the text, so it cannot save something the backend did not produce (P1-6).
+/** What `commands::save_ask_to_knowledge` answers when the id was never held or was already
+ *  claimed — the one save refusal after which no answer is left to save. */
+const RESULT_ID_GONE = 'unknown or already-saved result id';
+
 type RunState =
   | { k: 'idle' }
   | { k: 'running' }
-  | { k: 'held'; resultId: string; provenance: string }
+  | { k: 'held'; resultId: string; provenance: string; saveError?: string }
   | { k: 'saved' }
   | { k: 'blocked'; reason: string }
   | { k: 'failed'; reason: string };
@@ -121,12 +125,29 @@ function GovernedRun({ item, L }: { item: ResearchItem; L: Localize }) {
     });
   };
   const cancel = () => { current.current += 1; setRun({ k: 'idle' }); };
+  // One save at a time. The held id is claimed by the first call, so a second one in flight is
+  // answered "unknown or already-saved" — and that refusal, landing after the first call's
+  // success, used to repaint a saved answer as a failed run. The button is disabled while a
+  // save is in flight, and that is the whole guard: Save has no other caller.
+  const [isSaving, setIsSaving] = useState(false);
   const save = () => {
     if (run.k !== 'held') return;
-    const { resultId } = run;
+    const mine = current.current;
+    const { resultId, provenance } = run;
+    setIsSaving(true);
     void desktop.saveAskToKnowledge(resultId, item.title)
-      .then(() => setRun({ k: 'saved' }))
-      .catch((e: unknown) => setRun({ k: 'failed', reason: e instanceof Error ? e.message : String(e) }));
+      .then(() => { if (current.current === mine) setRun({ k: 'saved' }); })
+      .catch((e: unknown) => {
+        if (current.current !== mine) return;
+        const reason = e instanceof Error ? e.message : String(e);
+        // The backend puts the answer back when a save fails, so the id is still good and the
+        // run stays held with the reason shown. The one exception is the refusal that says the
+        // id itself is gone: there is nothing left to hold.
+        setRun(reason.includes(RESULT_ID_GONE)
+          ? { k: 'failed', reason }
+          : { k: 'held', resultId, provenance, saveError: reason });
+      })
+      .finally(() => setIsSaving(false));
   };
 
   return (
@@ -171,7 +192,7 @@ function GovernedRun({ item, L }: { item: ResearchItem; L: Localize }) {
               {run.k === 'running' ? L('running') : L('runIt')}
             </Button>
             {run.k === 'held' && (
-              <Button small onClick={save}>{L('saveToKnowledge')}</Button>
+              <Button small onClick={save} disabled={isSaving}>{L('saveToKnowledge')}</Button>
             )}
           </div>
           <p className="micro muted">{L('runHint')}</p>
@@ -182,6 +203,13 @@ function GovernedRun({ item, L }: { item: ResearchItem; L: Localize }) {
           two that mean the thing the owner asked for did not happen. */}
       {run.k === 'held' && (
         <p className="rsx-run-out" role="status">{L(heldNoteKey(run.provenance))}</p>
+      )}
+      {run.k === 'held' && run.saveError !== undefined && (
+        <p className="rsx-run-out rsx-run-out--failed" role="alert">
+          <span className="pill bad">⚠ {L('saveFailed')}</span>
+          <span className="rsx-run-reason">{run.saveError}</span>
+          <span className="micro muted">{L('saveFailedNote')}</span>
+        </p>
       )}
       {run.k === 'blocked' && (
         <p className="rsx-run-out rsx-run-out--blocked" role="alert">

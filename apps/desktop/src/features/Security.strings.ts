@@ -57,11 +57,10 @@ export const STR = {
     hy: 'Որոշում է շարժիչը · Ed25519',
     ru: 'Определяет движок · Ed25519',
   },
-  engineReason: {
-    en: 'Engine reason: ',
-    hy: 'Շարժիչի պատճառ՝ ',
-    ru: 'Причина от движка: ',
-  },
+  // Neutral on purpose. The reason is whatever the READ returned, and for an unreachable
+  // broker the desktop wrote it itself — the engine was never reached, so it is not "the
+  // engine's reason".
+  readReason: { en: 'Reason: ', hy: 'Պատճառ՝ ', ru: 'Причина: ' },
   engineSurfacesNoneConfirmed: {
     en: 'Engine surfaces — none confirmed',
     hy: 'Շարժիչի մակերեսներ — չհաստատված',
