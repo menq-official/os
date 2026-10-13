@@ -121,6 +121,52 @@ pub fn read_manifest_bounded(path: &str, source: impl std::io::Read, max: u64) -
     Ok(raw)
 }
 
+/// One uid, as a JSON integer inside the range a real uid can take. `u32::MAX` is `(uid_t)-1`,
+/// which no account has.
+pub fn strict_uid(value: &serde_json::Value, what: &str) -> Result<u32, String> {
+    value
+        .as_u64()
+        .and_then(|u| u32::try_from(u).ok())
+        .filter(|u| *u != u32::MAX)
+        .ok_or_else(|| format!("{what} is {value}, which is not a uid"))
+}
+
+/// The §2.5 floor's principal set: every uid the deployment config's `uids` block names, stated
+/// WHOLE, plus the login uid.
+///
+/// THE one definition (cockpit read R3-0055, R3-0056). There were three: the proof drivers'
+/// strict one, and two copies — in `main.rs` and in the preflight — that dropped a `uids` value
+/// that was not an integer, turned a missing block into the empty set and truncated a large
+/// number with `as u32`. Each of those REMOVES a principal from the set the floor asks "can this
+/// party write a TCB artifact?" about, and a floor asked about nobody passes. Here a set that is
+/// not stated whole is a refusal: the floor is not evaluated against a smaller one.
+///
+/// `uids` is the config's `uids` VALUE (`cfg.get("uids")`), so each caller still names the key
+/// it reads. The login uid is the caller's: the broker's comes from its argv, a driver's from
+/// its config.
+pub fn floor_principals(uids: Option<&serde_json::Value>, login_uid: u32) -> Result<Vec<u32>, String> {
+    let block = uids
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "the config has no `uids` block naming the runtime principals".to_string())?;
+    let mut principals = Vec::with_capacity(block.len() + 1);
+    for (name, value) in block {
+        let uid = strict_uid(value, &format!("`uids.{name}`"))?;
+        if !principals.contains(&uid) {
+            principals.push(uid);
+        }
+    }
+    if principals.is_empty() {
+        return Err("the config's `uids` block names no runtime principal".to_string());
+    }
+    if login_uid == u32::MAX {
+        return Err("the login uid is (uid_t)-1, which is not a uid".to_string());
+    }
+    if !principals.contains(&login_uid) {
+        principals.push(login_uid);
+    }
+    Ok(principals)
+}
+
 /// Parse the pin manifest, with NO custody check. `None` on unreadable or malformed.
 ///
 /// Kept separate and named for what it is: the Linux path uses
@@ -752,6 +798,48 @@ impl FloorPinnedAnchor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- the principal set (cockpit read R3-0055, R3-0056) ----------------------------------
+
+    /// The whole set: every uid the block names, once, and the login uid after them.
+    #[test]
+    fn the_principal_set_is_every_named_uid_once_and_the_login_uid() {
+        let uids = serde_json::json!({"broker": 5001, "sidecar": 5003, "also_broker": 5001});
+        let mut all = floor_principals(Some(&uids), 1000).expect("a whole set");
+        all.sort_unstable();
+        assert_eq!(all, vec![1000, 5001, 5003]);
+        // A login uid the block already names is not a second principal.
+        let again = floor_principals(Some(&uids), 5003).expect("a whole set");
+        assert_eq!(again.iter().filter(|u| **u == 5003).count(), 1);
+        assert_eq!(again.len(), 2);
+    }
+
+    /// Each of these used to SHRINK the set — a dropped value, an empty set, a truncated number —
+    /// and a floor asked about fewer parties passes more easily. Each is a refusal now, and the
+    /// refusal names the entry.
+    #[test]
+    fn a_principal_set_not_stated_whole_is_refused_and_the_entry_is_named() {
+        use serde_json::json;
+        for (what, uids, names) in [
+            ("no block", None, "no `uids` block"),
+            ("a block that is not an object", Some(json!([5001])), "no `uids` block"),
+            ("an empty block", Some(json!({})), "names no runtime principal"),
+            ("a string uid", Some(json!({"broker": "5001", "sidecar": 5003})), "`uids.broker`"),
+            ("a negative uid", Some(json!({"sidecar": -1})), "`uids.sidecar`"),
+            ("a fractional uid", Some(json!({"sidecar": 5003.5})), "`uids.sidecar`"),
+            ("a null uid", Some(json!({"sidecar": null})), "`uids.sidecar`"),
+            // 4294972297 is 5001 + 2^32: `as u32` made it the broker's uid.
+            ("a uid past u32", Some(json!({"sidecar": 4294972297u64})), "`uids.sidecar`"),
+            ("(uid_t)-1", Some(json!({"sidecar": 4294967295u64})), "`uids.sidecar`"),
+        ] {
+            let why = floor_principals(uids.as_ref(), 1000)
+                .expect_err(&format!("{what} produced a principal set"));
+            assert!(why.contains(names), "{what}: {why}");
+        }
+        let whole = json!({"broker": 5001});
+        let why = floor_principals(Some(&whole), u32::MAX).expect_err("(uid_t)-1 as the login uid");
+        assert!(why.contains("login uid"), "{why}");
+    }
 
     // The floor's VALUE is that it refuses. These pin the three ways a deployment can fail to
     // present one, because each of them used to be indistinguishable from "no floor at all".

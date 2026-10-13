@@ -619,8 +619,11 @@ mod linux {
         //     IDX-3: this now also enforces the store-input CUSTODY floor — each of fds 3/4/5 must name a
         //     regular inode owned by root/brops-admin with no group/other write bit, so no principal
         //     outside the TCB can rewrite the bytes under the executor at any point.
+        //
+        //     This check OPENS the drop journal (step 5a): its success is the journal's first entry,
+        //     and there is no other way to put that entry there.
         let observed = collect_fd_facts()?;
-        verify_launcher_fd_set(&observed, TCB_OWNER_BROPS_ADMIN_UID)?;
+        let mut journal = DropJournal::open_at_entry_gate(&observed, TCB_OWNER_BROPS_ADMIN_UID)?;
 
         // (4b) §2.7 store-input identity (audit F-08). The three read-only inputs on fds 3/4/5 ARE the
         //      governed request; the attested `request_sha256` is built from exactly their three digests.
@@ -649,8 +652,11 @@ mod linux {
         //      launcher does not perform it — placing the process into the lease-authorized leaf cgroup
         //      is still the explicit TODO at step (1). The constant claimed that step; the journal does
         //      not, because it happened. `MANDATORY_PERFORMED_STEPS` therefore does not require it yet.
-        let mut journal = DropJournal::new();
-        journal.record(Step::VerifyEntry);
+        //
+        //      The two GATE entries are written by the checks themselves (cockpit read R3-0005):
+        //      `open_at_entry_gate` at step (4) above and `verify_unprivileged` at step (6). They
+        //      were bare `journal.record(..)` statements beside the checks, so deleting a check
+        //      changed nothing the journal held.
 
         // (4) Neutralize stdio: set FD_CLOEXEC on 0/1/2 so the inert endpoints do NOT cross fexecve — only
         //     the four data FDs 3–6 survive into the executor (§2.7 launcher step 3).
@@ -668,8 +674,7 @@ mod linux {
         //     no_new_privs set. Any residual ⇒ abort, no exec (§2.7 step 8).
         let status = fs::read_to_string("/proc/self/status").map_err(|_| Refusal::Proc("status"))?;
         let post = parse_status(&status).ok_or(Refusal::Proc("status-parse"))?;
-        verify_final_state(&post, exec_uid, exec_gid)?;
-        journal.record(Step::VerifyUnprivileged);
+        journal.verify_unprivileged(&post, exec_uid, exec_gid)?;
 
         // (9) Open the executor image O_RDONLY|O_NOFOLLOW|O_CLOEXEC (NOT one of 3–6), then bind exec-time
         //     integrity to THAT exact fd: fstat it (regular, TCB-owned, non-writable) AND re-hash its bytes
@@ -1966,6 +1971,40 @@ mod tests {
             .find(&close)
             .unwrap_or_else(|| panic!("no closing brace found for `{needle}`"));
         source[starts[0]..starts[0] + end].to_string()
+    }
+
+    /// Cockpit read R3-0005: the entry gate opens the journal, and a descriptor table it refuses
+    /// yields no journal — so there is nothing for a later statement to append a gate to.
+    #[test]
+    fn the_entry_gate_opens_the_journal_or_there_is_no_journal() {
+        use brops_core::privilege_drop::DropJournal;
+        let journal = DropJournal::open_at_entry_gate(&good_fds(), TCB_OWNER_BROPS_ADMIN_UID)
+            .expect("the compliant descriptor table was refused");
+        assert_eq!(journal.steps(), &[Step::VerifyEntry]);
+        let mut fds = good_fds();
+        fds[6].cloexec = true;
+        assert_eq!(
+            DropJournal::open_at_entry_gate(&fds, TCB_OWNER_BROPS_ADMIN_UID).map(|j| j.steps().to_vec()),
+            Err(FdViolation::DataFdCloexec(6))
+        );
+    }
+
+    /// The launcher gets both gate entries from the checks, and writes neither by statement.
+    #[test]
+    fn the_launcher_takes_both_gate_entries_from_the_checks_themselves() {
+        let source = product_source();
+        let opened = source
+            .find("let mut journal = DropJournal::open_at_entry_gate(&observed, TCB_OWNER_BROPS_ADMIN_UID)?;")
+            .expect("the journal is no longer opened by the entry gate");
+        let dropped = source.find("drop_privileges(exec_uid, exec_gid, &mut journal)?;").expect("no drop");
+        let gated = source
+            .find("journal.verify_unprivileged(&post, exec_uid, exec_gid)?;")
+            .expect("the post-drop gate no longer writes its own entry");
+        let judged = source.find("verify_performed_drop(journal.steps())").expect("the journal is not judged");
+        assert!(opened < dropped && dropped < gated && gated < judged, "the gates are out of order");
+        for bare in ["record(Step::VerifyEntry)", "record(Step::VerifyUnprivileged)", "DropJournal::new()"] {
+            assert!(!source.contains(bare), "the launcher declares a gate again: {bare}");
+        }
     }
 
     #[test]

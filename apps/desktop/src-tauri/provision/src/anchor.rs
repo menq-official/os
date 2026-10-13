@@ -521,8 +521,62 @@ pub fn prove_unwritable(dir: &Path) -> Result<CustodyProof, ProvisionError> {
     })
 }
 
-/// The name of the file every write probe creates and immediately removes.
-const PROBE_NAME: &str = ".brops-custody-probe";
+/// The PREFIX of the file every write probe creates and immediately removes. The rest of the
+/// name is random — see [`try_add_entry`].
+const PROBE_PREFIX: &str = ".brops-custody-probe-";
+
+/// What trying to add an entry to a directory showed.
+enum AddEntry {
+    /// An entry was created (and removed again): this account can write the directory.
+    Created,
+    /// The operating system refused with a permission denial. The message is the evidence.
+    Denied(String),
+    /// Neither: the question could not be asked. Never read as a denial.
+    Unmeasurable(String),
+}
+
+/// Ask the operating system whether this account can add an entry to `dir`, by adding one.
+///
+/// **An unpredictable name and `create_new`** (cockpit read R3-0059). Both write probes used a
+/// fixed name with `File::create`, which is `O_CREAT|O_TRUNC|O_WRONLY`: when a file of that
+/// name already exists it opens THAT file, and the answer is then about the file's mode, not
+/// the directory's. A mode-000 file named `.brops-custody-probe` in a directory this account
+/// could write freely returned `EACCES`, and the probe recorded "create … -> permission denied"
+/// as evidence that the directory was out of reach. Whoever can write the anchor can plant that
+/// file. `create_new` is `O_EXCL`: it never opens an existing entry and never follows a link, so
+/// a permission denial from it can only be about adding an entry to the directory. A name that
+/// is already taken is retried, and eight taken names in a row is reported as unmeasurable —
+/// the same rule [`posix_euid`] follows.
+fn try_add_entry(dir: &Path) -> Result<AddEntry, ProvisionError> {
+    try_add_entry_named(dir, || Ok(format!("{PROBE_PREFIX}{}", crate::random_hex(12)?)))
+}
+
+/// [`try_add_entry`] with the name supplied, so the one case randomness makes unreachable — the
+/// name is already taken — can be driven by a test.
+fn try_add_entry_named(
+    dir: &Path,
+    mut name: impl FnMut() -> Result<String, ProvisionError>,
+) -> Result<AddEntry, ProvisionError> {
+    for _ in 0..8 {
+        let probe = dir.join(name()?);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
+            Ok(file) => {
+                drop(file);
+                let _ = std::fs::remove_file(&probe);
+                return Ok(AddEntry::Created);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Ok(AddEntry::Denied(format!("create {} -> {e}", probe.display())));
+            }
+            Err(e) => return Ok(AddEntry::Unmeasurable(e.to_string())),
+        }
+    }
+    Ok(AddEntry::Unmeasurable(
+        "eight unpredictable probe names were all already taken, which does not happen by chance"
+            .to_string(),
+    ))
+}
 
 /// How deep the anchor is allowed to be. The real one is two directories deep
 /// (`registry/config/trusted-keys.json`); anything past this is refused rather than walked,
@@ -578,21 +632,16 @@ fn probe_tree(
     // (a) Can this account add a file here? Adding one is all the attack needs: it does not
     //     have to modify `operator-root.pub` in place, it only has to end up with a file of
     //     that name saying what it chose. On a subdirectory the same is true of the registry.
-    let probe = dir.join(PROBE_NAME);
-    match std::fs::File::create(&probe) {
-        Ok(file) => {
-            drop(file);
-            let _ = std::fs::remove_file(&probe);
+    match try_add_entry(dir)? {
+        AddEntry::Created => {
             return writable(
                 dir,
                 "this account CAN create files in the trust anchor directory, so it can write \
                  an operator-root pin of its own choosing",
             );
         }
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            refusals.push(format!("create {} -> {e}", probe.display()));
-        }
-        Err(e) => {
+        AddEntry::Denied(evidence) => refusals.push(evidence),
+        AddEntry::Unmeasurable(e) => {
             return writable(
                 dir,
                 format!(
@@ -867,19 +916,14 @@ fn can_delete(path: &Path) -> Result<Option<String>, ProvisionError> {
             Some(p) => p,
             None => return Ok(None), // the volume root has no parent to be deleted from
         };
-        let probe = parent.join(".brops-custody-probe-parent");
-        match std::fs::File::create(&probe) {
-            Ok(file) => {
-                drop(file);
-                let _ = std::fs::remove_file(&probe);
-                Ok(Some(format!(
-                    "{} is writable by this account, and write permission on a POSIX directory \
-                     is exactly the permission to unlink and replace the entries inside it",
-                    parent.display()
-                )))
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(None),
-            Err(e) => writable(
+        match try_add_entry(parent)? {
+            AddEntry::Created => Ok(Some(format!(
+                "{} is writable by this account, and write permission on a POSIX directory \
+                 is exactly the permission to unlink and replace the entries inside it",
+                parent.display()
+            ))),
+            AddEntry::Denied(_) => Ok(None),
+            AddEntry::Unmeasurable(e) => writable(
                 parent,
                 format!(
                     "the anchor's custody cannot be measured: creating a probe entry in {} \
@@ -1250,4 +1294,56 @@ pub fn custody_text() -> String {
          account can recreate the path. Removing it needs an administrator, and afterwards the\n\
          whole trust store has to be re-minted from scratch.\n"
     )
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+
+    /// A name that is already taken is never opened: not as a denial (the R3-0059 defect), and
+    /// not as "created". The probe moves to the next name, and the existing entry is untouched.
+    #[test]
+    fn a_taken_probe_name_is_skipped_never_opened() {
+        let temp = tempfile::tempdir().unwrap();
+        let taken = temp.path().join("taken");
+        std::fs::write(&taken, b"planted").unwrap();
+        let mut permissions = std::fs::metadata(&taken).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&taken, permissions.clone()).unwrap();
+
+        let mut names = ["taken", "fresh"].into_iter();
+        let moved_on = try_add_entry_named(temp.path(), || Ok(names.next().unwrap().to_string()));
+        let all_taken = try_add_entry_named(temp.path(), || Ok("taken".to_string()));
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&taken, permissions).unwrap();
+
+        assert!(matches!(moved_on, Ok(AddEntry::Created)), "the fresh name was not used");
+        assert!(!temp.path().join("fresh").exists(), "the probe was left behind");
+        match all_taken {
+            Ok(AddEntry::Unmeasurable(why)) => assert!(why.contains("already taken"), "{why}"),
+            Ok(AddEntry::Denied(evidence)) => panic!("a taken name read as a denial: {evidence}"),
+            Ok(AddEntry::Created) => panic!("a taken name read as created"),
+            Err(e) => panic!("{e}"),
+        }
+        assert_eq!(std::fs::read(&taken).unwrap(), b"planted", "the existing entry was opened");
+    }
+
+    /// A parent the probe could not ask is a refusal, never "cannot be deleted". A sweep of the
+    /// R3-0059 change found this arm held by no test: answering `Ok(None)` for it changed
+    /// nothing. The parent here does not exist, so the create fails with something other than
+    /// a permission denial.
+    #[cfg(not(windows))]
+    #[test]
+    fn a_parent_that_cannot_be_probed_is_a_refusal_not_an_undeletable_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let orphan = temp.path().join("no-such-parent").join("entry");
+        match can_delete(&orphan) {
+            Err(ProvisionError::Custody { what, .. }) => {
+                assert!(what.contains("cannot be measured"), "{what}")
+            }
+            other => panic!("an unprobeable parent was answered: {other:?}"),
+        }
+    }
 }

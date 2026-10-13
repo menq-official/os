@@ -1117,14 +1117,15 @@ fn check_tcb_floor(host: &dyn Host, cfg: &Cfg, login_uid: Option<u32>) -> Status
             )
         }
     };
-    let mut principals: Vec<u32> = cfg
-        .get("uids")
-        .and_then(|v| v.as_object())
-        .map(|m| m.values().filter_map(|v| v.as_u64().map(|u| u as u32)).collect())
-        .unwrap_or_default();
-    if !principals.contains(&login_uid) {
-        principals.push(login_uid);
-    }
+    // The broker's own set, by the broker's own function: stated whole, or the floor is not run.
+    let principals = match crate::tcb_probe::floor_principals(cfg.get("uids"), login_uid) {
+        Ok(principals) => principals,
+        Err(why) => {
+            return Status::not_met(format!(
+                "the floor's principal set is not stated, and the broker refuses on it: {why}"
+            ))
+        }
+    };
     let probe = HostProbe { host, login_and_runtime_uids: &principals };
     match verify_tcb_integrity(&manifest, &probe, &principals, login_uid) {
         Ok(()) => Status::met(format!(
@@ -2172,6 +2173,27 @@ mod tests {
         match status_of(&as_the_owner, "trust.tcb_integrity_floor") {
             Status::NotMet { because } => assert!(because.contains("WrongOwner"), "{because}"),
             other => panic!("a TCB owned by the login user passed: {other:?}"),
+        }
+    }
+
+    /// The preflight builds the principal set with the broker's own function, so a `uids` block
+    /// the broker refuses is a row that is not met. This row said MET for each of these: the
+    /// preflight dropped the entry it could not read and ran the floor against the rest (cockpit
+    /// read R3-0055).
+    #[test]
+    fn a_uids_block_the_broker_refuses_is_not_a_met_floor() {
+        for (what, edit) in [
+            ("a string uid", serde_json::json!("5003")),
+            ("a uid past u32", serde_json::json!(4294972299u64)),
+        ] {
+            let mut host = provisioned();
+            let mut cfg: Value =
+                serde_json::from_slice(host.files.get("/kit/config.json").unwrap()).unwrap();
+            cfg["uids"]["sidecar"] = edit;
+            host.files.insert("/kit/config.json".into(), cfg.to_string().into_bytes());
+            let why = floor_refusal(&host);
+            assert!(why.contains("principal set is not stated"), "{what}: {why}");
+            assert!(why.contains("`uids.sidecar`"), "{what}: {why}");
         }
     }
 

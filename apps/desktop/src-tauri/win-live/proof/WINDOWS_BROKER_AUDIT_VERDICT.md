@@ -52,6 +52,27 @@ builder review, over the branch `feat/windows-broker-machineproof`.
 >
 > **5. `platform_governed_execution_supported()`** is the §0.1 spec symbol; no function of that name
 > exists in the tree. The real refusals are named in `docs/OWNER_ACTION_REQUIRED.md`.
+>
+> **6. Condition 1, "Production key custody model — ROOT DONE" — VOID since 2026-08-09 (added
+> 2026-10-13, cockpit read R3-0044).** The condition was met by an operator carrying the root's
+> private half from an offline location into `win_provision --root-key`. Owner decision #78 ended
+> that model: the install mints trust and no person holds a key. `tcb.rs` says of the pinned
+> `ROOT_PUBLIC_KEY_HEX` that nobody holds its private half and that the production path is
+> unreachable until the pin is replaced by an install-minted root (T-131). `win_provision` still
+> takes `--root-key` and still refuses a seed that does not match the pin; with nobody holding the
+> matching seed that is a refusal, not a custody model. Condition 1 is therefore NOT done, and the
+> bottom line's "conditions 1 … are DONE" is wrong with it.
+>
+> **7. Condition 3, "the deploy ACL grants write only to the broker principal and denies the
+> interactive login user" — nothing in the kit sets that ACL (added 2026-10-13, cockpit read
+> R3-0045).** `win_provision` writes `floor.json` with `std::fs::write` and says in the comment
+> above it that the ACL is "the deployment-directory ACL the operator sets. This round did not
+> improve that and does not claim to." And the two rules the kit does carry contradict each other:
+> `tcb_floor.rs` pins `anti-rollback-floor` and refuses a non-TCB writer on it, while
+> `resolver::persist_floor` rewrites it as the broker on every turn — recorded in `tcb_floor.rs`'s
+> own module doc as unresolved. So the sentence describes an operator convention, not a property
+> anything established; "closed against the in-scope login-user adversary" holds only on a box where
+> an operator set that ACL by hand.
 
 ## VERDICT: GREEN — for the shipped fail-closed posture and the crypto-verification core
 
@@ -105,7 +126,7 @@ does, and the remediation audit's R-19 is exactly that overstatement.)*
 
 ## Conditions BEFORE the Windows governed gate may ever be flipped to `true` (not shipped today)
 These are honest limitations of a software-only proof kit; the gate stays closed until they are met:
-1. **Production key custody model — ROOT DONE.** The TCB (`tcb.rs`) now compiles in ONLY the root PUBLIC key
+1. **Production key custody model — ~~ROOT DONE~~ VOID (correction 6).** The TCB (`tcb.rs`) now compiles in ONLY the root PUBLIC key
    (`ROOT_PUBLIC_KEY_HEX`); the root PRIVATE key is supplied by the operator from an offline location
    (`win_provision --root-key`), which must match the pinned public, and is never written to the serving box
    (proven: `keys/root.seed` no longer exists; the turn still reaches `trusted_verified`). REMAINING for full
@@ -119,15 +140,15 @@ These are honest limitations of a software-only proof kit; the gate stays closed
    (`STATUS_DLL_INIT_FAILED`) was the debug-CRT DLL dependency a limited session-0 service account could not
    load; a static CRT removes it. (Deployment note: build the Windows kit with `+crt-static`.)
 3. **Replay-proof anti-rollback — closed vs the in-scope (login-user) adversary; TPM for the admin case.**
-   The floor lives in the broker-writable deployment root; the deploy ACL grants write only to the broker
-   principal and denies the interactive login user, so the config-dir adversary cannot restore an old signed
+   The floor lives in the broker-writable deployment root; ~~the deploy ACL grants write only to the broker
+   principal and denies the interactive login user~~ (**correction 7**: nothing in the kit sets it), so the config-dir adversary cannot restore an old signed
    `floor.json` (combined with `floor.sig` tamper-evidence). A full admin/SYSTEM compromise can still reset
    any file — defeating any software custody — so hardware monotonic/TPM-backed freshness remains the answer
    for that (explicitly out of scope, same class as "admin defeats DPAPI").
 
 Bottom line: **for the question the gate actually asks — can anything in scope forge a shipped
 `trusted_verified`? — the answer is no.** The kit is GREEN as an audited proof, and the enablement path is
-now proven end-to-end: conditions **1 (offline-root manifest signing)** and **2 (a dedicated non-SYSTEM
+now proven end-to-end: conditions ~~**1 (offline-root manifest signing)** and~~ (**correction 6**: void) **2 (a dedicated non-SYSTEM
 `brops-broker` principal)** are DONE, and **3** is closed against the in-scope login-user adversary via an
 ACL-protected, TCB-signed floor — all reaching `trusted_verified` cross-account with three distinct
 service-account principals. What remains is deployment/hardware-class only: the runtime floor-integrity key

@@ -2229,6 +2229,14 @@ function isGuardDenied(message: string): boolean {
 
 **Առաջարկվող լուծում.** Բերել `:55` և `:522` տողերը իրականությանը՝ verify-seam / receipt-plumbing / governed round-trip արդեն փակված են (`PROJECT_STATE.md:11`), streaming-ը միտումնավոր դուրս է թողնված՝ նշել որպես **այդպես նախագծված**, ոչ թե «open»։
 
+> **Builder-ի նշում, 2026-10-13 (cockpit read R3-0033) — այս առաջարկը այսպես գրված ՉԿԻՐԱՌԵԼ։**
+> Այն ասում ա, թե governed round-trip-ը «արդեն փակված ա»։ Նույն այս գրառման Part 2-ը չափել ա
+> հակառակը. «One governed round-trip proven end-to-end against a real provisioned engine» կետը
+> գրանցված ա որպես բացակա — «structurally impossible», իսկ verify-seam-ն ու receipt-plumbing-ը
+> իջեցված են 0.5՝ shipped ծրագրում անհասանելի լինելու պատճառով։ Հակասությունը աուդիտի տեքստի
+> ներսում ա. չափումն ա գերակա, առաջարկվող ձևակերպումը՝ ոչ։ Աուդիտորի տեքստը վերևում թողնված ա
+> անփոփոխ։
+
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ
 > - [ ] Բացել եմ երեք տողն էլ և հաստատել եմ հակասությունը
 > - [ ] Համաձայն եմ առաջարկվող ուղղման հետ

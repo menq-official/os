@@ -2453,6 +2453,44 @@ pub fn now_iso() -> String {
     iso_utc(ms)
 }
 
+/// What a FAILED turn says: its error, and — if the turn changed the trust surface before it
+/// failed — the notice of what was put back.
+///
+/// Cockpit read R3-0010. A completed turn and a stopped one settled the guard and carried the
+/// notice in the reply; a timeout, a size limit, a read error and a non-zero exit returned a
+/// bare error and left the guard to `Drop`, which restores the files and tells only stderr. The
+/// owner was shown "claude CLI timed out" and not that a protected file had been reverted — and
+/// a revert the owner cannot see is one they cannot judge.
+///
+/// Call it only once the child can no longer write: `settle` is one-shot.
+fn failure_with_settle<F: FnMut(&str)>(
+    message: String,
+    guard: Option<&TrustSurfaceGuard>,
+    on_delta: &mut F,
+) -> String {
+    match guard.and_then(|g| g.settle()) {
+        Some(notice) => {
+            on_delta(&notice);
+            format!("{message}{notice}")
+        }
+        None => message,
+    }
+}
+
+/// Whether a capped stdout reader stopped because it reached its cap, not because the child
+/// closed the stream (cockpit read R3-0009).
+fn stdout_cap_reached(remaining_limit: u64) -> bool {
+    remaining_limit == 0
+}
+
+/// What both CLI calls say when the child wrote past the cap.
+fn stdout_overrun_message() -> String {
+    format!(
+        "claude CLI wrote more than the {} MiB this reads; the turn was stopped",
+        MAX_STDOUT_BYTES / (1024 * 1024)
+    )
+}
+
 async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
     bin: &str,
     system: &str,
@@ -2522,6 +2560,18 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
     let mut acc = String::new();
     let mut result_text: Option<String> = None;
 
+    // Every failure from here on: stop the child, give it a moment to be gone, and only then
+    // settle the trust surface and say what was restored. Settling while the child can still
+    // write would restore the files and then let it change them again, unseen.
+    macro_rules! fail {
+        ($message:expr) => {{
+            let message: String = $message;
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+            return Err(failure_with_settle(message, guard.as_ref(), on_delta));
+        }};
+    }
+
     // stream-json emits one JSON object per line. Token deltas arrive as
     // {type:"stream_event", event:{type:"content_block_delta", delta:{text}}};
     // the final full text arrives as {type:"result", result}. A stalled read
@@ -2553,10 +2603,10 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
             match tokio::time::timeout_at(poll, lines.next_line()).await {
                 Ok(Ok(Some(l))) => break Some(l),
                 Ok(Ok(None)) => break None,
-                Ok(Err(e)) => return Err(e.to_string()),
+                Ok(Err(e)) => fail!(e.to_string()),
                 Err(_) => {
                     if tokio::time::Instant::now() >= read_deadline {
-                        return Err("claude CLI timed out".to_string());
+                        fail!("claude CLI timed out".to_string());
                     }
                 }
             }
@@ -2581,7 +2631,7 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
                         if !text.is_empty() {
                             acc.push_str(text);
                             if acc.len() > MAX_ASSISTANT_OUTPUT {
-                                return Err("assistant response exceeded the size limit".to_string());
+                                fail!("assistant response exceeded the size limit".to_string());
                             }
                             on_delta(text);
                         }
@@ -2612,11 +2662,19 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
         }
     }
 
+    // The loop ended because the stream ended — or because the cap did. Past the cap the reader
+    // reports end-of-stream while the child is still writing into a full pipe, so the wait below
+    // sat until the whole deadline and the turn was reported as a timeout (R3-0009).
+    if stdout_cap_reached(lines.get_ref().get_ref().limit()) {
+        fail!(stdout_overrun_message());
+    }
+
     // Also bound the post-EOF child reap + stderr drain by the same deadline.
-    let status = tokio::time::timeout_at(deadline, child.wait())
-        .await
-        .map_err(|_| "claude CLI timed out".to_string())?
-        .map_err(|e| e.to_string())?;
+    let status = match tokio::time::timeout_at(deadline, child.wait()).await {
+        Err(_) => fail!("claude CLI timed out".to_string()),
+        Ok(Err(e)) => fail!(e.to_string()),
+        Ok(Ok(status)) => status,
+    };
     let errbuf = tokio::time::timeout_at(deadline, stderr_task)
         .await
         .ok()
@@ -2624,7 +2682,7 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
         .unwrap_or_default();
     if !status.success() {
         let msg = errbuf.trim();
-        return Err(if msg.is_empty() {
+        fail!(if msg.is_empty() {
             "claude CLI failed".to_string()
         } else {
             format!("claude CLI failed: {msg}")
@@ -2638,7 +2696,7 @@ async fn claude_cli_stream<F: FnMut(&str), G: FnMut(AgentEvent)>(
         result_text.unwrap_or_default()
     };
     if full.is_empty() {
-        return Err("claude returned no result".to_string());
+        fail!("claude returned no result".to_string());
     }
     // Settle the trust surface before the reply is delivered, and carry the outcome IN the
     // reply: streamed so the owner sees it live, and returned so it survives into the message
@@ -2805,6 +2863,12 @@ async fn claude_cli(bin: &str, system: &str, messages: &[ChatMsg]) -> Result<Str
         use tokio::io::AsyncReadExt;
         let mut obuf: Vec<u8> = Vec::new();
         stdout.take(MAX_STDOUT_BYTES).read_to_end(&mut obuf).await.map_err(|e| e.to_string())?;
+        // The read stops at the cap whether or not the child has. Waiting on a child that is
+        // still writing into a full pipe took the whole deadline and reported a timeout
+        // (R3-0009); returning here drops the child, and `kill_on_drop` ends it.
+        if stdout_cap_reached(MAX_STDOUT_BYTES.saturating_sub(obuf.len() as u64)) {
+            return Err(stdout_overrun_message());
+        }
         let status = child.wait().await.map_err(|e| e.to_string())?;
         Ok::<_, String>((status, obuf))
     })
@@ -3936,6 +4000,117 @@ mod tests {
         for open in ["apps/desktop/src", "apps/desktop/src-tauri/src/commands.rs"] {
             assert!(!BRO_PROTECTED_PATHS.contains(&open), "{open} must stay writable");
         }
+    }
+
+    /// Cockpit read R3-0010. A turn that FAILS after changing the trust surface says so in the
+    /// error the owner sees, and streams it; a failure that changed nothing says only itself.
+    #[test]
+    fn a_failed_turn_reports_what_was_restored() {
+        let root = std::env::temp_dir().join(format!("brops-failed-turn-{}", brops_core::id()));
+        let engine = root.join("engine").join("runtime").join("bro_hook.py");
+        std::fs::create_dir_all(engine.parent().unwrap()).unwrap();
+        std::fs::write(&engine, "TRUSTED = True\n").unwrap();
+
+        let guard = TrustSurfaceGuard::take(&root);
+        std::fs::write(&engine, "TRUSTED = False\n").unwrap();
+        let mut streamed = String::new();
+        let said = failure_with_settle("claude CLI timed out".to_string(), Some(&guard), &mut |d: &str| streamed.push_str(d));
+        assert!(said.starts_with("claude CLI timed out"), "{said}");
+        assert!(said.len() > "claude CLI timed out".len(), "the restore was not reported: {said}");
+        assert!(said.contains("bro_hook.py"), "the notice does not name the file: {said}");
+        assert_eq!(streamed, said["claude CLI timed out".len()..], "the notice was not streamed");
+        assert_eq!(std::fs::read_to_string(&engine).unwrap(), "TRUSTED = True\n");
+
+        // Nothing changed, and no guard at all: the error and nothing else.
+        let clean = TrustSurfaceGuard::take(&root);
+        let mut streamed = String::new();
+        assert_eq!(
+            failure_with_settle("x".to_string(), Some(&clean), &mut |d: &str| streamed.push_str(d)),
+            "x"
+        );
+        assert_eq!(failure_with_settle("x".to_string(), None, &mut |d: &str| streamed.push_str(d)), "x");
+        assert!(streamed.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Cockpit read R3-0009, through a real child. A stand-in for the CLI writes more than the
+    /// stdout cap and then goes on living. The turn ends with a size error, soon — it used to
+    /// read the cap as end-of-stream and wait on the child for the whole 180-second deadline.
+    #[cfg(unix)]
+    #[test]
+    fn a_child_that_overruns_the_stdout_cap_is_stopped_and_said_to_have() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("brops-overrun-{}", brops_core::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("claude");
+        // More than the cap with no newline in it, then a child that is still there.
+        std::fs::write(&fake, "#!/bin/sh\nhead -c 10485760 /dev/zero | tr '\\0' 'x'\nsleep 600\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let started = std::time::Instant::now();
+        let outcome = runtime.block_on(claude_cli_stream(
+            fake.to_str().unwrap(),
+            "system",
+            &[ChatMsg { role: "user".into(), content: "hi".into() }],
+            &mut |_d: &str| {},
+            &mut |_e: AgentEvent| {},
+            None,
+        ));
+        let took = started.elapsed();
+        let _ = std::fs::remove_dir_all(&dir);
+        let why = outcome.expect_err("ten mebibytes of output was returned as a reply");
+        assert!(why.contains("more than the 9 MiB"), "{why}");
+        assert!(took < Duration::from_secs(60), "it took {took:?}: the cap was waited out as a timeout");
+    }
+
+    /// And every failure of the streaming turn goes that way. A text check, and it says so: once
+    /// the child is running, the function returns an error in exactly one place — inside
+    /// `fail!` — so no path can report a failure without settling first.
+    #[test]
+    fn the_streaming_turn_has_one_way_to_fail_once_the_child_runs() {
+        let source = include_str!("ai.rs");
+        let body = source
+            .split("async fn claude_cli_stream<")
+            .nth(1)
+            .expect("the streaming turn is gone")
+            .split("\nasync fn ")
+            .next()
+            .unwrap();
+        let (_before, after) = body.split_once("macro_rules! fail {").expect("fail! is gone");
+        assert_eq!(after.matches(concat!("return ", "Err(")).count(), 1, "a bare error return is back");
+        assert!(after.contains(concat!("return Err(failure_with_", "settle(message, guard.as_ref(), on_delta));")));
+        assert!(!after.contains(concat!(".map_err(|_| \"claude CLI ", "timed out\"")), "a `?` skips the settle");
+    }
+
+    /// The same child against the call that does not stream: the same answer, as soon.
+    #[cfg(unix)]
+    #[test]
+    fn the_buffered_call_also_stops_a_child_that_overruns_the_cap() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("brops-overrun-buffered-{}", brops_core::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("claude");
+        std::fs::write(&fake, "#!/bin/sh\nhead -c 10485760 /dev/zero | tr '\\0' 'x'\nsleep 600\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let started = std::time::Instant::now();
+        let outcome = runtime.block_on(claude_cli(
+            fake.to_str().unwrap(),
+            "system",
+            &[ChatMsg { role: "user".into(), content: "hi".into() }],
+        ));
+        let took = started.elapsed();
+        let _ = std::fs::remove_dir_all(&dir);
+        let why = outcome.expect_err("ten mebibytes of output was returned as a reply");
+        assert!(why.contains("more than the 9 MiB"), "{why}");
+        assert!(took < Duration::from_secs(60), "it took {took:?}: the cap was waited out as a timeout");
+    }
+
+    #[test]
+    fn the_cap_is_reached_at_zero_remaining_and_not_before() {
+        assert!(stdout_cap_reached(0));
+        assert!(!stdout_cap_reached(1));
     }
 
     /// THE REPRODUCTION for "the only barrier is a sentence in the system prompt". It does not

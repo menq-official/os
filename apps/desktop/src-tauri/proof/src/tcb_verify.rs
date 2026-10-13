@@ -78,38 +78,20 @@ fn floor_verdict(cfg: &Value) -> Result<(), String> {
 /// out-of-range number was truncated by `as u32`. Each of those REMOVES a principal from the set
 /// the floor asks "can this party write a TCB artifact?" about, and a floor asked about nobody
 /// passes. The set must be stated whole or the floor is not evaluated at all.
+///
+/// The set itself is built by `brops_broker::tcb_probe::floor_principals` — the same function
+/// the broker and the preflight call (cockpit read R3-0055). What is this file's own is where a
+/// DRIVER's login uid comes from: its config, read here as strictly.
 fn principals(cfg: &Value) -> Result<(Vec<u32>, u32), String> {
-    /// One uid, as a JSON integer inside the range a real uid can take. `u32::MAX` is `(uid_t)-1`,
-    /// which no account has and which this file used to use as "no login uid".
-    fn uid(v: &Value, what: &str) -> Result<u32, String> {
-        v.as_u64()
-            .and_then(|u| u32::try_from(u).ok())
-            .filter(|u| *u != u32::MAX)
-            .ok_or_else(|| format!("{what} is {v}, which is not a uid"))
-    }
-    let block = cfg
-        .get("uids")
-        .and_then(Value::as_object)
-        .ok_or_else(|| "the config has no `uids` block naming the runtime principals".to_string())?;
-    let mut principals = Vec::with_capacity(block.len() + 1);
-    for (name, value) in block {
-        let u = uid(value, &format!("`uids.{name}`"))?;
-        if !principals.contains(&u) {
-            principals.push(u);
-        }
-    }
-    if principals.is_empty() {
-        return Err("the config's `uids` block names no runtime principal".to_string());
-    }
-    let login_uid = uid(
+    use brops_broker::tcb_probe::{floor_principals, strict_uid};
+    // The runtime set first, so a config wrong in both is told about its `uids` first, as before.
+    floor_principals(cfg.get("uids"), 0)?;
+    let login_uid = strict_uid(
         cfg.get("login_uid")
             .ok_or_else(|| "the config states no `login_uid`".to_string())?,
         "`login_uid`",
     )?;
-    if !principals.contains(&login_uid) {
-        principals.push(login_uid);
-    }
-    Ok((principals, login_uid))
+    Ok((floor_principals(cfg.get("uids"), login_uid)?, login_uid))
 }
 
 fn pin_manifest_path(cfg: &Value) -> Option<String> {

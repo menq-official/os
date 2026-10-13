@@ -50,13 +50,37 @@ stdout. The signer then content-addresses + signs *that*, and `verify_and_accept
 branch already calls `governed_turn` + verifies the receipt via `receipt_store`. The desktop
 verification authority must be the real `ManifestReceiptKeyAuthority`
 (`core::manifest_authority`) backed by the provisioned manifest — NOT the fail-closed
-`NoTrustedManifest`. Then a passing `verify_and_accept` yields `trusted_verified`; any gap
+`NoTrustedManifest`. ~~Then a passing `verify_and_accept` yields `trusted_verified`~~; any gap
 still Blocks.
+
+> **Correction, 2026-10-13 (cockpit read R3-0043): that swap alone cannot render Verified.**
+> `ManifestReceiptKeyAuthority` resolves every key as `TrustClass::Production`
+> (`core/src/manifest_authority.rs`), and `receipt_store` blocks that class by name:
+> "production trust_class is not renderable in Wave 3a" (`core/src/receipt_store.rs`). So wiring
+> the authority into `receipt_store` turns a `NoTrustedManifest` Block into a different Block.
+> On the live path keys are resolved in the broker (`broker/src/manifest_resolver.rs`), not in the
+> desktop's store; rendering Verified from `receipt_store` needs an audited change to the store
+> first, and that change is not written.
 
 - Files: `ai.rs:resolve_provider` (select GovernedEngine), `commands.rs` governed branch
   (already verifies), and the authority wiring that currently hands `NoTrustedManifest`.
 - Governed turns are **not streamed** (the whole reply must be buffered + verified before
   rendering), so the UX shows a "verifying…" state, then the verified message or a Block.
+
+## A second gap, not a wiring one: the driver writes the signer's store
+
+*(Added 2026-10-13, cockpit read R3-0046. The heading above says "the one honest gap left"; this is
+another.)* On Linux the output blob and the containment report are published into the isolated
+signer's protected store by the **recorder**, from its own uid; the broker's execution only names
+them. `broker/src/chain_executor.rs` records why: the broker writing them was the recorder's
+rev-30 §2.3 duty "performed by the party the store exists to constrain".
+
+The Windows kit still does it the old way. `win-live/src/execution.rs` writes both blobs with
+`std::fs::write(cfg.store_dir.join(..))` from the process that drives the turn (`win_live_turn`),
+because the kit has **no recorder principal**. So on Windows the bytes the signer re-derives
+`output_sha256` and `output_bytes` from were put in its store by the party the store is meant to
+constrain. Closing it means giving the kit a recorder account and pipe and moving the two writes
+there; that is not written.
 
 ## Operator runbook (the infrastructure only you can stand up)
 

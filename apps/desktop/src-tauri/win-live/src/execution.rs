@@ -285,6 +285,15 @@ where
         }
 
         // (2) Content-address into the signer's protected store (<store>/<sha256hex>).
+        //
+        //     A STATED DIVERGENCE from the Linux twin (cockpit read R3-0046). This write, and the
+        //     containment write at (2b), are made by the process that drives the turn
+        //     (`win_live_turn`, the broker's role). `broker/src/chain_executor.rs` removed exactly
+        //     these two writes from the Linux execution as a rev-30 §2.3 violation — the recorder's
+        //     publication duty "performed by the party the store exists to constrain" — and has the
+        //     recorder publish from its own uid. The Windows kit has no recorder principal, so here
+        //     the constrained party still writes the directory the signer treats as authoritative.
+        //     What the signer re-derives from these bytes is therefore the driver's word on Windows.
         let output_handle = crypto::sha256_hex(&output);
         std::fs::write(cfg.store_dir.join(&output_handle), &output)
             .map_err(|_| TurnReason::UpstreamBlocked)?;

@@ -91,6 +91,53 @@ fn the_writability_probe_cleans_up_after_itself() {
     assert!(left.is_empty(), "the probe left something behind: {left:?}");
 }
 
+/// Cockpit read R3-0059. The write probes used two FIXED names and `File::create`, which
+/// truncates: on a file that already exists it opens THAT file, and a read-only file answers
+/// with a permission denial in a directory this account can write freely. The probe read that
+/// as "the directory refused" — so whoever could write the anchor could plant two empty files
+/// and have the write probe report it out of reach. The directory here is writable; the verdict
+/// has to say so, by its own name for it.
+///
+/// Read-only rather than mode 000 so that this runs on both legs: the read-only attribute is
+/// what refuses `CREATE_ALWAYS` on Windows and what removes the write bits on POSIX. (As root a
+/// read-only file opens anyway; the directory is writable for root too, so the assertion holds.)
+#[test]
+fn a_planted_unwritable_file_cannot_pass_for_an_unwritable_directory() {
+    const PLANTED: [&str; 2] = [".brops-custody-probe", ".brops-custody-probe-parent"];
+    let temp = tempfile::tempdir().unwrap();
+    let set_readonly = |name: &str, readonly: bool| {
+        let path = temp.path().join(name);
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(readonly);
+        std::fs::set_permissions(&path, permissions).unwrap();
+    };
+    for name in PLANTED {
+        std::fs::write(temp.path().join(name), b"planted").unwrap();
+        set_readonly(name, true);
+    }
+    let verdict = anchor::prove_unwritable(temp.path());
+    // Writable again BEFORE any assertion: Windows will not delete a read-only file, and a
+    // panic here would otherwise leave the temporary directory behind.
+    for name in PLANTED {
+        set_readonly(name, false);
+    }
+    let text = verdict.expect_err("a writable directory was proved unwritable").to_string();
+    assert!(
+        text.contains("CAN create files in the trust anchor directory"),
+        "the write probe did not see that the directory is writable:\n{text}"
+    );
+    // The planted files were not opened, and the probe left nothing of its own beside them.
+    let mut left: Vec<String> = std::fs::read_dir(temp.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, PLANTED);
+    for name in PLANTED {
+        assert_eq!(std::fs::read(temp.path().join(name)).unwrap(), b"planted");
+    }
+}
+
 // =================================================================================================
 // The ancestor, which is the part a security descriptor cannot see
 // =================================================================================================

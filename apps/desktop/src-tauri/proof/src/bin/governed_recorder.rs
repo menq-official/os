@@ -453,6 +453,49 @@ pub mod guard {
         }
         Ok(())
     }
+
+    /// What the recorder observed about one contained execution.
+    pub struct ContainmentFacts<'a> {
+        pub cgroup_argument: &'a str,
+        pub executor_path: &'a str,
+        pub executor_sha256: &'a str,
+        pub invoker_uid: u32,
+        pub invoker_gid: u32,
+        pub launcher_exit: i32,
+        pub launcher_path: &'a str,
+        pub launcher_sha256: &'a str,
+        pub lease_path: &'a str,
+        pub lease_sha256: &'a str,
+        pub output_bytes: usize,
+    }
+
+    /// The `brops.containment-evidence.v1` document for one run.
+    ///
+    /// `cgroup` is the path the recorder PASSED to the launcher as its third argument, and
+    /// `cgroup_applied` is `false`: the launcher does not place the process into that cgroup and
+    /// does not validate the argument against the lease — its own source says "Currently NOT
+    /// performed". The document named a cgroup under the heading "containment evidence" and said
+    /// nothing else, which reads as a cgroup the execution ran in (cockpit read R3-0042). When
+    /// the launcher performs the step, this becomes what the launcher reported, not a constant.
+    pub fn containment_report(f: &ContainmentFacts) -> serde_json::Value {
+        serde_json::json!({
+            "protocol": "brops.containment-evidence.v1",
+            "cgroup": f.cgroup_argument,
+            "cgroup_applied": false,
+            "executor_path": f.executor_path,
+            "executor_sha256": f.executor_sha256,
+            "fd_contract": "0=/dev/null:ro,1=/dev/null:wo,2=/dev/null:wo,3=system:ro,4=history:ro,5=generation_config:ro,6=output:wo",
+            "invoker_gid": f.invoker_gid,
+            "invoker_uid": f.invoker_uid,
+            "launcher_exit": f.launcher_exit,
+            "launcher_gate": "passed",
+            "launcher_path": f.launcher_path,
+            "launcher_sha256": f.launcher_sha256,
+            "lease_path": f.lease_path,
+            "lease_sha256": f.lease_sha256,
+            "output_bytes": f.output_bytes,
+        })
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -879,21 +922,18 @@ mod linux {
                 let (ruid, rgid) = unsafe { (libc::getuid(), libc::getgid()) };
                 // Sorted keys + compact separators: the bytes are content-addressed, so the encoding
                 // must be deterministic for the same facts.
-                let doc = serde_json::json!({
-                    "protocol": "brops.containment-evidence.v1",
-                    "cgroup": cgroup_for_report,
-                    "executor_path": executor_for_report,
-                    "executor_sha256": executor_sha256,
-                    "fd_contract": "0=/dev/null:ro,1=/dev/null:wo,2=/dev/null:wo,3=system:ro,4=history:ro,5=generation_config:ro,6=output:wo",
-                    "invoker_gid": rgid,
-                    "invoker_uid": ruid,
-                    "launcher_exit": exit_code,
-                    "launcher_gate": "passed",
-                    "launcher_path": launcher_for_report,
-                    "launcher_sha256": launcher_sha256,
-                    "lease_path": lease_for_report,
-                    "lease_sha256": lease_sha256,
-                    "output_bytes": report.len(),
+                let doc = guard::containment_report(&guard::ContainmentFacts {
+                    cgroup_argument: &cgroup_for_report,
+                    executor_path: &executor_for_report,
+                    executor_sha256: &executor_sha256,
+                    invoker_uid: ruid,
+                    invoker_gid: rgid,
+                    launcher_exit: exit_code,
+                    launcher_path: &launcher_for_report,
+                    launcher_sha256: &launcher_sha256,
+                    lease_path: &lease_for_report,
+                    lease_sha256: &lease_sha256,
+                    output_bytes: report.len(),
                 });
                 // serde_json's Map is a BTreeMap by default: `to_vec` emits sorted keys with compact
                 // separators, so identical facts always content-address identically.
@@ -1116,6 +1156,40 @@ mod tests {
     // THE FINDING: a caller-named launcher/executor must be refused, and the effective values must
     // come from the policy even when argv omits them entirely.
     // ---------------------------------------------------------------------------------------------
+
+    /// Cockpit read R3-0042: the containment report says the cgroup it names was not applied.
+    /// The fourteen other fields are held too, so adding the honest field cannot quietly drop
+    /// one `ladder_evidence.py` reads (`launcher_exit`, `launcher_gate`, `invoker_uid`).
+    #[test]
+    fn the_containment_report_says_the_cgroup_it_names_was_not_applied() {
+        let doc = containment_report(&ContainmentFacts {
+            cgroup_argument: "/sys/fs/cgroup/brops.slice/turn-1",
+            executor_path: "/tcb/executor",
+            executor_sha256: EXECUTOR_SHA,
+            invoker_uid: RECORDER_UID,
+            invoker_gid: RECORDER_UID,
+            launcher_exit: 0,
+            launcher_path: "/tcb/launcher",
+            launcher_sha256: LAUNCHER_SHA,
+            lease_path: "/tcb/executor.lease",
+            lease_sha256: LAUNCHER_SHA,
+            output_bytes: 33,
+        });
+        assert_eq!(doc["cgroup"], "/sys/fs/cgroup/brops.slice/turn-1");
+        assert_eq!(doc["cgroup_applied"], serde_json::json!(false));
+        assert_eq!(doc["launcher_exit"], 0);
+        assert_eq!(doc["launcher_gate"], "passed");
+        assert_eq!(doc["invoker_uid"], RECORDER_UID);
+        let keys: Vec<&str> = doc.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            [
+                "cgroup", "cgroup_applied", "executor_path", "executor_sha256", "fd_contract",
+                "invoker_gid", "invoker_uid", "launcher_exit", "launcher_gate", "launcher_path",
+                "launcher_sha256", "lease_path", "lease_sha256", "output_bytes", "protocol",
+            ]
+        );
+    }
 
     #[test]
     fn broker_named_launcher_is_refused() {
@@ -1439,14 +1513,17 @@ mod tests {
         ] {
             assert_eq!(run.matches(binding).count(), 1, "missing or duplicated: {binding}");
         }
-        // ...and each is what BOTH documents carry: once in the containment report, once in the chain.
-        for field in [
-            "\"launcher_sha256\": launcher_sha256,",
-            "\"executor_sha256\": executor_sha256,",
-            "\"lease_sha256\": lease_sha256,",
+        // ...and each is what BOTH documents carry: once in the evidence chain's payload, and once
+        // handed to `guard::containment_report`, which writes it under the same key.
+        for (in_the_chain, in_the_report) in [
+            ("\"launcher_sha256\": launcher_sha256,", "launcher_sha256: &launcher_sha256,"),
+            ("\"executor_sha256\": executor_sha256,", "executor_sha256: &executor_sha256,"),
+            ("\"lease_sha256\": lease_sha256,", "lease_sha256: &lease_sha256,"),
         ] {
-            assert_eq!(run.matches(field).count(), 2, "{field}");
+            assert_eq!(run.matches(in_the_chain).count(), 1, "{in_the_chain}");
+            assert_eq!(run.matches(in_the_report).count(), 1, "{in_the_report}");
         }
+        assert_eq!(run.matches("guard::containment_report(").count(), 1, "the report is built elsewhere");
     }
 
     // ---------------------------------------------------------------------------------------------

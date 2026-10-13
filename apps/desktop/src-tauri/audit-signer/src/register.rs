@@ -33,6 +33,20 @@
 //!
 //! Step 3 is what makes the anchor *verifiable*; it is not what makes it *trustworthy*. Read
 //! [`REGISTRY_CAVEAT`] before believing otherwise.
+//!
+//! # This sequence cannot complete today
+//!
+//! Cockpit read R3-0003. [`apply`] ends with `sc.exe start`, and the binary it starts,
+//! `bin/service.rs`, is a console program: `main()` is `std::process::exit(real_main())`, and
+//! nothing in this crate registers with the Service Control Manager (searched for
+//! `StartServiceCtrlDispatcher`, `RegisterServiceCtrlHandler`, `ServiceMain`, `SERVICE_TABLE`,
+//! `service_dispatcher` and `windows_service`: no occurrence).
+//! `provision/tests/audit_signer.rs` and `ci.yml` both state that `sc.exe start` cannot succeed
+//! against such a binary, and `run_sc` accepts only exit 0, 1073 (exists) and 1056 (already
+//! running) — so the start is an error, [`apply`] returns it, and steps 2 and 3 never begin.
+//! That consequence is read from the code; it has NOT been run on a Windows machine, because
+//! no job stands the service up. What is missing is the SCM entry point; it is Windows-only
+//! code and has not been written.
 
 use std::path::Path;
 
@@ -355,7 +369,8 @@ pub fn apply(paths: &spec::SignerPaths, app_sid: &str) -> Result<spec::ReadbackP
     let proof = spec::verify_key_custody(&key_plan, &facts)?;
 
     // 6. Only now start the service, which mints its own seed inside a directory that has already
-    //    been proved to exclude the app.
+    //    been proved to exclude the app. THIS STEP CANNOT SUCCEED TODAY: the binary has no SCM
+    //    entry point (see "This sequence cannot complete today" in the module header).
     run_sc(&["start".to_string(), spec::SIGNER_SERVICE_NAME.to_string()])?;
     Ok(proof)
 }

@@ -149,9 +149,45 @@ impl DropJournal {
         Self { steps: Vec::new() }
     }
 
+    /// Open the journal BY passing the entry gate: the descriptor-table check runs here, and its
+    /// success is the journal's first entry. A refusal returns no journal at all.
+    ///
+    /// The launcher used to call the check and then, thirty lines later, append
+    /// `Step::VerifyEntry` with a bare statement. Nothing connected the two: deleting the check
+    /// left the journal identical (cockpit read R3-0005).
+    pub fn open_at_entry_gate(
+        observed: &[crate::fd_lifecycle::FdFacts],
+        brops_admin_uid: u32,
+    ) -> Result<Self, crate::fd_lifecycle::FdViolation> {
+        crate::fd_lifecycle::verify_launcher_fd_set(observed, brops_admin_uid)?;
+        Ok(Self { steps: vec![Step::VerifyEntry] })
+    }
+
+    /// Pass the post-drop gate: [`verify_final_state`] runs here and `Step::VerifyUnprivileged` is
+    /// appended only when it returns `Ok`. This is the only way that entry gets into a journal.
+    pub fn verify_unprivileged(
+        &mut self,
+        state: &FinalState,
+        exec_uid: u32,
+        exec_gid: u32,
+    ) -> Result<(), PrivViolation> {
+        verify_final_state(state, exec_uid, exec_gid)?;
+        self.steps.push(Step::VerifyUnprivileged);
+        Ok(())
+    }
+
     /// Record a step that has JUST completed. Call sites must appear immediately after the operation
     /// they name — recording ahead of the work turns this back into a declaration.
+    ///
+    /// The two GATE steps are not recorded by this: `record(Step::VerifyEntry)` and
+    /// `record(Step::VerifyUnprivileged)` append nothing, so a journal that claims a gate by
+    /// statement is a journal without it, and [`verify_performed_drop`] refuses that. Those two
+    /// entries come from [`Self::open_at_entry_gate`] and [`Self::verify_unprivileged`], which run
+    /// the check they name.
     pub fn record(&mut self, step: Step) {
+        if matches!(step, Step::VerifyEntry | Step::VerifyUnprivileged) {
+            return;
+        }
         self.steps.push(step);
     }
 
@@ -481,18 +517,48 @@ mod tests {
         );
     }
 
+    /// Cockpit read R3-0005. The two gate entries were appended by bare statements beside the
+    /// checks they name, so deleting a check left the journal — the thing step (9c) verifies —
+    /// exactly as it was. A gate step is not something `record` can write.
+    #[test]
+    fn a_gate_step_cannot_be_recorded_by_a_bare_statement() {
+        let (_sys, journal, r) = run_drop();
+        assert_eq!(r, Ok(()));
+        let mut declared = DropJournal::new();
+        declared.record(Step::VerifyEntry);
+        for s in journal.steps() {
+            declared.record(*s);
+        }
+        declared.record(Step::VerifyUnprivileged);
+        declared.record(Step::Fexecve);
+        assert!(!declared.steps().contains(&Step::VerifyEntry));
+        assert!(!declared.steps().contains(&Step::VerifyUnprivileged));
+        assert!(verify_performed_drop(declared.steps()).is_err(), "a declared gate verified");
+    }
+
+    /// The post-drop gate writes its entry only when the state it was shown is unprivileged.
+    #[test]
+    fn the_post_drop_gate_records_only_when_it_passes() {
+        let mut still_root = dropped();
+        still_root.euid = 0;
+        let mut journal = DropJournal::new();
+        assert!(journal.verify_unprivileged(&still_root, EXEC_UID, EXEC_GID).is_err());
+        assert!(journal.is_empty(), "a refused gate left an entry: {:?}", journal.steps());
+        assert_eq!(journal.verify_unprivileged(&dropped(), EXEC_UID, EXEC_GID), Ok(()));
+        assert_eq!(journal.steps(), &[Step::VerifyUnprivileged]);
+    }
+
     #[test]
     fn a_completed_drop_plus_the_surrounding_gates_verifies() {
         // What the launcher hands to `verify_performed_drop`: entry gate, the recorded syscalls, the
         // post-drop verification, then `fexecve` recorded immediately before it is issued.
         let (_sys, mut journal, r) = run_drop();
         assert_eq!(r, Ok(()));
-        let mut full = DropJournal::new();
-        full.record(Step::VerifyEntry);
+        let mut full = DropJournal { steps: vec![Step::VerifyEntry] };
         for s in journal.steps() {
             full.record(*s);
         }
-        full.record(Step::VerifyUnprivileged);
+        assert_eq!(full.verify_unprivileged(&dropped(), EXEC_UID, EXEC_GID), Ok(()));
         full.record(Step::Fexecve);
         assert_eq!(verify_performed_drop(full.steps()), Ok(()));
         journal.record(Step::Fexecve); // (journal is append-only; nothing can rewrite the trace)

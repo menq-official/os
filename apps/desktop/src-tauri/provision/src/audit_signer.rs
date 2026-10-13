@@ -1265,6 +1265,12 @@ impl AnchorEnv {
 
 /// The exact elevated steps, in order, that create the second principal.
 ///
+/// **The last step cannot succeed today (cockpit read R3-0007).** `sc.exe start` is issued against
+/// `brops-audit-signer.exe`, which is a console binary with no Service Control Manager entry
+/// point — `ci.yml` says so beside the job that builds it. The plan is correct as a
+/// specification and is not executable to its end until the signer implements the service
+/// protocol; nothing here should be read as "the service starts".
+///
 /// Emitted as data so an installer can run them, a test can assert on them, and an operator
 /// who prefers to do it by hand can read them. Every step is idempotent-safe to re-run except
 /// the key mint, which the **service performs on its own first start** — see the note below.
@@ -2210,8 +2216,15 @@ pub mod winimpl {
 }
 
 // =================================================================================================
-// The one entry point the host calls
+// The one entry point the host WOULD call — it has no caller outside tests
 // =================================================================================================
+//
+// Cockpit read R3-0030. This header said "The one entry point the host calls". Nothing in the
+// shipped app calls `verify_installed`: under `src-tauri` its only mentions are this definition,
+// doc comments, and `provision/tests`. So `AnchorStatus`, `AnchorEnv::from_proofs`, `engine_env`
+// and `key_readback_proof` are reached only from tests, and the custody variables they would hand
+// the engine are set by nothing the product ships. That is O-2, open for exactly this reason
+// (`docs/PHASE_10_PRODUCTION_ITEMS.md`). Wiring it into startup is the remaining work.
 
 /// Everything that was actually established about the second principal on this machine.
 #[derive(Debug, Clone)]

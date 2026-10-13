@@ -339,15 +339,16 @@ mod linux {
         //
         // Fail-closed in every direction: no manifest configured, unreadable, malformed, or ANY
         // violation ⇒ keep the blocking executor rather than serve real governed turns.
-        let runtime_uids: Vec<u32> = cfg
-            .get("uids")
-            .and_then(|v| v.as_object())
-            .map(|m| m.values().filter_map(|v| v.as_u64().map(|u| u as u32)).collect())
-            .unwrap_or_default();
-        let mut principals = runtime_uids.clone();
-        if !principals.contains(&login_uid) {
-            principals.push(login_uid);
-        }
+        // The principal set, stated WHOLE or not at all (cockpit read R3-0056). This used to
+        // drop a `uids` value that was not an integer and to treat a missing block as nobody —
+        // a floor asked about fewer parties than the deployment has.
+        let principals = match brops_broker::tcb_probe::floor_principals(cfg.get("uids"), login_uid) {
+            Ok(principals) => principals,
+            Err(why) => {
+                eprintln!("brops-broker: the TCB floor's principal set is not stated ({why}) — serving fail-closed");
+                return fail_closed();
+            }
+        };
         let pin_manifest_path = s(&["trust", "tcb_pin_manifest_path"]).or_else(|| {
             std::env::var(brops_broker::tcb_probe::TCB_PIN_MANIFEST_ENV)
                 .ok()
@@ -895,6 +896,24 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// The broker takes the floor's principal set from the one strict definition and stays
+    /// fail-closed when that refuses (cockpit read R3-0056). It used to build the set here,
+    /// dropping any `uids` value that was not an integer and reading a missing block as nobody.
+    #[test]
+    fn the_floors_principal_set_comes_from_the_one_strict_definition() {
+        let code = broker_code();
+        let call = "match brops_broker::tcb_probe::floor_principals(cfg.get(\"uids\"), login_uid) {";
+        let at = code.find(call).expect("the broker no longer calls floor_principals on its config");
+        let arm = &code[at..];
+        let err = arm.find("Err(why) => {").expect("the refusal arm is gone");
+        let closed = arm.find("return fail_closed();").expect("the refusal no longer fails closed");
+        let floor = arm.find("verify_broker_tcb(").expect("the floor is no longer run after it");
+        assert!(err < closed && closed < floor, "the refusal must return before the floor is run");
+        for lossy in ["filter_map(|v| v.as_u64()", "as u32)).collect()", "unwrap_or_default();\n        let mut principals"] {
+            assert!(!code.contains(lossy), "the broker builds a principal set of its own again: {lossy}");
+        }
     }
 
     /// The broker runs the floor that asks whether the manifest names THIS broker, with the config
