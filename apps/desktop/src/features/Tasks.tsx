@@ -95,6 +95,7 @@ function NewTaskForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
 function TaskDetail({ task, onClose, onSaved }: { task: Task; onClose: () => void; onSaved: () => void }) {
   const { t, lang } = useApp();
+  const L: Lstr = (k) => STR[k][lang] ?? STR[k].en;
   const toast = useToast();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
@@ -160,7 +161,10 @@ function TaskDetail({ task, onClose, onSaved }: { task: Task; onClose: () => voi
 
       <FormRow label={t('tasks.dependencies')}>
         <div className="stack" style={{ gap: 8 }}>
-          {depList.length === 0 && <span className="muted">{t('tasks.noDependencies')}</span>}
+          {/* A read that failed has not said "none". (R3-0268) */}
+          {deps.error
+            ? <span className="form-error" role="alert">{L('depsUnread')} — {deps.error}</span>
+            : !deps.loading && depList.length === 0 && <span className="muted">{t('tasks.noDependencies')}</span>}
           {depList.map((d) => (
             <div key={d.id} className="row" style={{ gap: 8, justifyContent: 'space-between' }}>
               <span>{d.title}</span>
@@ -211,10 +215,14 @@ const OUTCOME_TONE: Record<DispatchOutcome['state'], Tone> = {
 };
 
 function DispatchModal({
-  task, agents, onClose, L,
+  task, agents, rosterLoading, rosterError, onClose, L,
 }: {
   task: Task;
   agents: Agent[];
+  /** The roster READ, not just its rows: an empty list means three different things
+   *  depending on whether the read is still out, failed, or answered "none". */
+  rosterLoading: boolean;
+  rosterError: string | null;
   onClose: () => void;
   L: Lstr;
 }) {
@@ -224,6 +232,14 @@ function DispatchModal({
     const assigned = agents.find((a) => a.id === task.assignedAgentId);
     return (assigned ?? agents[0])?.slug ?? '';
   });
+  // The composer can open before the roster has answered. The choice above was then made
+  // from an empty list and stayed '' — while the <select>, having no '' option, DISPLAYED the
+  // first agent that later arrived. The state now takes the same agent the select shows.
+  useEffect(() => {
+    if (agentSlug !== '' || agents.length === 0) return;
+    const assigned = agents.find((a) => a.id === task.assignedAgentId);
+    setAgentSlug((assigned ?? agents[0]).slug);
+  }, [agents, agentSlug, task.assignedAgentId]);
   // Narrowest grant by default — see rule 2 above.
   const [tier, setTier] = useState<CapabilityTier>('reader');
   const [mode, setMode] = useState<Mode>('review');
@@ -289,7 +305,11 @@ function DispatchModal({
       <p className="muted dsp-note">{L('dispatchIntro')}</p>
       <div className="dsp-warn" role="note">{L('draftWarning')}</div>
 
-      {agents.length === 0 && <div className="form-error">{L('noAgents')}</div>}
+      {rosterError !== null ? (
+        <div className="form-error" role="alert">
+          {L('rosterUnread')} <span className="dsp-mono">{rosterError}</span>
+        </div>
+      ) : !rosterLoading && agents.length === 0 && <div className="form-error">{L('noAgents')}</div>}
 
       <FormRow label={L('fAgent')}>
         <Select value={agentSlug} onChange={(e) => setAgentSlug(e.target.value)}>
@@ -463,10 +483,11 @@ function MissionClock() {
 // surfaces them as the blocker note; the "Ազատել" button is a real status
 // mutation (blocked → active), the honest equivalent of "freeing" the card.
 function TaskCard({
-  task, projectName, onOpen, onMove, onDispatch, t, lang, L,
+  task, projectName, assigneeName, onOpen, onMove, onDispatch, t, lang, L,
 }: {
   task: Task;
   projectName?: string;
+  assigneeName?: string;
   onOpen: (task: Task) => void;
   onMove: (task: Task, status: string) => void;
   onDispatch: (task: Task) => void;
@@ -520,6 +541,9 @@ function TaskCard({
               <b>{L('blocking')}</b>
               {deps.loading
                 ? '…'
+                : deps.error
+                  // A read that failed has not said "none". (R3-0268)
+                  ? `${L('depsUnread')} — ${deps.error}`
                 : blockers.length > 0
                   ? blockers.map((d) => d.title).join(', ')
                   : t('tasks.noDependencies')}
@@ -561,7 +585,7 @@ function TaskCard({
         >
           {L('dispatch')}
         </button>
-        {task.assignedAgentId && <span className="mt-own micro">{task.assignedAgentId}</span>}
+        {task.assignedAgentId && <span className="mt-own micro">{assigneeName ?? task.assignedAgentId}</span>}
       </div>
     </article>
   );
@@ -585,6 +609,13 @@ export function Tasks() {
     for (const p of projects.data ?? []) m.set(p.id, p.name);
     return m;
   }, [projects.data]);
+  // The same for the assignee: the roster is read on this page, so the card names the agent.
+  // An id the roster does not list is shown as the id — that is what the task carries.
+  const agentName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of agents.data ?? []) m.set(a.id, a.displayName);
+    return m;
+  }, [agents.data]);
 
   // Deep-link consumer: when a `task` focus is pending, open its detail once the
   // list has loaded. Clear focus only after we actually open the task, so a
@@ -643,6 +674,8 @@ export function Tasks() {
         <DispatchModal
           task={dispatching}
           agents={agents.data ?? []}
+          rosterLoading={agents.loading}
+          rosterError={agents.error}
           onClose={() => setDispatching(null)}
           L={L}
         />
@@ -682,7 +715,7 @@ export function Tasks() {
                 </div>
                 <div className="m-hd">
                   <div className="m-title">
-                    <h1>{t('nav.tasks')}</h1>
+                    <h2>{t('nav.tasks')}</h2>
                     <p className="sub">{t('tasks.subtitle')}</p>
                   </div>
                   <div className="m-prog">
@@ -738,6 +771,7 @@ export function Tasks() {
                             <TaskCard
                               task={x}
                               projectName={x.projectId ? projectName.get(x.projectId) : undefined}
+                              assigneeName={x.assignedAgentId ? agentName.get(x.assignedAgentId) : undefined}
                               onOpen={setDetail}
                               onMove={moveTo}
                               onDispatch={setDispatching}

@@ -238,7 +238,7 @@ export function Integrations() {
         s.reload();
         return;
       }
-      if (outcome.kind === 'unsupported' || outcome.kind === 'refused') {
+      if (outcome.kind !== 'invalid') {
         // `unsupported`: a real capability refusal — reported as a missing grant, with the
         // exact command, not as anything the connector did. `refused`: the backend rejected
         // this declaration — reported with its reason. Both belong IN the form, beside the
@@ -247,8 +247,12 @@ export function Integrations() {
         setDeclareBlock(outcome);
         return;
       }
-      // What is left is `invalid`: the form itself found a field empty.
-      setNotice({ kind: 'error', text: outcome.reason });
+      // What is left is `invalid`: the form itself found a field empty — said in the page's
+      // language, by field, not with the probe module's English sentence.
+      setNotice({
+        kind: 'error',
+        text: L(outcome.field === 'name' ? 'declareNameRequired' : 'declareProviderRequired'),
+      });
     });
   };
 

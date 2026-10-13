@@ -155,7 +155,10 @@ export async function probeIntegration(id: string, opts: Options = {}): Promise<
  */
 export type DeclareOutcome =
   | { ok: true; integration: Integration }
-  | { ok: false; kind: 'unsupported' | 'invalid' | 'refused'; reason: string };
+  | { ok: false; kind: 'unsupported' | 'refused'; reason: string }
+  /** `invalid` names the FIELD, so the page can say it in its own language. `reason` stays as
+   *  the English sentence for logs and tests; it is not what the owner is shown. */
+  | { ok: false; kind: 'invalid'; field: 'name' | 'provider'; reason: string };
 
 /**
  * Validate a raw reply as a connector record, FAIL-CLOSED. A reply that is not a
@@ -208,8 +211,8 @@ export async function declareIntegration(
 ): Promise<DeclareOutcome> {
   const n = name.trim();
   const p = provider.trim();
-  if (n === '') return { ok: false, kind: 'invalid', reason: 'name is required' };
-  if (p === '') return { ok: false, kind: 'invalid', reason: 'provider is required' };
+  if (n === '') return { ok: false, kind: 'invalid', field: 'name', reason: 'name is required' };
+  if (p === '') return { ok: false, kind: 'invalid', field: 'provider', reason: 'provider is required' };
   const transport = opts.transport ?? tauriTransport;
   try {
     const raw = await transport(DECLARE_COMMAND, { name: n, provider: p });

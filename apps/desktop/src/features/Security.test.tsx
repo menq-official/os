@@ -165,3 +165,40 @@ describe('Security — a read\'s reason is shown once, and not credited to the e
     expect(document.body.textContent?.split('broker_unavailable').length).toBe(2);
   });
 });
+
+// R3-0262: the failed-read sentence told the owner to "retry the read in the posture section
+// below", and nothing on the page could re-run the chain read.
+describe('Security — a failed chain read can be retried where it is reported', () => {
+  it('offers Retry beside the failure, and Retry reads the chain again', async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    try {
+      setup();
+      await waitFor(() => expect(document.querySelector('.sec-int--broken')).not.toBeNull());
+      const reads = () => invokeMock.mock.calls.filter((c) => c[0] === 'read_evidence_chain').length;
+      const before = reads();
+      const hero = document.querySelector('.mc-read') as HTMLElement;
+      const retry = hero.querySelector('button') as HTMLButtonElement | null;
+      expect(retry, 'a retry control in the failed-read block').not.toBeNull();
+      expect(retry).toHaveTextContent('Retry');
+      retry!.click();
+      await waitFor(() => expect(reads()).toBe(before + 1));
+      // The sentence no longer points at a control in another section that does not exist.
+      expect(hero.textContent).not.toMatch(/posture section/);
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+
+  it('offers no Retry when nothing failed', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_security_summary')
+        return Promise.resolve({ pendingApprovals: 0, decidedApprovals: 0, auditEvents: 0, sensitiveEvents: [] });
+      if (cmd === 'read_evidence_chain')
+        return Promise.resolve({ state: 'blocked', surface: 'evidenceChain', reason: 'engine_refused', authenticated: false });
+      return Promise.resolve(null);
+    });
+    render(<AppProvider><ToastProvider><Security /></ToastProvider></AppProvider>);
+    await waitFor(() => expect(screen.getByText(/engine refused the evidence-chain read/i)).toBeInTheDocument());
+    expect(document.querySelector('.mc-read button')).toBeNull();
+  });
+});

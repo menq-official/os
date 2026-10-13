@@ -325,6 +325,12 @@ export const STR = {
   declaring: { en: 'Declaring…', hy: 'Հայտարարվում է…', ru: 'Объявление…' },
   declareOpen: { en: 'Declare a connector…', hy: 'Հայտարարել միակցիչ…', ru: 'Объявить коннектор…' },
   declareCancel: { en: 'Cancel', hy: 'Չեղարկել', ru: 'Отмена' },
+  declareNameRequired: { en: 'A name is required.', hy: 'Անունը պարտադիր է։', ru: 'Нужно указать имя.' },
+  declareProviderRequired: {
+    en: 'A provider is required.',
+    hy: 'Մատակարարը պարտադիր է։',
+    ru: 'Нужно указать поставщика.',
+  },
   declaredNamed: {
     en: '{name} declared — not enabled, unconfigured, untested',
     hy: '{name}՝ հայտարարված — չմիացված, չկարգավորված, չստուգված',

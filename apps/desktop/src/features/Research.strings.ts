@@ -215,10 +215,13 @@ export const STR = {
     hy: 'Կատարվում ա…',
     ru: 'Выполняется…',
   },
+  // Not "Cancel": `stream_ask` has no cancel command. The page stops listening; the provider
+  // call runs to its end.
+  stopWaiting: { en: 'Stop waiting', hy: 'Դադարել սպասել', ru: 'Перестать ждать' },
   runHint: {
-    en: 'Enter runs · Esc cancels. The configured provider decides the path: the governed turn when it is the governed engine, and none at all when no provider is set. The outcome below says which one produced the answer.',
-    hy: 'Enter-ը կատարում ա · Esc-ը չեղարկում։ Ուղին որոշում ա կարգավորված provider-ը՝ կառավարվող շրջան, երբ այն կառավարվող շարժիչն ա, ու ոչ մի ուղի, երբ provider դրված չի։ Ներքևի արդյունքն ասում ա, թե որ ուղին ա տվել պատասխանը։',
-    ru: 'Enter запускает · Esc отменяет. Путь определяет настроенный провайдер: управляемый ход, когда это управляемый движок, и никакого, когда провайдер не задан. Результат ниже сообщает, какой путь дал ответ.',
+    en: 'Enter runs · Esc stops waiting — the call itself is not interrupted; its answer is ignored. The configured provider decides the path: the governed turn when it is the governed engine, and none at all when no provider is set. The outcome below says which one produced the answer.',
+    hy: 'Enter-ը կատարում ա · Esc-ը դադարեցնում ա սպասելը՝ կանչն ինքը չի ընդհատվում, պատասխանն անտեսվում ա։ Ուղին որոշում ա կարգավորված provider-ը՝ կառավարվող շրջան, երբ այն կառավարվող շարժիչն ա, ու ոչ մի ուղի, երբ provider դրված չի։ Ներքևի արդյունքն ասում ա, թե որ ուղին ա տվել պատասխանը։',
+    ru: 'Enter запускает · Esc прекращает ожидание — сам вызов не прерывается, его ответ игнорируется. Путь определяет настроенный провайдер: управляемый ход, когда это управляемый движок, и никакого, когда провайдер не задан. Результат ниже сообщает, какой путь дал ответ.',
   },
   needQuestion: {
     en: 'This record has no question to run.',

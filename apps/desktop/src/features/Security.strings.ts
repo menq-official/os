@@ -23,9 +23,9 @@ export const STR = {
     ru: 'Чтение цепочки доказательств…',
   },
   integrityDetailBroken: {
-    en: 'The evidence-chain read failed — the desktop cannot confirm integrity. The engine adjudicates; retry the read in the posture section below.',
-    hy: 'Ապացույցների շղթայի ընթերցումը ձախողվեց — աշխատասեղանը չի կարող հաստատել ամբողջականությունը։ Շարժիչը որոշում է. կրկնեք ընթերցումը ստորև։',
-    ru: 'Чтение цепочки доказательств не удалось — рабочий стол не может подтвердить целостность. Решение принимает движок; повторите чтение в разделе состояния ниже.',
+    en: 'The evidence-chain read failed — the desktop cannot confirm integrity. The engine adjudicates; retry the read here.',
+    hy: 'Ապացույցների շղթայի ընթերցումը ձախողվեց — աշխատասեղանը չի կարող հաստատել ամբողջականությունը։ Շարժիչը որոշում է. կրկնեք ընթերցումը այստեղ։',
+    ru: 'Чтение цепочки доказательств не удалось — рабочий стол не может подтвердить целостность. Решение принимает движок; повторите чтение здесь.',
   },
   // The three ways the settled read leaves integrity unconfirmed. There was one sentence for all
   // of them — "the read-only evidence-chain command is not wired into the desktop yet" — and it

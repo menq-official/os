@@ -358,3 +358,34 @@ describe('the Armenian strings say what the other two say', () => {
     expect(INTG_STR.selectRowHint.hy).toMatch(/։$/);
   });
 });
+
+// R3-0250: the form's own "a field is empty" answer was an English sentence written in the
+// probe module, shown as-is on a page that is otherwise in the owner's language.
+describe('declaring with an empty field is answered in the page language', () => {
+  const declareBlank = async (lang: 'hy' | 'ru', fill: 'none' | 'name') => {
+    localStorage.setItem('brops.lang', JSON.stringify(lang));
+    const user = userEvent.setup();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'list_integrations') return Promise.resolve([CONNECTED_ROW]);
+      return Promise.resolve(null);
+    });
+    const view = render(<AppProvider><ToastProvider><Integrations /></ToastProvider></AppProvider>);
+    await screen.findByRole('button', { name: /GitHub, github/ });
+    await user.click(screen.getByRole('button', { name: new RegExp(INTG_STR.declareOpen[lang]) }));
+    if (fill === 'name') await user.type(screen.getByPlaceholderText('GitHub'), 'Slack');
+    await user.click(screen.getByRole('button', { name: INTG_STR.declareSubmit[lang] }));
+    const text = document.querySelector('.intg-notice--error')?.textContent ?? '';
+    view.unmount();
+    localStorage.removeItem('brops.lang');
+    return text;
+  };
+
+  it('names the missing name, then the missing provider, in Armenian and in Russian', async () => {
+    for (const lang of ['hy', 'ru'] as const) {
+      expect(await declareBlank(lang, 'none'), lang).toContain(INTG_STR.declareNameRequired[lang]);
+      expect(await declareBlank(lang, 'name'), lang).toContain(INTG_STR.declareProviderRequired[lang]);
+    }
+    // And no call was made for a declaration the form itself refused.
+    expect(invokeMock.mock.calls.some((c) => c[0] === 'create_integration')).toBe(false);
+  });
+});

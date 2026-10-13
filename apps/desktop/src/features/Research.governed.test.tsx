@@ -18,6 +18,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Research } from './Research';
+import { STR as RSX_STR } from './Research.strings';
 
 const ITEM = {
   id: 'rs-1',
@@ -324,5 +325,39 @@ describe('Research — saving a held answer', () => {
     fireEvent.click(button);
     expect(await screen.findByText(/unknown or already-saved result id/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save to knowledge/ })).toBeNull();
+  });
+});
+
+// R3-0261: "Enter runs · Esc cancels" was printed under a panel nothing in which could be
+// focused while a run was out — its one button is disabled then — so the keymap could not be
+// reached and a run could not be left. There is now a control, and it is named for what it
+// does: `stream_ask` has no cancel command, so the call is not interrupted, only left.
+describe('Research — a run that is out can be left', () => {
+  it('offers a control while running, and it returns the panel to idle', async () => {
+    fireEvent.click(await openRecord());
+    const stop = await screen.findByRole('button', { name: /Stop waiting/ });
+    fireEvent.click(stop);
+    expect(screen.queryByRole('button', { name: /Stop waiting/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Run this question/ })).not.toBeDisabled();
+    // An answer that lands after the owner left is not held.
+    emit({ type: 'ready', resultId: 'late' });
+    expect(screen.queryByRole('button', { name: /Save to knowledge/ })).toBeNull();
+  });
+
+  it('Esc on that control does the same, and the control is not there when nothing runs', async () => {
+    const run = await openRecord();
+    expect(screen.queryByRole('button', { name: /Stop waiting/ })).toBeNull();
+    fireEvent.click(run);
+    const stop = await screen.findByRole('button', { name: /Stop waiting/ });
+    stop.focus();
+    fireEvent.keyDown(stop, { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: /Stop waiting/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Run this question/ })).not.toBeDisabled();
+  });
+
+  it('the hint does not promise a cancel the backend does not have', () => {
+    for (const lang of ['en', 'hy', 'ru'] as const) {
+      expect(RSX_STR.runHint[lang], lang).not.toMatch(/Esc cancels|Esc-ը չեղարկում|Esc отменяет/);
+    }
   });
 });

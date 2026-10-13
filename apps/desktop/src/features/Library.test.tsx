@@ -124,3 +124,41 @@ describe('Library — Enter on a row\'s delete button is that button\'s own', ()
     expect(screen.getByRole('region', { name: /Item 0/ })).toHaveFocus();
   });
 });
+
+// R3-0252: nothing validates `kind` where a library item is written, so a row can carry one
+// the page has no constant for. It was counted in the total and in no kind capsule, and no
+// kind filter could reach it — the capsules did not sum to the number beside them.
+describe('Library — a row whose kind the page does not know is still counted and reachable', () => {
+  const row = (id: string, title: string, kind: string) =>
+    ({ id, title, kind, body: '', tags: '', createdAt: '1700000000000', updatedAt: '1700000000000' });
+  const mount = (rows: unknown[]) => {
+    invokeMock.mockImplementation((cmd: string) =>
+      Promise.resolve(cmd === 'list_library' ? rows : null));
+    return render(<AppProvider><ToastProvider><Library /></ToastProvider></AppProvider>);
+  };
+  const capsuleNumbers = () =>
+    [...document.querySelectorAll('.lib-totals .capsule .num')].map((n) => Number(n.textContent));
+
+  it('the kind capsules sum to the total', async () => {
+    mount([row('l-1', 'Button', 'component'), row('l-2', 'Design tokens', 'doc'), row('l-3', 'Runbook', 'doc')]);
+    await waitFor(() => expect(screen.getAllByText('Design tokens').length).toBeGreaterThan(0));
+    const [total, ...kinds] = capsuleNumbers();
+    expect(total).toBe(3);
+    expect(kinds.reduce((a, b) => a + b, 0)).toBe(3);
+  });
+
+  it('an Other filter shows exactly those rows', async () => {
+    mount([row('l-1', 'Button', 'component'), row('l-2', 'Design tokens', 'doc')]);
+    await waitFor(() => expect(screen.getAllByText('Design tokens').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: 'Other', pressed: false }));
+    await waitFor(() => expect(document.querySelectorAll('.lib-item-title')).toHaveLength(1));
+    expect(document.querySelector('.lib-item-title')).toHaveTextContent('Design tokens');
+  });
+
+  it('there is no Other capsule or filter when every kind is known', async () => {
+    mount([row('l-1', 'Button', 'component')]);
+    await waitFor(() => expect(screen.getAllByText('Button').length).toBeGreaterThan(0));
+    expect(capsuleNumbers()).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: 'Other' })).toBeNull();
+  });
+});

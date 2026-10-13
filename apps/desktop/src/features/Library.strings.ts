@@ -55,6 +55,9 @@ export const STR = {
     hy: 'Ձևանմուշներ',
     ru: 'Паттерны',
   },
+  // Rows whose stored `kind` is none of the three above. Nothing validates `kind` where a
+  // library item is written, so such rows can exist; they are counted and can be filtered.
+  kindOther: { en: 'Other', hy: 'Այլ', ru: 'Другое' },
   totalsLabel: {
     en: 'Library totals',
     hy: 'Դարանի հաշվարկ',

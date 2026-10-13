@@ -121,6 +121,16 @@ export const STR = {
   contractDigest: { en: 'Contract digest', hy: 'Պայմանագրի ամփոփ', ru: 'Дайджест контракта' },
   leaseId: { en: 'Lease', hy: 'Լիզինգ', ru: 'Аренда' },
   sending: { en: 'Dispatching…', hy: 'Ուղարկվում է…', ru: 'Отправка…' },
+  rosterUnread: {
+    en: 'The roster could not be read, so there is no agent to choose here.',
+    hy: 'Ռոստերը չհաջողվեց կարդալ, ուստի այստեղ ընտրելու գործակալ չկա։',
+    ru: 'Состав не удалось прочитать, поэтому выбрать агента здесь нельзя.',
+  },
+  depsUnread: {
+    en: 'Dependencies could not be read',
+    hy: 'Կախվածությունները չհաջողվեց կարդալ',
+    ru: 'Зависимости не удалось прочитать',
+  },
   noAgents: {
     en: 'No agents in the roster — there is nobody to dispatch to.',
     hy: 'Ռոստերում գործակալներ չկան — ուղարկելու համար ոչ ոք չկա։',

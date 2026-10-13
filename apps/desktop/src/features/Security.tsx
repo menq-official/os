@@ -1,6 +1,6 @@
 import { useMemo, useRef, type ReactNode, type KeyboardEvent, type CSSProperties } from 'react';
 import { useApp } from '../app/store';
-import { Skeleton, ErrorState, EmptyState } from '../components/ui';
+import { Button, Skeleton, ErrorState, EmptyState } from '../components/ui';
 import { desktop, hasBackend } from '../services/desktop';
 import { useAsync } from '../hooks/useAsync';
 import { Mark } from '../components/Ambient';
@@ -240,6 +240,11 @@ export function Security() {
           <p className="mc-detail">{integrityDetail}</p>
           {chainReason ? (
             <p className="mc-reason micro">{L('readReason')}{chainReason}</p>
+          ) : null}
+          {/* The failed read is retried HERE. The sentence above used to send the owner to a
+              control "in the posture section below" that no section had. */}
+          {integrity === 'broken' ? (
+            <Button small onClick={chain.reload}>{t('action.retry')}</Button>
           ) : null}
         </div>
       </div>

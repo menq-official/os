@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 
 // Mock the Tauri IPC boundary. The point of this suite is the boundary itself: this
 // build registers NO dispatch command, so the composer must say so rather than paint a
@@ -195,5 +195,106 @@ describe('Tasks — a dispatch produces a real contract-shaped assignment', () =
     expect(within(dialog).getByText('asg-7')).toBeTruthy();
     expect(within(dialog).getByText('lease-7')).toBeTruthy();
     expect(within(dialog).getByText(commit)).toBeTruthy();
+  });
+});
+
+// Four places where the page said something about the roster or the dependencies that the
+// read behind it had not said (R3-0267, R3-0268, R3-0269, R3-0270).
+describe('Tasks — the roster and the dependencies are read, not assumed', () => {
+  const mountWith = (over: Record<string, () => Promise<unknown>>, task: Record<string, unknown> = TASK) => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (over[cmd]) return over[cmd]();
+      if (cmd === 'list_tasks') return Promise.resolve([task]);
+      if (cmd === 'list_projects') return Promise.resolve([]);
+      if (cmd === 'list_agents') return Promise.resolve(AGENTS);
+      if (cmd === 'list_task_dependencies') return Promise.resolve([]);
+      if (cmd === 'dispatch_task_contract') return Promise.reject(new Error('Command dispatch_task_contract not found'));
+      return Promise.resolve(null);
+    });
+    return render(<AppProvider><ToastProvider><Tasks /></ToastProvider></AppProvider>);
+  };
+  const open = async () => {
+    await screen.findByText('Draft the specification');
+    fireEvent.click(screen.getByRole('button', { name: `${en('dispatch')}: ${TASK.title}` }));
+    return screen.findByRole('dialog');
+  };
+
+  it('the card names the assignee from the roster, not by internal id', async () => {
+    mountWith({});
+    await waitFor(() => expect(document.querySelector('.mt-own')?.textContent).toBe('Boundary Auditor'));
+  });
+
+  it('an assignee the roster does not list is shown by the id the task carries', async () => {
+    mountWith({}, { ...TASK, assignedAgentId: 'a-gone' });
+    await screen.findByText('Draft the specification');
+    await waitFor(() => expect(invokeMock.mock.calls.some((c) => c[0] === 'list_agents')).toBe(true));
+    await waitFor(() => expect(document.querySelector('.mt-own')?.textContent).toBe('a-gone'));
+  });
+
+  it('a roster that could not be read is not called an empty roster', async () => {
+    mountWith({ list_agents: () => Promise.reject(new Error('roster store locked')) });
+    const dialog = await open();
+    expect(within(dialog).queryByText(en('noAgents'))).toBeNull();
+    expect(within(dialog).getByText(en('rosterUnread'))).toBeTruthy();
+    expect(within(dialog).getByText(/roster store locked/)).toBeTruthy();
+  });
+
+  it('an empty roster that WAS read still says so', async () => {
+    mountWith({ list_agents: () => Promise.resolve([]) });
+    const dialog = await open();
+    await waitFor(() => expect(within(dialog).getByText(en('noAgents'))).toBeTruthy());
+    expect(within(dialog).queryByText(en('rosterUnread'))).toBeNull();
+  });
+
+  it('a roster that arrives after the composer opened fills the agent the select shows', async () => {
+    let arrive: (v: unknown) => void = () => {};
+    mountWith({ list_agents: () => new Promise((ok) => { arrive = ok; }) });
+    const dialog = await open();
+    // Still loading: neither "nobody to dispatch to" nor a failed read.
+    expect(within(dialog).queryByText(en('noAgents'))).toBeNull();
+    expect(within(dialog).queryByText(en('rosterUnread'))).toBeNull();
+    await act(async () => { arrive(AGENTS); await Promise.resolve(); });
+    fillValidGrant();
+    await waitFor(() => expect(within(dialog).getByText(en('wellFormed'))).toBeTruthy());
+    fireEvent.click(within(dialog).getByRole('button', { name: en('dispatch') }));
+    await waitFor(() => expect(invokeMock.mock.calls.some((c) => c[0] === 'dispatch_task_contract')).toBe(true));
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'dispatch_task_contract');
+    const draft = (call?.[1] as { request: { contract_draft: Record<string, unknown> } }).request.contract_draft;
+    // The task's own assignee, which is also what the select was showing.
+    expect(draft.agent_id).toBe('boundary-auditor');
+  });
+
+  it('a failed dependency read is not "No dependencies" — on the card or in the edit form', async () => {
+    mountWith(
+      { list_task_dependencies: () => Promise.reject(new Error('deps table locked')) },
+      { ...TASK, status: 'blocked' },
+    );
+    await screen.findByText('Draft the specification');
+    const card = document.querySelector('article.mtask') as HTMLElement;
+    await waitFor(() => expect(within(card).getByText(new RegExp(en('depsUnread')))).toBeTruthy());
+    expect(within(card).queryByText('No dependencies')).toBeNull();
+
+    card.focus();
+    fireEvent.keyDown(card, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByText(new RegExp(en('depsUnread')))).toBeTruthy());
+    expect(within(dialog).queryByText('No dependencies')).toBeNull();
+    expect(within(dialog).getByText(/deps table locked/)).toBeTruthy();
+  });
+
+  it('the edit form does not say "No dependencies" while the read is still out', async () => {
+    mountWith({ list_task_dependencies: () => new Promise(() => {}) });
+    await screen.findByText('Draft the specification');
+    const card = document.querySelector('article.mtask') as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText('No dependencies')).toBeNull();
+  });
+
+  it('the page has one top-level heading', async () => {
+    mountWith({});
+    await screen.findByText('Draft the specification');
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 });

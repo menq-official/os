@@ -191,6 +191,11 @@ function GovernedRun({ item, L }: { item: ResearchItem; L: Localize }) {
             >
               {run.k === 'running' ? L('running') : L('runIt')}
             </Button>
+            {/* The one focusable thing while a run is out — without it the keymap below could
+                not be reached, and a run could not be left at all. */}
+            {run.k === 'running' && (
+              <Button small onClick={cancel}>{L('stopWaiting')}</Button>
+            )}
             {run.k === 'held' && (
               <Button small onClick={save} disabled={isSaving}>{L('saveToKnowledge')}</Button>
             )}

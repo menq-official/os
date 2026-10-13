@@ -276,15 +276,15 @@
       ]
     },
     "frontend_tests": {
-      "value": 1184,
+      "value": 1201,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-13",
-        "head": "df21712",
+        "head": "9984edc",
         "environments": {
-          "Debian 13 (trixie) native @ df21712 + ten more low findings of the cockpit read: the interval fixture, the stored-run classifier, the delegation label, the save guard": {
-            "ran": 1184,
+          "Debian 13 (trixie) native @ 9984edc + ten more low findings of the cockpit read: the Tasks roster and dependency reads, the Library Other kind, leaving a running question": {
+            "ran": 1201,
             "skipped": 0
           },
           "Debian 13 (trixie) native @ b6f70b7 + the default selection never replaces one the user made": {

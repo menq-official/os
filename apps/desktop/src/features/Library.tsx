@@ -47,7 +47,8 @@ const KIND_KEY: Record<LibraryKind, StrKey> = {
   pattern: 'kindPattern',
 };
 
-type KindFilter = 'all' | LibraryKind;
+type KindFilter = 'all' | LibraryKind | 'other';
+const isKnownKind = (kind: string): boolean => (LIBRARY_KINDS as readonly string[]).includes(kind);
 
 function kindLabel(L: Localize, kind: string): string {
   return (LIBRARY_KINDS as readonly string[]).includes(kind)
@@ -196,7 +197,8 @@ export function Library() {
 
   const q = query.trim().toLowerCase();
   const filtered = rawItems.filter((it) => {
-    if (kindFilter !== 'all' && it.kind !== kindFilter) return false;
+    if (kindFilter === 'other') { if (isKnownKind(it.kind)) return false; }
+    else if (kindFilter !== 'all' && it.kind !== kindFilter) return false;
     if (!q) return true;
     return (
       it.title.toLowerCase().includes(q) ||
@@ -308,8 +310,13 @@ export function Library() {
   const kindCounts: Record<LibraryKind, number> = {
     component: 0, prompt: 0, pattern: 0,
   };
+  // Rows of a kind this page has no constant for. They are part of `total`, so they get a
+  // capsule and a filter of their own — otherwise the capsules do not sum to the total and no
+  // kind filter can reach the row.
+  let otherCount = 0;
   rawItems.forEach((it) => {
-    if ((LIBRARY_KINDS as readonly string[]).includes(it.kind)) kindCounts[it.kind as LibraryKind] += 1;
+    if (isKnownKind(it.kind)) kindCounts[it.kind as LibraryKind] += 1;
+    else otherCount += 1;
   });
 
   // Localized "N results" — English singular/plural, Armenian invariant,
@@ -328,7 +335,7 @@ export function Library() {
   const countLabel = `${filtered.length} ${resultNoun(filtered.length)}`;
 
   const loading = s.loading && s.data === null;
-  const chips: KindFilter[] = ['all', ...LIBRARY_KINDS];
+  const chips: KindFilter[] = otherCount > 0 ? ['all', ...LIBRARY_KINDS, 'other'] : ['all', ...LIBRARY_KINDS];
   const toolbarVisible = !loading && !s.error && rawItems.length > 0;
 
   const renderResults = () => {
@@ -445,6 +452,11 @@ export function Library() {
                 <b className="num">{kindCounts[k]}</b><span>{L(KIND_KEY[k])}</span>
               </span>
             ))}
+            {otherCount > 0 && (
+              <span className="capsule">
+                <b className="num">{otherCount}</b><span>{L('kindOther')}</span>
+              </span>
+            )}
           </div>
         )}
 
@@ -477,7 +489,7 @@ export function Library() {
                   aria-pressed={kindFilter === k}
                   onClick={() => pickKind(k)}
                 >
-                  {k === 'all' ? L('all') : L(KIND_KEY[k])}
+                  {k === 'all' ? L('all') : k === 'other' ? L('kindOther') : L(KIND_KEY[k])}
                 </button>
               ))}
             </div>

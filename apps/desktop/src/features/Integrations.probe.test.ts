@@ -137,8 +137,8 @@ describe('declareIntegration', () => {
     const transport = vi.fn();
     const a = await declareIntegration('  ', 'github', { transport });
     const b = await declareIntegration('GitHub', '   ', { transport });
-    expect(a).toEqual({ ok: false, kind: 'invalid', reason: 'name is required' });
-    expect(b).toEqual({ ok: false, kind: 'invalid', reason: 'provider is required' });
+    expect(a).toEqual({ ok: false, kind: 'invalid', field: 'name', reason: 'name is required' });
+    expect(b).toEqual({ ok: false, kind: 'invalid', field: 'provider', reason: 'provider is required' });
     expect(transport).not.toHaveBeenCalled();
   });
 
