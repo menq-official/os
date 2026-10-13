@@ -2,8 +2,14 @@
 //! the Model-A setuid launcher's LOCKED privilege-drop syscall sequence and its fail-closed final-state
 //! verification).
 //!
-//! The syscalls (`setgroups`/`setresgid`/`prctl`/`setresuid`/`capset`/`fexecve`) are Linux (a later
-//! launcher-crate slice). This module is the PURE, host-independent contract: (a) the canonical ordered
+//! It departs from that locked text in two places, both stated on [`CANONICAL_SEQUENCE`]: the design
+//! verifies (step 8) and then sets `PR_SET_NO_NEW_PRIVS` (step 9), and this module does the reverse and
+//! refuses the design's order; and the design's step 10 (signal dispositions/mask, `umask`, resource
+//! limits) has no [`Step`] and is not performed. The design text has not been amended to either.
+//!
+//! The syscalls (`setgroups`/`setresgid`/`prctl`/`setresuid`/`capset`/`fexecve`) are Linux, and live in
+//! the launcher crate: `launcher/src/main.rs` implements [`DropSyscalls`] as `RealDropSyscalls` and
+//! drives it through [`perform_drop`]. This module is the PURE, host-independent contract: (a) the canonical ordered
 //! sequence + an order validator (GID/groups MUST change before the UID drop; the bounding set MUST be
 //! dropped while still UID-root), and (b) a final-state verifier that fails closed unless the process ends
 //! as the executor UID/GID with empty supplementary groups, ALL FIVE capability sets empty, and
@@ -52,6 +58,17 @@ impl Step {
 /// reference for tests and for `verify_order`; no launch reads it. `CgroupSetup` is in it and is
 /// NOT performed: the launcher does not place the process in a cgroup yet, and its journal says so
 /// by not containing the step.
+///
+/// Two departures from the design text (rev-30 §2.7, the 3b-1B addendum's numbered list):
+///
+/// * **Steps 8 and 9 are the other way round here.** The design verifies the final state (8) and
+///   then sets `PR_SET_NO_NEW_PRIVS` (9), and its step 8 does not read `no_new_privs`. This
+///   module's verifier does read it, so the bit is set first; a recorded trace in the design's
+///   order is refused with `FinalStateNotVerifiedAfterDrop`. The built order checks more, not
+///   less, and the design has not been amended to it.
+/// * **Step 10 is absent.** "Normalize signal dispositions/mask, `umask`, and resource limits as
+///   required" has no [`Step`], and the launcher issues none of those calls — like `CgroupSetup`,
+///   except that this one is not even named in the sequence.
 pub const CANONICAL_SEQUENCE: &[Step] = &[
     Step::VerifyEntry,
     Step::CgroupSetup,
@@ -135,7 +152,8 @@ pub fn verify_order(seq: &[Step]) -> Result<(), OrderViolation> {
 // exactly one call site per syscall, inside a function whose order is the thing under test, so a
 // reorder or a deletion changes the recorded trace — which is what [`verify_performed_drop`] reads.
 
-/// An append-only record of the drop steps this process actually completed.
+/// An append-only record of the drop steps this process actually completed — with one entry that
+/// cannot be: `Step::Fexecve`, see [`Self::record`].
 ///
 /// Append-only on purpose: there is no way to remove, reorder or rewrite an entry, so the journal
 /// handed to [`verify_performed_drop`] is the order things happened in, not an order someone declared.
@@ -179,6 +197,11 @@ impl DropJournal {
     /// Record a step that has JUST completed. Call sites must appear immediately after the operation
     /// they name — recording ahead of the work turns this back into a declaration.
     ///
+    /// `Step::Fexecve` is the one exception, and [`MANDATORY_PERFORMED_STEPS`] requires it: a
+    /// successful `fexecve` never returns, so nothing could record it afterwards. The launcher
+    /// records it immediately BEFORE issuing it, with [`verify_performed_drop`] and the exec as
+    /// the next two statements. For that entry the journal says "about to", not "completed".
+    ///
     /// The two GATE steps are not recorded by this: `record(Step::VerifyEntry)` and
     /// `record(Step::VerifyUnprivileged)` append nothing, so a journal that claims a gate by
     /// statement is a journal without it, and [`verify_performed_drop`] refuses that. Those two
@@ -193,10 +216,6 @@ impl DropJournal {
 
     pub fn steps(&self) -> &[Step] {
         &self.steps
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.steps.is_empty()
     }
 }
 
@@ -543,7 +562,7 @@ mod tests {
         still_root.euid = 0;
         let mut journal = DropJournal::new();
         assert!(journal.verify_unprivileged(&still_root, EXEC_UID, EXEC_GID).is_err());
-        assert!(journal.is_empty(), "a refused gate left an entry: {:?}", journal.steps());
+        assert!(journal.steps().is_empty(), "a refused gate left an entry: {:?}", journal.steps());
         assert_eq!(journal.verify_unprivileged(&dropped(), EXEC_UID, EXEC_GID), Ok(()));
         assert_eq!(journal.steps(), &[Step::VerifyUnprivileged]);
     }
@@ -552,7 +571,7 @@ mod tests {
     fn a_completed_drop_plus_the_surrounding_gates_verifies() {
         // What the launcher hands to `verify_performed_drop`: entry gate, the recorded syscalls, the
         // post-drop verification, then `fexecve` recorded immediately before it is issued.
-        let (_sys, mut journal, r) = run_drop();
+        let (_sys, journal, r) = run_drop();
         assert_eq!(r, Ok(()));
         let mut full = DropJournal { steps: vec![Step::VerifyEntry] };
         for s in journal.steps() {
@@ -561,7 +580,34 @@ mod tests {
         assert_eq!(full.verify_unprivileged(&dropped(), EXEC_UID, EXEC_GID), Ok(()));
         full.record(Step::Fexecve);
         assert_eq!(verify_performed_drop(full.steps()), Ok(()));
-        journal.record(Step::Fexecve); // (journal is append-only; nothing can rewrite the trace)
+    }
+
+    /// Cockpit read R3-0679, pinned as it IS and not fixed. `verify_order` types each step's
+    /// name a second time. Five of the six copies equal `Step::name()`; the sixth has drifted: a
+    /// missing bounding-set drop is reported as "drop bounding caps" here, while the step names
+    /// itself "PR_CAPBSET_DROP + PR_CAP_AMBIENT_CLEAR_ALL" — which is what
+    /// `verify_performed_drop` reports for the same missing step. Making them one name changes
+    /// the text of a privilege-drop refusal, and that waits on the Owner.
+    #[test]
+    fn a_missing_step_is_named_the_way_the_step_names_itself() {
+        let without = |step: Step| -> Vec<Step> {
+            CANONICAL_SEQUENCE.iter().copied().filter(|s| *s != step).collect()
+        };
+        for step in [
+            Step::SetGroupsEmpty,
+            Step::SetResGidExec,
+            Step::SetResUidExec,
+            Step::SetNoNewPrivs,
+            Step::Fexecve,
+        ] {
+            assert_eq!(verify_order(&without(step)), Err(OrderViolation::MissingStep(step.name())));
+        }
+        // The drift (R3-0679): two names for one missing step.
+        assert_eq!(
+            verify_order(&without(Step::DropBoundingAmbientCaps)),
+            Err(OrderViolation::MissingStep("drop bounding caps"))
+        );
+        assert_eq!(Step::DropBoundingAmbientCaps.name(), "PR_CAPBSET_DROP + PR_CAP_AMBIENT_CLEAR_ALL");
     }
 
     #[test]
@@ -593,7 +639,7 @@ mod tests {
             perform_drop(&mut sys, EXEC_UID, EXEC_GID, &mut journal),
             Err(Step::SetGroupsEmpty)
         );
-        assert!(journal.is_empty());
+        assert!(journal.steps().is_empty());
         assert!(verify_performed_drop(journal.steps()).is_err());
     }
 
@@ -803,20 +849,20 @@ mod tests {
         assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::UidNotExecutor));
         let mut s = dropped(); s.sgid = 0;
         assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::GidNotExecutor));
-        let mut s = dropped(); s.supplementary_groups = vec![0];
-        assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::SupplementaryGroupsNonEmpty));
-        let mut s = dropped(); s.caps.bounding = 1;
-        assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::ResidualCapabilities));
-        let mut s = dropped(); s.caps.effective = 1 << 21; // CAP_SYS_ADMIN-ish residue
-        assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::ResidualCapabilities));
-        let mut s = dropped(); s.no_new_privs = false;
-        assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::NoNewPrivsUnset));
+        // The residual arms its name lists: written once, below, and run under both ids.
+        residual_groups_caps_nnp_are_refused();
     }
 
     #[test]
     fn nm_tcb_17_rejects_residual_groups_caps_nnp() {
         // NM-TCB-17 — Residual privilege: a non-empty supplementary set, any capability bit in any set, or an
-        // unset no_new_privs is refused. The residual-privilege arms of the test above, bound under their own id.
+        // unset no_new_privs is refused.
+        residual_groups_caps_nnp_are_refused();
+    }
+
+    /// The residual-privilege arms NM-TCB-16 and NM-TCB-17 both bind. They were typed out twice,
+    /// statement for statement (cockpit read R3-0680).
+    fn residual_groups_caps_nnp_are_refused() {
         let mut s = dropped(); s.supplementary_groups = vec![0];
         assert_eq!(verify_final_state(&s, EXEC_UID, EXEC_GID), Err(PrivViolation::SupplementaryGroupsNonEmpty));
         let mut s = dropped(); s.caps.bounding = 1;

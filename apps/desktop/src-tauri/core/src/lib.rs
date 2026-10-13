@@ -1,6 +1,11 @@
-//! BroPS local data core: SQLite schema, forward-only migrations, and typed
-//! repositories. This crate is UI- and Tauri-independent so it can be built and
-//! tested on its own (`cargo test -p brops-core`).
+//! BroPS core. It began as the local data core — SQLite schema, forward-only migrations and
+//! typed repositories (`db`, `domain`, `repo`) — and that is still here. It also carries the
+//! trusted-side governed-turn code the renderer-hosting crate, the broker and the launcher share:
+//! receipt verification and its store, the governed-turn IPC and submit frames, the sidecar
+//! spawn and its trust environment, the broker client and orchestrator, the key manifest and its
+//! authority, the supervisor ledger, the launcher's descriptor and privilege-drop contracts,
+//! credentials, the egress proxy and the local write record. The crate is UI- and
+//! Tauri-independent so it can be built and tested on its own (`cargo test -p brops-core`).
 
 pub mod db;
 pub mod dialog_text;
@@ -13,10 +18,12 @@ pub mod governed_turn_ipc;
 // `bridge.governed-turn-submit.v1` frame writer. Pure — no socket, no subprocess, no clock.
 pub mod governed_prepare;
 pub mod governed_submit;
-// The one place in this tree that STARTS the governed bridge sidecar, and the provisioned
+// The one place the PRODUCT starts the governed bridge sidecar, and the provisioned
 // trust environment its governed arm cannot be built without. Both used to live in the renderer-hosting
 // binary crate, where the synchronous broker binary could not reach them; a second spawn
-// there would have been a second trust application.
+// there would have been a second trust application. It is not the only spawn in this crate: the
+// ladder's proof driver, `src/bin/ladder_output_pull.rs`, starts a one-shot sidecar per chunk from
+// an argv it is handed, without `governed_sidecar`. No product path runs that binary.
 pub mod engine_trust;
 pub mod governed_sidecar;
 pub mod governed_message_store;
@@ -227,9 +234,22 @@ mod tests {
         ));
         repo::task_deps::remove(&c, &b.id, &cc.id, crate::repo::audit::Actor::local_operator()).unwrap();
 
-        // removing the edge, then deleting a task cascades
+        // removing the edge
         repo::task_deps::remove(&c, &a.id, &b.id, crate::repo::audit::Actor::local_operator()).unwrap();
         assert_eq!(repo::task_deps::list_for(&c, &a.id).unwrap().len(), 0);
+
+        // Deleting a task takes its edges with it, on either end. No repository function deletes
+        // a task, so the row is removed directly: what is under test is the schema's
+        // `ON DELETE CASCADE`. The edges are counted in the table, because `list_for` joins
+        // `tasks` and would come back empty for a deleted task whether or not its edge survived.
+        let edges = |c: &rusqlite::Connection| -> i64 {
+            c.query_row("SELECT COUNT(*) FROM task_dependencies", [], |r| r.get(0)).unwrap()
+        };
+        repo::task_deps::add(&c, &a.id, &b.id, crate::repo::audit::Actor::local_operator()).unwrap();
+        repo::task_deps::add(&c, &b.id, &cc.id, crate::repo::audit::Actor::local_operator()).unwrap();
+        assert_eq!(edges(&c), 2);
+        c.execute("DELETE FROM tasks WHERE id = ?1", [&b.id]).unwrap();
+        assert_eq!(edges(&c), 0, "an edge outlived the task at one of its ends");
     }
 
     #[test]
@@ -252,15 +272,27 @@ mod tests {
         assert!(matches!(err, Err(CoreError::Invalid { field: "priority", .. })));
     }
 
+    /// A project status outside the known set is refused by name. This was called
+    /// `invalid_status_transition_rejected` and asserted a bare `is_err()`: there is no transition
+    /// rule in `projects::set_status` — any known status may follow any other, which the last two
+    /// lines pin — so the only refusal it has is this one (cockpit read R3-1243).
     #[test]
-    fn invalid_status_transition_rejected() {
+    fn unknown_project_status_rejected() {
         let c = conn();
         let p = repo::projects::create(
             &c,
             NewProject { name: "x".into(), description: "".into(), priority: "low".into(), workspace_id: None },
          crate::repo::audit::Actor::local_operator(),)
         .unwrap();
-        assert!(repo::projects::set_status(&c, &p.id, "not-a-status", crate::repo::audit::Actor::local_operator()).is_err());
+        assert!(matches!(
+            repo::projects::set_status(&c, &p.id, "not-a-status", crate::repo::audit::Actor::local_operator()),
+            Err(CoreError::Invalid { field: "status", .. })
+        ));
+        assert_eq!(repo::projects::get(&c, &p.id).unwrap().status, "planned");
+        let archived = repo::projects::set_status(&c, &p.id, "archived", crate::repo::audit::Actor::local_operator()).unwrap();
+        assert_eq!(archived.status, "archived");
+        let back = repo::projects::set_status(&c, &p.id, "planned", crate::repo::audit::Actor::local_operator()).unwrap();
+        assert_eq!(back.status, "planned");
     }
 
     #[test]
@@ -1251,8 +1283,12 @@ mod tests {
         // ...and the grant survived the refusal: the SAME grant still unlocks one valid change.
         let err = repo::integrations::set_status(&c, &i.id, "error", crate::repo::audit::Actor::local_operator()).unwrap();
         assert_eq!(err.status, "error");
-        // One grant, one change: it is spent now.
-        assert!(repo::integrations::set_status(&c, &i.id, "connected", crate::repo::audit::Actor::local_operator()).is_err());
+        // One grant, one change: it is spent now, and the refusal is the gate's.
+        assert!(matches!(
+            repo::integrations::set_status(&c, &i.id, "connected", crate::repo::audit::Actor::local_operator()),
+            Err(CoreError::Invalid { field: "approval", .. })
+        ));
+        assert_eq!(repo::integrations::get(&c, &i.id).unwrap().status, "error");
     }
 
     // --- T-052: the three tier-X commands are gated at the authority layer -------
@@ -1292,7 +1328,11 @@ mod tests {
         // A grant for the auth-ref action, on the right entity, must NOT unlock status.
         grant(&c, repo::approvals::INTEGRATION_ENTITY_TYPE, &i.id,
               repo::approvals::INTEGRATION_AUTH_REF_ACTION_TYPE);
-        assert!(repo::integrations::set_status(&c, &i.id, "connected", crate::repo::audit::Actor::local_operator()).is_err());
+        assert!(matches!(
+            repo::integrations::set_status(&c, &i.id, "connected", crate::repo::audit::Actor::local_operator()),
+            Err(CoreError::Invalid { field: "approval", .. })
+        ));
+        assert_eq!(repo::integrations::get(&c, &i.id).unwrap().status, "disconnected");
         // The wrong-action grant is still unspent, so the right act still works.
         assert!(repo::integrations::set_auth_ref(&c, &i.id, Some("engine:gh/token"), crate::repo::audit::Actor::local_operator()).is_ok());
     }
@@ -1305,7 +1345,11 @@ mod tests {
               repo::approvals::INTEGRATION_STATUS_ACTION_TYPE);
         assert!(repo::integrations::set_status(&c, &i.id, "connected", crate::repo::audit::Actor::local_operator()).is_ok());
         // The grant was consumed in that same transaction; a second write needs a new one.
-        assert!(repo::integrations::set_status(&c, &i.id, "disconnected", crate::repo::audit::Actor::local_operator()).is_err());
+        assert!(matches!(
+            repo::integrations::set_status(&c, &i.id, "disconnected", crate::repo::audit::Actor::local_operator()),
+            Err(CoreError::Invalid { field: "approval", .. })
+        ));
+        assert_eq!(repo::integrations::get(&c, &i.id).unwrap().status, "connected");
     }
 
     /// Cockpit read R3-0127. `approve_confirmed` turned EVERY failure of its read into "pending
@@ -1591,8 +1635,13 @@ mod tests {
     fn search_finds_across_entities() {
         let c = conn();
         repo::seed(&c).unwrap();
-        // "Localization" appears in a seeded project name and an agent role.
-        assert!(repo::search::global(&c, "Localization").unwrap().len() >= 1);
+        // "Localization" appears in a seeded project name and an agent role, and nowhere else in
+        // the seed: one hit of each kind, which is what "across entities" means.
+        let hits = repo::search::global(&c, "Localization").unwrap();
+        let kinds: Vec<&str> = hits.iter().map(|h| h.kind.as_str()).collect();
+        assert_eq!(kinds, ["project", "agent"], "got {hits:?}");
+        assert_eq!(hits[0].title, "Localization HY/EN/RU");
+        assert_eq!(hits[1].subtitle, "Localization");
         // an empty query returns nothing (no accidental full dump).
         assert_eq!(repo::search::global(&c, "").unwrap().len(), 0);
         assert_eq!(repo::search::global(&c, "   ").unwrap().len(), 0);
@@ -1749,9 +1798,30 @@ mod tests {
         let steps = repo::runs::list_steps(&c, &seeded_run.id).unwrap();
         assert!(steps.len() >= 4);
         assert_eq!(steps[0].status, "active");
-        // running again must not duplicate
+        // running again must not duplicate — in ANY seeded collection, not only projects
+        // (cockpit read R3-1246: eleven of the twelve were counted above and never again).
+        let counts = |c: &rusqlite::Connection| -> Vec<(&'static str, usize)> {
+            vec![
+                ("projects", repo::projects::list(c).unwrap().len()),
+                ("tasks", repo::tasks::list_all(c).unwrap().len()),
+                ("agents", repo::agents::list(c).unwrap().len()),
+                ("approvals", repo::approvals::list(c, None, None).unwrap().len()),
+                ("notifications", repo::notifications::list(c, None, None).unwrap().len()),
+                ("decisions", repo::decisions::list(c).unwrap().len()),
+                ("conversations", repo::chat::list_conversations(c, None).unwrap().len()),
+                ("knowledge", repo::knowledge::list(c).unwrap().len()),
+                ("memory", repo::memory::list(c, None).unwrap().len()),
+                ("runs", repo::runs::list(c).unwrap().len()),
+                ("run steps", repo::runs::list_steps(c, &seeded_run.id).unwrap().len()),
+                ("events", repo::events::list(c).unwrap().len()),
+                ("automations", repo::automations::list(c).unwrap().len()),
+                ("integrations", repo::integrations::list(c).unwrap().len()),
+            ]
+        };
+        let before = counts(&c);
+        assert_eq!(before[0].1, after_first);
         repo::seed(&c).unwrap();
-        assert_eq!(repo::projects::list(&c).unwrap().len(), after_first);
+        assert_eq!(counts(&c), before);
     }
 
     #[test]
