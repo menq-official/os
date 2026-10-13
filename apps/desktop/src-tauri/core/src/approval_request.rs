@@ -4,10 +4,10 @@
 //! `docs/design/T-021_SCHEMA_AUDIT.md` before either side was written, and the engine that records it is
 //! `engine/runtime/bro_approval_requests.py`.
 //!
-//! WHY IT IS HERE AND NOT IN THE APP CRATE. `ai.rs` says it in its own words about the §4.10(f) pull:
-//! "an adapter that ran its own loop would have had its own copy of the `eof` check and of the output
-//! gates, and the copy that runs in production is the one no test drives." Same rule. The app crate gets
-//! a transport call and a `#[tauri::command]`; every decision about what may be sent and what may be
+//! WHY IT IS HERE AND NOT IN THE APP CRATE. The rule is the one `governed_output_pull.rs` states
+//! about the §4.10(f) pull's driver: "If they ever stop being [the same machine], the adapter that
+//! runs in production is the one no test drives." (This paragraph quoted a longer sentence and
+//! gave it to `ai.rs`; that sentence is in no file.) The app crate gets a transport call and a `#[tauri::command]`; every decision about what may be sent and what may be
 //! believed is here, where it is unit-tested on every platform.
 //!
 //! THE TWO RULES THIS MODULE EXISTS FOR
@@ -516,6 +516,33 @@ mod tests {
         match classify(Ok(doc), SENT) {
             ApprovalOutcome::Blocked { reason } => assert!(reason.contains("recorded")),
             other => panic!("expected Blocked, got {other:?}"),
+        }
+    }
+
+    /// Each of the four on its own (cockpit read R3-1220). The test above wears `recorded`, the
+    /// first key the check looks for, on a reply that carries the other three as well — so the
+    /// other three could leave the list and nothing here would notice.
+    #[test]
+    fn a_refusal_wearing_any_one_piece_of_a_records_clothes_is_blocked_and_names_it() {
+        let pieces = [
+            ("recorded", json!(false)),
+            ("sequence", json!(1)),
+            ("entry_sha256", json!("a".repeat(64))),
+            ("chain_head_sha256", json!("a".repeat(64))),
+        ];
+        for (worn, value) in &pieces {
+            let mut doc = reply(json!({ "ok": false, "reason": "no" }));
+            let object = doc.as_object_mut().unwrap();
+            for (piece, _) in &pieces {
+                object.remove(*piece);
+            }
+            object.insert(worn.to_string(), value.clone());
+            match classify(Ok(doc), SENT) {
+                ApprovalOutcome::Blocked { reason } => {
+                    assert!(reason.contains(&format!("carried `{worn}`")), "{worn}: {reason}")
+                }
+                other => panic!("{worn}: expected Blocked, got {other:?}"),
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 -- One accepted attempt per message — enforced, not assumed.
 --
--- `MESSAGE_RECEIPT_PROJECTION` (repo.rs) paints the chat trust badge from the outcome of a
+-- `MESSAGE_RECEIPT_PROJECTION` (repo.rs; renamed since — it is `MESSAGE_TRUST_COLUMNS` there now, and
+-- the old name is in no source file) paints the chat trust badge from the outcome of a
 -- message's accepted verification attempt. It read that outcome with `LIMIT 1` and no `ORDER BY`,
 -- and nothing in the schema said a message could only have one: 0014/0016 give `message_id` no
 -- UNIQUE constraint and no index at all. Two accepted attempts on one message therefore made the

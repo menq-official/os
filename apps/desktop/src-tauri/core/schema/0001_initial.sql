@@ -1,5 +1,6 @@
 -- BroPS initial schema (migration 0001).
--- SQLite, foreign keys ON, WAL. IDs are text (UUID). Timestamps UTC ISO-8601.
+-- SQLite, foreign keys ON, WAL. IDs are text (UUID). Timestamps are
+-- epoch-millisecond text, zero-padded to 13 digits (core::now); this line said UTC ISO-8601.
 
 CREATE TABLE IF NOT EXISTS workspaces (
     id          TEXT PRIMARY KEY,

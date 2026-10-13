@@ -7,7 +7,9 @@
 -- of the trust boundary, to a secret they hold.
 --
 --   e.g.  engine:slack/bot-token   operator:helpdesk-api   keychain:brops/github
---         env:SLACK_BOT_TOKEN      vault:kv/data/brops/smtp#password
+--         env:SLACK_BOT_TOKEN      vault:kv/data/brops/smtp/password
+--   (the last one read `...smtp#password`, which the CHECK below refuses: '#' is
+--   not in its alphabet)
 --
 -- The first version of this migration had a `secret TEXT NOT NULL` column and
 -- documented, carefully and at length, that the value sat in plaintext in the
@@ -38,9 +40,12 @@
 -- somebody has to remember. If that ever feels inconvenient, the inconvenience
 -- is the control working.
 --
--- ON DELETE CASCADE: retiring a bundle takes its bindings with it. A reference
--- nothing can reach and nobody is looking at is a stale pointer at best and a
--- misleading custody claim at worst.
+-- ON DELETE CASCADE: deleting a bundle's row takes its bindings with it. A
+-- reference nothing can reach and nobody is looking at is a stale pointer at
+-- best and a misleading custody claim at worst. Nothing deletes or retires a
+-- bundle yet — the only `DELETE FROM agent_bundles` is in tests — and a bundle
+-- with an `agent_bundle_active` row cannot be deleted at all while that row
+-- stands: 0025 references the digest there ON DELETE RESTRICT.
 CREATE TABLE IF NOT EXISTS credential_bindings (
     bundle_digest   TEXT NOT NULL REFERENCES agent_bundles(bundle_digest) ON DELETE CASCADE,
     slot_id         TEXT NOT NULL,

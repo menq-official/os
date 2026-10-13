@@ -962,8 +962,8 @@ mod tests {
         code.split("#[cfg(test)]").next().unwrap_or(&code).to_string()
     }
 
-    /// THE CHECKED READER IS ON THE PATH — asserted from the source, because this host cannot compile
-    /// the `cfg(target_os = "linux")` block that contains it.
+    /// THE CHECKED READER IS ON THE PATH — asserted from the source, so a host that is not Linux, where
+    /// the `cfg(target_os = "linux")` block that contains it is not compiled, still checks it.
     ///
     /// Without this the custody predicate above could pass every test while nothing called it, which is
     /// the exact shape of a control that prevents nothing. `main.rs` already reads its own source this
@@ -1314,6 +1314,46 @@ mod tests {
         let src = code_only(include_str!("tcb_probe.rs"));
         let probe = src.split("fn digest_through").nth(1).unwrap().split("impl FsProbe for LinuxFsProbe").next().unwrap();
         assert!(!probe.contains("read_to_end"), "{probe}");
+    }
+
+    /// The probe's writability facts, read off real files rather than off this file's text (cockpit
+    /// read R3-1216): the group and other write bits each open a file, and a file a measured
+    /// principal OWNS is writable by it whatever its bits say.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_probe_reports_the_write_bits_and_a_measured_owner_of_the_file_it_opened() {
+        use brops_core::tcb_integrity::FsProbe;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: getuid never fails and touches no memory.
+        let me = unsafe { libc::getuid() };
+        let other = me.wrapping_add(1);
+        for (mode, open) in [
+            (0o600, false),
+            (0o644, false),
+            (0o444, false),
+            (0o664, true),
+            (0o646, true),
+            (0o666, true),
+        ] {
+            let path = dir.path().join(format!("artifact-{mode:o}"));
+            std::fs::write(&path, b"x").unwrap();
+            // Set, not inherited: the umask is 002 on one machine and 022 on the next.
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            let path = path.to_str().unwrap();
+
+            let facts = LinuxFsProbe { login_and_runtime_uids: vec![other] }.stat(path).unwrap();
+            assert_eq!(facts.owner_uid, me, "{mode:o}");
+            assert_eq!(facts.is_world_or_group_writable, open, "{mode:o}");
+            assert_eq!(facts.writable_by_login_or_runtime, open, "{mode:o}, owner not measured");
+
+            let facts = LinuxFsProbe { login_and_runtime_uids: vec![other, me] }.stat(path).unwrap();
+            assert_eq!(facts.is_world_or_group_writable, open, "{mode:o}");
+            assert!(facts.writable_by_login_or_runtime, "{mode:o}, owned by a measured principal");
+        }
+        // A path with nothing at it has no facts at all.
+        let gone = dir.path().join("gone");
+        assert!(LinuxFsProbe { login_and_runtime_uids: vec![] }.stat(gone.to_str().unwrap()).is_none());
     }
 
     /// The pure predicate, on every host: owner and mode each refuse alone.
@@ -1822,6 +1862,27 @@ mod tests {
             assert!(why.contains("cannot be opened (O_NOFOLLOW)"), "NM-FS-03: {why}");
         }
 
+        /// The variable `provision/tests/prerequisites` reads, and its rule: a comma-separated list
+        /// of exact tags, with no value that declares everything.
+        const MISSING_PREREQUISITES_ENV: &str = "BROPS_TEST_MISSING_PREREQUISITES";
+        const NON_ROOT_UID: &str = "non-root-uid";
+
+        /// libtest has no runtime skip, so a test that returns early is counted as a PASS. A root
+        /// run of the test below used to do exactly that (cockpit read R3-1218, R3-1219).
+        fn root_run_is_declared(declared: Option<&str>) -> bool {
+            declared.is_some_and(|list| list.split(',').any(|tag| tag.trim() == NON_ROOT_UID))
+        }
+
+        #[test]
+        fn a_root_run_passes_only_when_the_missing_uid_is_declared_by_name() {
+            assert!(!root_run_is_declared(None));
+            for blanket in ["", "1", "true", "all", "*", "non-root", "non-root-uid-and-more"] {
+                assert!(!root_run_is_declared(Some(blanket)), "{blanket:?} declared the gap");
+            }
+            assert!(root_run_is_declared(Some("non-root-uid")));
+            assert!(root_run_is_declared(Some("posix-foreign-anchor, non-root-uid")));
+        }
+
         /// The drivers' question, on the real filesystem. An anchor this test's own uid owns is NOT
         /// a TCB-owned file, and a manifest that expects root there refuses it by role — whatever
         /// the file says about itself.
@@ -1830,7 +1891,16 @@ mod tests {
             // SAFETY: getuid never fails and touches no memory.
             let me = unsafe { libc::getuid() };
             if me == 0 {
-                return; // as root every file here IS root-owned; the refusal under test cannot arise
+                // As root every file here IS root-owned; the refusal under test cannot arise. That
+                // is a gap in this run, and it is returned from only when somebody named it.
+                let declared = std::env::var(MISSING_PREREQUISITES_ENV).ok();
+                assert!(
+                    root_run_is_declared(declared.as_deref()),
+                    "this test needs a uid that is not root and ran as uid 0, so it asserted \
+                     nothing. Run it as another user, or declare the gap by name: \
+                     {MISSING_PREREQUISITES_ENV}={NON_ROOT_UID}"
+                );
+                return;
             }
             let dir = tempfile::tempdir().unwrap();
             // The walk to the pin manifest starts here: above it is `/tmp` (L-29).

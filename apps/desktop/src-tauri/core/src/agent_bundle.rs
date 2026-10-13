@@ -702,6 +702,19 @@ pub fn build(store_root: &Path, spec: &BuildSpec) -> Result<String, Refusal> {
 mod tests {
     use super::*;
 
+    /// The module doc sends a reader to [`NOT_IMPLEMENTED`] for what this slice leaves out, and
+    /// nothing read the list (cockpit read R3-0316): an entry could be dropped and no test moved.
+    #[test]
+    fn the_not_implemented_list_names_each_of_the_five_things_this_slice_leaves_out() {
+        for gap in ["model steps", "TRANSPORT", "credential VALUES", "approval", "eval/cases.jsonl"] {
+            assert!(
+                NOT_IMPLEMENTED.iter().any(|s| s.contains(gap)),
+                "nothing in NOT_IMPLEMENTED names {gap:?}"
+            );
+        }
+        assert_eq!(NOT_IMPLEMENTED.len(), 5, "an entry was added or dropped without this test");
+    }
+
     fn spec(now: i64) -> BuildSpec {
         BuildSpec {
             bundle_id: "agt-test".into(),
@@ -1377,10 +1390,11 @@ mod tests {
         assert_eq!(verify(&renamed, 1_000_000), Err(Refusal::GrantAbsent));
     }
 
-    /// The row check on its own. `other.json` above does not exist, so `is_file()` answers that
-    /// case and the table is never asked. `manifest.json` DOES exist in the directory and is not
-    /// a row of its own file table: only the row check stands between it and being parsed as
-    /// the grant or the flow.
+    /// The row check against a file that is really there. `other.json` above is not on disk at
+    /// all. `manifest.json` DOES exist in the directory and is not a row of its own file table:
+    /// only the row check stands between it and being parsed as the grant or the flow. Both
+    /// cases are the same lookup — `verify` finds a ref in the bytes it just read and never asks
+    /// the disk again (this comment said `is_file()` answered the first one; that call is gone).
     #[test]
     fn a_ref_naming_a_file_that_exists_but_is_no_row_of_the_table_is_refused() {
         let (dir, digest) = built(1_000_000);

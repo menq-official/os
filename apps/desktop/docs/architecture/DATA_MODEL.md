@@ -31,7 +31,7 @@ A Project has many Tasks, Conversations, Decisions, Files and Runs. A Task may d
 ## State rules
 
 - IDs are UUID **v4** strings (`brops_core::id()` calls `Uuid::new_v4`); they are opaque text everywhere in the schema, and nothing relies on their ordering. This line said UUIDv7.
-- Timestamps are UTC ISO-8601.
+- Timestamps are epoch-millisecond text, zero-padded to 13 digits (`brops_core::now()`). This line said UTC ISO-8601.
 - User-authored records are never silently overwritten.
 - Message, Decision and AuditEvent records are append-only; corrections create superseding records.
 - Deletion defaults to soft delete and tombstones.

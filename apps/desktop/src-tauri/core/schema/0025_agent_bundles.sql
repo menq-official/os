@@ -15,6 +15,16 @@
 -- migration 0013 already established for run steps -- reused rather than
 -- reinvented, because it is the only concurrency control in this codebase that
 -- has survived an audit round.
+--
+-- Two column notes inside the statements below name values nothing writes. They
+-- are left as they are because SQLite stores a CREATE statement's text, comments
+-- included, and editing them would give a new install a different stored schema
+-- from an existing one:
+--   * `agent_bundles.state` lists 'built' | 'approved' | 'retired'. Only 'built'
+--     is ever written (repo.rs, `register`), nothing updates the column and
+--     nothing outside a test reads it. Arming lives in `agent_bundle_active`.
+--   * `flow_runs.trigger_kind` lists 'interval' | 'manual'. The one insert writes
+--     'interval'; no manual trigger exists.
 
 CREATE TABLE IF NOT EXISTS agent_bundles (
     bundle_digest   TEXT PRIMARY KEY,      -- sha256(manifest.json), lowercase hex; IS the directory name
@@ -27,8 +37,9 @@ CREATE TABLE IF NOT EXISTS agent_bundles (
 );
 
 -- One row per bundle_id names the digest the scheduler resolves a trigger to.
--- A digest named here with no agent_bundles row is the `no_active_bundle`
--- refusal, not a skip.
+-- A digest named here with no agent_bundles row cannot be stored: the foreign
+-- key below refuses it (foreign_keys is ON, db.rs). This comment named a
+-- `no_active_bundle` refusal for that case; no refusal of that name exists.
 CREATE TABLE IF NOT EXISTS agent_bundle_active (
     bundle_id       TEXT PRIMARY KEY,
     bundle_digest   TEXT NOT NULL REFERENCES agent_bundles(bundle_digest) ON DELETE RESTRICT,

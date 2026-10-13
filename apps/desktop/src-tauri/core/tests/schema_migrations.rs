@@ -299,6 +299,67 @@ fn status_guard_triggers_reject_out_of_enum_values() {
     );
 }
 
+/// The quoted values of a status guard's `NOT IN (...)` list, read from the stored trigger.
+fn guarded_values(c: &Connection, trigger: &str) -> Vec<String> {
+    let sql: String = c
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?1",
+            [trigger],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|e| panic!("no trigger {trigger}: {e}"));
+    let list = sql
+        .split("NOT IN (")
+        .nth(1)
+        .and_then(|rest| rest.split(')').next())
+        .unwrap_or_else(|| panic!("{trigger} has no NOT IN list: {sql}"));
+    let mut values: Vec<String> =
+        list.split(',').map(|v| v.trim().trim_matches('\'').to_string()).collect();
+    values.sort();
+    values
+}
+
+/// 0011 says its lists "mirror the canonical lists in core/src/domain.rs", and nothing compared
+/// them (cockpit read R3-0661); 0019 exists because the approvals pair had already drifted. The
+/// run and step lists are held equal here, in both directions, and every listed status is then
+/// written through the guard it has to pass.
+#[test]
+fn the_run_and_step_status_guards_admit_exactly_the_statuses_domain_rs_lists() {
+    use brops_core::domain::{RUN_STATUSES, STEP_STATUSES};
+    let c = conn();
+    for (triggers, listed) in [
+        (["trg_runs_status_ins", "trg_runs_status_upd"], RUN_STATUSES),
+        (["trg_run_steps_status_ins", "trg_run_steps_status_upd"], STEP_STATUSES),
+    ] {
+        let mut want: Vec<String> = listed.iter().map(|s| s.to_string()).collect();
+        want.sort();
+        for trigger in triggers {
+            assert_eq!(guarded_values(&c, trigger), want, "{trigger} and domain.rs disagree");
+        }
+    }
+
+    for (i, status) in RUN_STATUSES.iter().enumerate() {
+        c.execute(
+            "INSERT INTO runs(id, intent, status, plan, created_at, updated_at)
+             VALUES (?1, 'i', ?2, '', '1', '1')",
+            params![format!("r-{i}"), status],
+        )
+        .unwrap_or_else(|e| panic!("runs.status {status:?} refused on INSERT: {e}"));
+        c.execute("UPDATE runs SET status = ?1 WHERE id = 'r-0'", [status])
+            .unwrap_or_else(|e| panic!("runs.status {status:?} refused on UPDATE: {e}"));
+    }
+    for (i, status) in STEP_STATUSES.iter().enumerate() {
+        c.execute(
+            "INSERT INTO run_steps(id, run_id, position, title, status, created_at, updated_at)
+             VALUES (?1, 'r-0', ?2, 't', ?3, '1', '1')",
+            params![format!("s-{i}"), i as i64 + 1, status],
+        )
+        .unwrap_or_else(|e| panic!("run_steps.status {status:?} refused on INSERT: {e}"));
+        c.execute("UPDATE run_steps SET status = ?1 WHERE id = 's-0'", [status])
+            .unwrap_or_else(|e| panic!("run_steps.status {status:?} refused on UPDATE: {e}"));
+    }
+}
+
 #[test]
 fn run_step_position_is_unique_per_run() {
     let c = conn();
