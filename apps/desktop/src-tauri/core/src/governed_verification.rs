@@ -39,11 +39,13 @@
 //!     `SHA256(output) == envelope.output_sha256` (digest gate) over the **raw bytes**, with **no**
 //!     trim/NFC/NFKC/CRLF/lossy decode (§4.6 P0-3). Only then is the output strict-UTF8 decoded for the
 //!     committed body.
-//!  6. **`receipt_id` freshness** — refused if the injected seen-set already contains it (global-unique
-//!     replay defense, §7.1(d)).
-//!  7. **`request_nonce` one-time consume** — the injected ledger consumes the nonce atomically; a
-//!     second consume of the same nonce Blocks (§7.1(c), keyed by the pre-stored `receipt_challenges`
-//!     nonce). On success the `receipt_id` is recorded so a later replay is caught at step 6.
+//!  6. and 7. **The replay claim — ONE step, not two.** The injected [`AcceptanceLedger`] is asked once,
+//!     through its single `claim(receipt_id, request_nonce)`: `receipt_id` global uniqueness (§7.1(d))
+//!     and the one-time `request_nonce` consume (§7.1(c)) are checked and recorded together or not at
+//!     all. A receipt already accepted, a nonce already consumed, or a ledger that cannot answer each
+//!     Block, and a refusal records nothing. (This list used to give them as a seen-set lookup, then
+//!     a consume, then a later record; that split is what the trait's doc says was removed.) It runs
+//!     LAST, after item 8 and after the output binding.
 //!  8. **Freshness (§7.1 "Freshness", §1 window-nesting)** — the envelope's own signed `_ms` fields
 //!     (`challenge_accepted_at_ms`, `completed_at_ms`) must be legal §1 values, correctly ordered, and
 //!     inside `FreshnessWindow{future_skew_ms: 60000, max_age_ms: 300000}` around the broker's injected
@@ -138,6 +140,15 @@ impl ReceiptEnvelope<'_> {
     /// `BTreeMap`-backed by default (the crate does not enable `preserve_order`), so keys come out sorted
     /// and whitespace-free; integer fields serialize as bare integers. Same shortcut `receipt.rs`
     /// documents for its `BTreeMap<String,String>` envelope, extended to the mixed string/integer shape.
+    ///
+    /// The ORDER RESTS ON THAT DEFAULT and on nothing in this function: the keys are inserted in
+    /// declaration order, which is not sorted order. Features are additive across a workspace, so
+    /// any crate enabling `preserve_order` would switch these bytes to insertion order
+    /// (`provision/src/canonical.rs` refuses the same reliance in writing). None does:
+    /// `grep -rn preserve_order --include=Cargo.toml apps/desktop/src-tauri` and the same grep over
+    /// `Cargo.lock` both find nothing (2026-10-14). With it on, the signature and `from_exact_jcs`
+    /// would refuse rather than accept. `payload_jcs_emits_all_23_keys_in_ascending_order` pins the
+    /// order; changing how these bytes are built is the Owner's (cockpit read R3-0574).
     fn payload_jcs(&self) -> Result<Vec<u8>, TurnReason> {
         // Direct inserts (no capturing closures) so the mutable borrow of `m` is trivially local.
         let str_fields: [(&str, &str); 17] = [
@@ -594,6 +605,14 @@ pub fn bind_attested_evidence(
     // (d) The run identity the BROKER authorized (its own resolution + the attempt id from the lease
     //     the supervisor granted it) — the same three fields step 4b binds on the envelope, now also
     //     required of the supervisor's independently-signed account.
+    //
+    //     IMPLIED, when this function is reached through `verify_envelope` (its one caller outside
+    //     tests): step 4b there already required `envelope == ctx` for these fields and pair list (b)
+    //     above required `evidence == envelope`, so neither comparison below can be the one that
+    //     refuses. They are kept because this function is `pub` and promises the binding on its
+    //     own. The price is that no test THROUGH `verify_and_accept` can tell (d) from step 4b —
+    //     deleting either leaves the suite green — so (d) is tested by calling this function
+    //     directly (`the_broker_side_comparisons_of_the_attestation_refuse_on_their_own`).
     if evidence.s("run_id") != ctx.expected_run_id || evidence.s("task_id") != ctx.expected_task_id {
         return Err(TurnReason::UpstreamBlocked);
     }
@@ -609,6 +628,12 @@ pub fn bind_attested_evidence(
     // (e) The request the broker itself issued. The three component handles are compared to the
     //     broker's own resolved digests: the store is content-addressed, so a handle IS the digest of
     //     the bytes it names, on both platforms' signers.
+    //
+    //     The first three lines are IMPLIED in the same way as (d): step 4 of `verify_envelope`
+    //     required `envelope == expected` for workspace/install/nonce and (b) required
+    //     `evidence == envelope`. The three handle lines and `requested_at` below are NOT implied —
+    //     the envelope carries only their combined digest (`request_sha256`), so this is the only
+    //     place the supervisor's own three handles and its `requested_at` are compared to anything.
     if evidence.s("workspace_id") != expected.workspace_id
         || evidence.s("install_id") != expected.install_id
         || evidence.s("request_nonce") != expected.request_nonce
@@ -733,6 +758,16 @@ pub trait AcceptanceLedger {
 /// Wiring this into a real governed turn silently removes the replay defence the chain claims to have.
 ///
 /// Production callers MUST use [`crate::broker_turns::DurableAcceptanceLedger`].
+///
+/// Nothing but that sentence stops them: this is test support that is an ordinary `pub` item,
+/// COMPILED INTO EVERY BUILD of this crate, the shipping one included (cockpit read R3-0346). Who
+/// constructs it, from a grep for the name over every crate under `src-tauri` — `win-live` and
+/// `win-broker` included, which do not compile on Linux — on 2026-10-14: this module's own tests;
+/// the `#[cfg(test)]` modules of `broker/src/chain_executor.rs` and `broker/src/ladder_executor.rs`;
+/// and nobody else. The other mentions are comments recording that it USED to be passed
+/// (`broker/src/main.rs`, `proof/src/bin/live_turn.rs`, `win-live/src/proof.rs`,
+/// `win-live/src/bin/win_live_turn.rs`, `core/src/broker_turns.rs`). Gating it out of the shipping
+/// build changes what that binary contains and is the Owner's to decide.
 #[derive(Debug, Default)]
 pub struct InMemoryLedger {
     seen_receipts: HashSet<String>,
@@ -1133,7 +1168,7 @@ mod tests {
     // ---- the fixture's time-chain (§1). REAL epoch-ms values, not 1000/2000: with a toy `now_ms`
     // the stale limit `now - 300000` goes negative and the stale branch can never be exercised, so a
     // freshness test over toy timestamps would pass while proving nothing about the shipped path.
-    const T_REQUESTED_MS: i64 = 1_754_000_000_000; // 2025-08-01T00:53:20Z
+    const T_REQUESTED_MS: i64 = 1_754_000_000_000; // 2025-07-31T22:13:20Z
     const T_ACCEPTED_MS: i64 = T_REQUESTED_MS; // §1 allows `requested_at_ms == challenge_accepted_at_ms`
     const T_COMPLETED_MS: i64 = T_ACCEPTED_MS + 2_000;
     /// The broker's clock at acceptance: 1 s after the turn completed — an ordinary live turn.
@@ -1525,8 +1560,45 @@ mod tests {
         let a = attest(&f);
         let mut ledger = InMemoryLedger::new();
         let mut longer = OUTPUT.to_vec();
-        longer.push(b'!'); // length gate fires before the digest gate
+        // The length gate fires first — and the digest gate behind it refuses these bytes with
+        // the same reason, so this test stays green with the length gate deleted (cockpit read
+        // R3-1238). The length gate has its own test just below.
+        longer.push(b'!');
         assert!(matches!(verify_and_accept(&expected(&f), &env, &f.env_sig, &a, &k, &longer, &CTX, &mut ledger, &fresh()), Err(TurnReason::CommitReadbackMismatch)));
+    }
+
+    /// The length gate ALONE. The test above appends a byte, which changes the digest too, so the
+    /// digest gate would refuse it without any help. Here the OUTPUT is the genuine one and its
+    /// digest is the one the envelope carries; only the signed `output_bytes` is wrong, and the
+    /// envelope is re-signed so the signature is real. The evidence carries no length, so the
+    /// attestation is this turn's untouched. What is left to refuse is `len(output) != output_bytes`.
+    #[test]
+    fn a_signed_output_bytes_that_is_not_the_outputs_length_is_refused_by_the_length_gate() {
+        let f = fx();
+        let k = keys(&f);
+        let a = attest(&f);
+        let mut env = envelope(&f);
+        env.output_bytes = f.output_bytes + 1;
+        let env_sig = sign_b64(&signing_key(7), &env.payload_jcs().unwrap());
+        assert!(
+            verify_ed25519(k.isolated_signer_public_key, &env.payload_jcs().unwrap(), &env_sig).is_ok(),
+            "the re-signature must be REAL, or this refuses at step 2 instead"
+        );
+        assert_eq!(sha256_hex(OUTPUT), env.output_sha256, "the digest gate must have nothing to refuse");
+
+        let mut ledger = InMemoryLedger::new();
+        match verify_and_accept(&expected(&f), &env, &env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()) {
+            Err(TurnReason::CommitReadbackMismatch) => {}
+            Err(other) => panic!("expected CommitReadbackMismatch from the length gate, got {other:?}"),
+            Ok(_) => panic!("an envelope whose signed output_bytes is not the output's length was ACCEPTED"),
+        }
+        // Control, through the SAME ledger: the same turn with the true length is accepted, so the
+        // refusal above burned nothing and came from the one field that differs.
+        let good = envelope(&f);
+        assert!(
+            verify_and_accept(&expected(&f), &good, &f.env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()).is_ok(),
+            "control: the genuine envelope must be accepted"
+        );
     }
 
     #[test]
@@ -1539,16 +1611,102 @@ mod tests {
         assert!(matches!(verify_and_accept(&expected(&f), &env, &f.env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()), Err(TurnReason::UpstreamBlocked)));
     }
 
+    /// Every one of the 23 payload fields is under the signature.
+    ///
+    /// This test used to change `completed_at_ms` alone and call `verify_and_accept`, which proved
+    /// nothing about the signature: the evidence comparison and the freshness window refuse that
+    /// same change with the same `UpstreamBlocked` (cockpit read R3-1239). Twenty-two of the
+    /// twenty-three fields are cross-bound by a later step, so no call through `verify_and_accept`
+    /// can show the signature covers them. It is asked directly instead: for each field, the bytes
+    /// `payload_jcs` rebuilds must DIFFER from the genuine ones and the genuine signature must NOT
+    /// verify over them. A field left out of `payload_jcs` fails both.
+    ///
+    /// The one field no later step compares with the same reason is `output_bytes` — the length
+    /// gate answers `CommitReadbackMismatch` — so the last block puts that tampering through
+    /// `verify_and_accept` and requires `UpstreamBlocked`: step 2 refused it, not the gate.
     #[test]
     fn tampering_any_signed_envelope_field_breaks_the_signature() {
         let f = fx();
         let k = keys(&f);
+        let genuine = envelope(&f);
+        let genuine_jcs = genuine.payload_jcs().unwrap();
+        assert!(
+            verify_ed25519(k.isolated_signer_public_key, &genuine_jcs, &f.env_sig).is_ok(),
+            "control: the genuine signature verifies over the genuine bytes"
+        );
+
+        let other = hx(0xee);
+        let cases: Vec<(&str, ReceiptEnvelope<'_>)> = vec![
+            ("artifact_type", ReceiptEnvelope { artifact_type: "brops.some-other.v1", ..genuine }),
+            ("key_id", ReceiptEnvelope { key_id: "iso-signer-2", ..genuine }),
+            ("receipt_id", ReceiptEnvelope { receipt_id: "receipt-2", ..genuine }),
+            ("run_id", ReceiptEnvelope { run_id: "run-2", ..genuine }),
+            ("execution_attempt_id", ReceiptEnvelope { execution_attempt_id: "att-2", ..genuine }),
+            ("task_id", ReceiptEnvelope { task_id: "task-2", ..genuine }),
+            ("workspace_id", ReceiptEnvelope { workspace_id: "ws-2", ..genuine }),
+            ("install_id", ReceiptEnvelope { install_id: "install-2", ..genuine }),
+            ("request_nonce", ReceiptEnvelope { request_nonce: "nonce-2", ..genuine }),
+            ("request_sha256", ReceiptEnvelope { request_sha256: &other, ..genuine }),
+            ("record_handle", ReceiptEnvelope { record_handle: &other, ..genuine }),
+            ("lease_handle", ReceiptEnvelope { lease_handle: &other, ..genuine }),
+            ("execution_receipt_handle", ReceiptEnvelope { execution_receipt_handle: &other, ..genuine }),
+            ("output_sha256", ReceiptEnvelope { output_sha256: &other, ..genuine }),
+            ("output_bytes", ReceiptEnvelope { output_bytes: genuine.output_bytes + 1, ..genuine }),
+            (
+                "challenge_accepted_at_ms",
+                ReceiptEnvelope { challenge_accepted_at_ms: genuine.challenge_accepted_at_ms - 1, ..genuine },
+            ),
+            ("completed_at_ms", ReceiptEnvelope { completed_at_ms: genuine.completed_at_ms + 1, ..genuine }),
+            ("evidence_final_event_hash", ReceiptEnvelope { evidence_final_event_hash: &other, ..genuine }),
+            ("evidence_event_count", ReceiptEnvelope { evidence_event_count: 4, ..genuine }),
+            ("evidence_last_sequence", ReceiptEnvelope { evidence_last_sequence: 13, ..genuine }),
+            ("evidence_head_sequence", ReceiptEnvelope { evidence_head_sequence: 13, ..genuine }),
+            (
+                "supervisor_attestation_key_id",
+                ReceiptEnvelope { supervisor_attestation_key_id: "sup-att-2", ..genuine },
+            ),
+            (
+                "attestation_evidence_sha256",
+                ReceiptEnvelope { attestation_evidence_sha256: &other, ..genuine },
+            ),
+        ];
+
+        // The cases are the payload's own key set, no more and no fewer: a 24th signed field
+        // added without a case here fails this, rather than going untampered.
+        let payload: Value = serde_json::from_slice(&genuine_jcs).unwrap();
+        let mut signed_keys: Vec<&str> = payload.as_object().unwrap().keys().map(String::as_str).collect();
+        signed_keys.sort_unstable();
+        let mut tampered_keys: Vec<&str> = cases.iter().map(|(name, _)| *name).collect();
+        tampered_keys.sort_unstable();
+        assert_eq!(tampered_keys, signed_keys, "one tampering per signed field");
+        assert_eq!(signed_keys.len(), 23);
+
+        for (name, tampered) in &cases {
+            let tampered_jcs = tampered.payload_jcs().unwrap();
+            assert_ne!(tampered_jcs, genuine_jcs, "{name}: the field is not in the signed bytes");
+            assert!(
+                verify_ed25519(k.isolated_signer_public_key, &tampered_jcs, &f.env_sig).is_err(),
+                "{name}: the genuine signature still verifies over an envelope with this field changed"
+            );
+            // And the whole predicate refuses each of them. For every field but `output_bytes`
+            // a later step would too, so this half alone says nothing about the signature.
+            let a = attest(&f);
+            let mut ledger = InMemoryLedger::new();
+            assert!(
+                verify_and_accept(&expected(&f), tampered, &f.env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()).is_err(),
+                "{name}: a tampered envelope under the old signature was accepted"
+            );
+        }
+
+        // `output_bytes`, the one whose later gate answers differently: refused at step 2.
+        let (_, wrong_length) = cases.iter().find(|(name, _)| *name == "output_bytes").unwrap();
         let a = attest(&f);
         let mut ledger = InMemoryLedger::new();
-        // Flip completed_at_ms: signed field, so the reconstructed JCS no longer matches the signature.
-        let mut env = envelope(&f);
-        env.completed_at_ms = 9999;
-        assert!(matches!(verify_and_accept(&expected(&f), &env, &f.env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()), Err(TurnReason::UpstreamBlocked)));
+        match verify_and_accept(&expected(&f), wrong_length, &f.env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()) {
+            Err(TurnReason::UpstreamBlocked) => {}
+            Err(other) => panic!("output_bytes: expected the signature to refuse (UpstreamBlocked), got {other:?}"),
+            Ok(_) => panic!("output_bytes: a tampered envelope under the old signature was accepted"),
+        }
     }
 
     #[test]
@@ -1733,7 +1891,169 @@ mod tests {
         let mut exp = expected(&f);
         exp.request_nonce = "nonce-evil"; // envelope says nonce-xyz
         let mut ledger = InMemoryLedger::new();
+        // Three checks refuse this, all with `UpstreamBlocked`: the step-4 nonce equality, the
+        // recomputed `request_sha256` (the nonce is one of its inputs) and the evidence
+        // comparison in step 4c. It does not single out any of them (cockpit read R3-1240).
         assert!(matches!(verify_and_accept(&exp, &env, &f.env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()), Err(TurnReason::UpstreamBlocked)));
+    }
+
+    /// The fixture for the two tests below: a turn that is genuine in every signature and every
+    /// digest, in which the isolated signer AND the supervisor both name `value` for `field`.
+    /// Returns the re-signed attestation bytes, its signature, its digest and nothing else — the
+    /// envelope borrows them, so the caller builds it.
+    fn attestation_naming(f: &Fx, field: &'static str, value: &str) -> (Vec<u8>, String, String) {
+        let evidence = evidence_jcs_with(
+            &f.system, &f.history, &f.generation, &f.output_sha256, &[Ev(field, value.into())],
+        );
+        let sig = sign_b64(&signing_key(9), &evidence);
+        let sha = sha256_hex(&evidence);
+        (evidence, sig, sha)
+    }
+
+    /// A turn both signers agree was for ANOTHER workspace, install or nonce, offered to a broker
+    /// whose own `Expected` names this one.
+    ///
+    /// Nothing above drives the step-4 `workspace_id`/`install_id` equalities at all, and the nonce
+    /// test moves the broker's `Expected`, which the recomputed request hash refuses first. Here
+    /// the envelope and the evidence carry the same foreign value, both are re-signed, the
+    /// envelope digests the evidence it travels with and still carries the `request_sha256` the
+    /// broker recomputes — so signature, digest, request hash and the signer/supervisor agreement
+    /// all pass.
+    ///
+    /// WHAT THIS DOES NOT ESTABLISH. Two comparisons are left to refuse it: step 4 (envelope vs
+    /// `Expected`) and group (e) of `bind_attested_evidence` (evidence vs `Expected`). Both answer
+    /// `UpstreamBlocked`, and step 4c always runs after step 4, so this test stays green with
+    /// EITHER one deleted and goes red only with both gone. Step 4's three equalities cannot be
+    /// isolated without giving them a reason of their own, which is a change to what the broker
+    /// answers. Group (e) can be, and is, in the test after this one.
+    #[test]
+    fn a_turn_both_signers_place_in_another_workspace_install_or_nonce_is_refused() {
+        for (field, foreign) in [
+            ("workspace_id", "ws-2"),
+            ("install_id", "install-2"),
+            ("request_nonce", "nonce-2"),
+        ] {
+            let f = fx();
+            let (evidence, attest_sig, attest_sha) = attestation_naming(&f, field, foreign);
+            let mut env = envelope(&f);
+            env.attestation_evidence_sha256 = &attest_sha;
+            match field {
+                "workspace_id" => env.workspace_id = foreign,
+                "install_id" => env.install_id = foreign,
+                _ => env.request_nonce = foreign,
+            }
+            let env_sig = sign_b64(&signing_key(7), &env.payload_jcs().unwrap());
+            let k = keys(&f);
+            let a = SupervisorAttestation { evidence_jcs: &evidence, signature_b64: &attest_sig };
+            let exp = expected(&f);
+
+            // Everything upstream of the two comparisons under test passes.
+            assert!(verify_ed25519(k.isolated_signer_public_key, &env.payload_jcs().unwrap(), &env_sig).is_ok(), "{field}");
+            assert!(verify_ed25519(k.supervisor_attestation_public_key, &evidence, &attest_sig).is_ok(), "{field}");
+            assert_eq!(env.request_sha256, exp.request_sha256(), "{field}: the request hash must still match");
+
+            let mut ledger = InMemoryLedger::new();
+            match verify_and_accept(&exp, &env, &env_sig, &a, &k, OUTPUT, &CTX, &mut ledger, &fresh()) {
+                Err(TurnReason::UpstreamBlocked) => {}
+                Err(other) => panic!("{field}: expected UpstreamBlocked, got {other:?}"),
+                Ok(_) => panic!("{field}: a turn signed for {foreign} was accepted as this broker's"),
+            }
+            // Control through the same ledger: this turn, genuine, is accepted.
+            let good = envelope(&f);
+            let genuine = attest(&f);
+            assert!(
+                verify_and_accept(&exp, &good, &f.env_sig, &genuine, &k, OUTPUT, &CTX, &mut ledger, &fresh()).is_ok(),
+                "{field}: control — the genuine turn must be accepted"
+            );
+        }
+    }
+
+    /// Groups (d) and (e) of `bind_attested_evidence`, with nothing in front of them.
+    ///
+    /// Through `verify_and_accept` they are implied — steps 4 and 4b compare the envelope to the
+    /// broker's values and pair list (b) compares the evidence to the envelope — so no test there
+    /// can tell them from those steps. The function is `pub` and makes the comparison on its own,
+    /// so it is called directly: the evidence and the envelope AGREE on a foreign value, which
+    /// satisfies (b), and the broker's `ctx`/`Expected` name this turn. Only (d) or (e) can refuse.
+    #[test]
+    fn the_broker_side_comparisons_of_the_attestation_refuse_on_their_own() {
+        let f = fx();
+        let genuine = AttestedEvidence::parse(&f.attest_evidence).unwrap();
+        let env = envelope(&f);
+        let exp = expected(&f);
+        assert!(bind_attested_evidence(&genuine, &env, &exp, &CTX).is_ok(), "control: this turn binds");
+
+        for (field, foreign) in [
+            ("run_id", "run-2"),
+            ("task_id", "task-2"),
+            ("execution_attempt_id", "att-2"),
+            ("workspace_id", "ws-2"),
+            ("install_id", "install-2"),
+            ("request_nonce", "nonce-2"),
+        ] {
+            let (evidence, _, _) = attestation_naming(&f, field, foreign);
+            let attested = AttestedEvidence::parse(&evidence).unwrap();
+            let mut env = envelope(&f);
+            match field {
+                "run_id" => env.run_id = foreign,
+                "task_id" => env.task_id = foreign,
+                "execution_attempt_id" => env.execution_attempt_id = foreign,
+                "workspace_id" => env.workspace_id = foreign,
+                "install_id" => env.install_id = foreign,
+                _ => env.request_nonce = foreign,
+            }
+            assert_eq!(
+                bind_attested_evidence(&attested, &env, &exp, &CTX),
+                Err(TurnReason::UpstreamBlocked),
+                "{field}: the supervisor and the signer agree on {foreign}, and the broker authorized another"
+            );
+            // The same pair binds for a broker that DID authorize that value: so the refusal
+            // above was the broker-side comparison and not the signer/supervisor agreement.
+            let ctx = match field {
+                "run_id" => BrokerContext { expected_run_id: foreign, ..CTX },
+                "task_id" => BrokerContext { expected_task_id: foreign, ..CTX },
+                "execution_attempt_id" => BrokerContext { expected_execution_attempt_id: Some(foreign), ..CTX },
+                _ => CTX,
+            };
+            let mut exp_for = expected(&f);
+            match field {
+                "workspace_id" => exp_for.workspace_id = foreign,
+                "install_id" => exp_for.install_id = foreign,
+                "request_nonce" => exp_for.request_nonce = foreign,
+                _ => {}
+            }
+            assert!(
+                bind_attested_evidence(&attested, &env, &exp_for, &ctx).is_ok(),
+                "{field}: control — a broker that authorized {foreign} must bind this pair"
+            );
+        }
+    }
+
+    /// The 23 keys of `payload_jcs` come out in ascending order (cockpit read R3-0574). The
+    /// function inserts them into a `serde_json::Map` in declaration order and leans on that type
+    /// being a `BTreeMap`, which is true only while no crate in the workspace turns
+    /// `preserve_order` on. This pins the outcome and is written to go red with that feature on —
+    /// not measured, since no build here has it. The order asserted is computed by sorting the
+    /// names here, not read back from a `Map`.
+    #[test]
+    fn payload_jcs_emits_all_23_keys_in_ascending_order() {
+        let f = fx();
+        let s = String::from_utf8(envelope(&f).payload_jcs().unwrap()).unwrap();
+        let parsed: Value = serde_json::from_str(&s).unwrap();
+        let mut names: Vec<String> = parsed.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(names.len(), 23);
+        names.sort_unstable();
+        let mut after = 0usize;
+        for name in &names {
+            let member = format!("\"{name}\":");
+            let at = s.find(&member).unwrap_or_else(|| panic!("{name} is not a member"));
+            assert!(at >= after, "{name} is out of order in {s}");
+            after = at + member.len();
+        }
+        // And declaration order is NOT that order, so a serializer that kept insertion order
+        // would fail the loop above: `artifact_type`, `key_id`, `receipt_id`, `run_id` is how
+        // the fields are written down, and `execution_attempt_id` sorts between the first two.
+        assert!(s.find("\"execution_attempt_id\":").unwrap() < s.find("\"key_id\":").unwrap());
     }
 
     #[test]

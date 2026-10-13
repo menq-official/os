@@ -1,12 +1,21 @@
 //! Wave 3b-2 — signed key manifest + pinned root trust anchor + anti-rollback (implements the 3b-0
 //! isolated-signer DESIGN-GREEN manifest contract: an operator-provisioned signed key manifest validated
-//! against a **binary-pinned root trust anchor**, per-key trust class / validity / revocation /
+//! against a **pinned root trust anchor**, per-key trust class / validity / revocation /
 //! allowed-protocols, and **anti-rollback** on a durable highest accepted `manifest_epoch` + hash).
+//!
+//! Where the pin comes from is the CALLER's, and it is not one thing: on Linux the broker reads the
+//! root from the anchor file its §2.5 pin manifest pins, and only the Windows kit still compiles it
+//! in (see [`PinnedRoot`]). This header said "binary-pinned" for both.
 //!
 //! This is what turns a verified governed turn into a PRODUCTION `trusted_verified`: only a manifest that
 //! (a) is signed by the pinned root, (b) is not rolled back, and (c) resolves a **production**-class,
 //! in-window, non-revoked, protocol-allowed key renders "Verified". Anything else fails closed
-//! (`NoTrustedManifest`-equivalent). Pure + fully unit-tested (the root key + signing appear only in tests).
+//! (`NoTrustedManifest`-equivalent).
+//!
+//! NOT pure, though this header said so: the verification and resolution functions are, and the
+//! durable half of the floor is file I/O in this module — it reads the floor file, takes a lock
+//! beside it, and [`write_floor_atomically`] creates, syncs and renames. Unit-tested here; the root
+//! key and all signing appear only in tests.
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -286,7 +295,25 @@ pub fn verify_manifest(
 
 /// A resolved production key — the mandatory bind that renders `trusted_verified`. Only produced by
 /// [`resolve_production_key`] after every check passes.
+///
+/// "Only produced by" is held by `#[non_exhaustive]`: the three fields stay readable, and a struct
+/// literal outside `brops-core` does not compile, so another crate gets one from the resolver or
+/// not at all. Until cockpit read R3-0575 the sentence stood over three `pub` fields and nothing
+/// else, and any crate could write one down:
+///
+/// ```compile_fail
+/// let forged = brops_core::key_manifest::ResolvedManifestKey {
+///     key_id: String::from("prod-1"),
+///     public_key_hex: "00".repeat(32),
+///     key_epoch: 1,
+/// };
+/// ```
+///
+/// What this does NOT make it: evidence the verifier consumes. `governed_verification` takes raw
+/// `PinnedKeys`, so the guarantee is about who can mint this type, not about what is checked
+/// downstream of it. Inside this crate a literal still compiles; the only one is in the resolver.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ResolvedManifestKey {
     pub key_id: String,
     pub public_key_hex: String,
@@ -498,7 +525,7 @@ pub fn write_floor_atomically(path: &std::path::Path, bytes: &[u8]) -> Result<()
     Ok(())
 }
 
-// --- tiny hex/base64 helpers (no extra deps; base64 crate is present but keep this module self-checking) -
+// --- tiny hex/base64 helpers: the hex decoder is written out here; base64 is the `base64` crate's STANDARD -
 
 /// Decode exactly 64 hex characters into 32 bytes; `None` for any other length or any non-hex
 /// character. THE one decoder: `manifest_authority`, the broker's resolver, the Windows kit and the

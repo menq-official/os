@@ -1,8 +1,19 @@
 //! Wave 3b-1B — governed-chain IPC framing + peer authentication (design-GREEN rev-30 §2.1/§4.10(g)
 //! transport layer). The trusted-principal AF_UNIX channels (renderer→broker, broker→authority,
-//! broker→supervisor→signer) all share ONE bounded, length-prefixed frame format and ONE peer-auth rule:
-//! authenticate the connecting peer's OS credentials (`SO_PEERCRED` on Linux) and allowlist EXACTLY the
-//! expected principal UID, denying every other — the renderer/login UID and the sidecar UID in particular.
+//! broker→supervisor→signer) all share ONE length-prefixed frame FORMAT: a 4-byte big-endian length,
+//! then that many bytes. The BOUND is not shared. [`MAX_FRAME_PAYLOAD_BYTES`] (8192) is what this
+//! module's readers and `encode_frame` apply, and it is the cap of the legs the Rust side speaks:
+//! renderer↔broker, and the broker's hops to the challenge authority and the supervisor (both Python
+//! servers set `MAX_FRAME_BYTES = 8192`). The supervisor→signer leg is Python on both ends and its
+//! server reads up to `512 * 1024` (`engine/runtime/isolated_signer_server.py`); nothing here frames it.
+//!
+//! The peer-auth rule ([`authorize_peer`]) is: authenticate the connecting peer's OS credentials
+//! (`SO_PEERCRED` on Linux), refuse a UID on the deny list, and allow EXACTLY the expected principal
+//! UID. It has ONE caller in this workspace — the broker's renderer door
+//! (`broker/src/main.rs::handle_conn`) — and that caller passes an EMPTY deny list: there the renderer
+//! is the allowed peer and any other UID is refused as `NotAllowed`. The doors a renderer or the
+//! sidecar must not reach (challenge authority, supervisor, signer) are Python services with their
+//! own peer checks; this function does not guard them.
 //!
 //! This module is the PURE, host-independent framing + peer-auth core (fully unit-tested). The real socket
 //! `bind`/`accept`/`recv` + the `SO_PEERCRED` read are a thin Linux-gated wrapper that populates
@@ -38,6 +49,11 @@ pub enum FrameError {
 /// zero rule used to be decided in three places and two ways — [`decode_one`] and
 /// [`FrameDecoder::next_frame`] here accepted an empty frame, while the broker's two hand-rolled
 /// socket readers (and every Python service on the other end of them) refused one.
+///
+/// "In this module" is the limit of that claim. Two readers OUTSIDE it still spell the same rule
+/// out by hand over their own `u32::from_be_bytes`: `recv_all` in `broker/src/chain_executor.rs`
+/// and `read_frame_payload` in `win-live/src/pipe.rs` (cockpit read R3-0676). They agree with this
+/// function today and nothing but the shared constant ties them to it.
 fn declared_len(prefix: [u8; LENGTH_PREFIX_BYTES]) -> Result<usize, FrameError> {
     let declared = u32::from_be_bytes(prefix) as usize;
     if declared == 0 {
@@ -117,30 +133,6 @@ impl FrameDecoder {
     }
 }
 
-/// Why a blocking read of one frame failed: the stream, or the frame.
-#[derive(Debug)]
-pub enum ReadFrameError {
-    /// The read itself failed or the peer closed early (`UnexpectedEof`).
-    Io(std::io::Error),
-    /// The prefix declared something that is not a frame; nothing past it was read.
-    Frame(FrameError),
-}
-
-/// Read EXACTLY ONE frame's payload from a blocking stream: the 4-byte prefix, then exactly the
-/// declared number of bytes. The declared length is judged by [`declared_len`] BEFORE the payload
-/// buffer is allocated, so a peer cannot make this side allocate on its say-so.
-///
-/// This is the reader for a one-request/one-reply channel over a real socket. The broker had two
-/// copies of it, hand-rolled, each restating the bound and the zero rule.
-pub fn read_one_frame<R: std::io::Read>(reader: &mut R) -> Result<Vec<u8>, ReadFrameError> {
-    let mut prefix = [0u8; LENGTH_PREFIX_BYTES];
-    reader.read_exact(&mut prefix).map_err(ReadFrameError::Io)?;
-    let declared = declared_len(prefix).map_err(ReadFrameError::Frame)?;
-    let mut body = vec![0u8; declared];
-    reader.read_exact(&mut body).map_err(ReadFrameError::Io)?;
-    Ok(body)
-}
-
 /// OS peer credentials of a connected AF_UNIX peer (from `SO_PEERCRED` on Linux). The real read is a
 /// thin Linux-gated wrapper; this struct is what the pure auth rule consumes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,9 +150,14 @@ pub enum PeerError {
     NotAllowed(u32),
 }
 
-/// Authorize a connecting peer: it MUST be exactly `allowed_uid` and MUST NOT be a `denied` UID. This is
-/// the rev-30 §2.1 rule — the challenge-authority channel allowlists ONLY the broker UID and DENIES the
-/// renderer/login and sidecar UIDs; the same shape guards every trusted-principal channel.
+/// Authorize a connecting peer: it MUST be exactly `allowed_uid` and MUST NOT be a `denied` UID. The
+/// deny list is consulted FIRST, so a denied UID is `Denied` and never the weaker `NotAllowed`.
+///
+/// The shape is the rev-30 §2.1 one (a door allowlists one principal UID and denies the
+/// renderer/login and sidecar UIDs), and that is a statement about the shape, not about where it
+/// runs: the one caller in this workspace is the broker's RENDERER door, which passes an empty
+/// `denied`, so the `Denied` branch has no shipped caller that populates it. The challenge
+/// authority, the supervisor and the signer are Python services and check their peers themselves.
 pub fn authorize_peer(peer: &PeerCred, allowed_uid: u32, denied: &[u32]) -> Result<(), PeerError> {
     if denied.contains(&peer.uid) {
         return Err(PeerError::Denied(peer.uid));
@@ -202,8 +199,8 @@ mod tests {
         assert_eq!(decode_one(&evil), Err(FrameError::DeclaredOversize(u32::MAX as usize)));
     }
 
-    /// The zero rule, at every door: a frame with no payload is refused by the one-shot decoder,
-    /// by the streaming decoder, by the blocking reader, and is not one this side will encode.
+    /// The zero rule, at every door: a frame with no payload is refused by the one-shot decoder
+    /// and by the streaming decoder, and is not one this side will encode.
     #[test]
     fn an_empty_frame_is_refused_by_every_reader_and_never_encoded() {
         let empty = 0u32.to_be_bytes();
@@ -211,47 +208,70 @@ mod tests {
         let mut d = FrameDecoder::new();
         d.feed(&empty);
         assert_eq!(d.next_frame(), Err(FrameError::Empty));
-        assert!(matches!(
-            read_one_frame(&mut &empty[..]),
-            Err(ReadFrameError::Frame(FrameError::Empty))
-        ));
         assert_eq!(encode_frame(b""), Err(FrameError::Empty));
-        // Positive control: one byte is a frame, at all three.
+        // Positive control: one byte is a frame, at both.
         let one = encode_frame(b"x").unwrap();
         assert_eq!(decode_one(&one).unwrap(), b"x");
-        assert_eq!(read_one_frame(&mut &one[..]).unwrap(), b"x".to_vec());
+        let mut d = FrameDecoder::new();
+        d.feed(&one);
+        assert_eq!(d.next_frame().unwrap(), Some(b"x".to_vec()));
     }
 
-    /// The blocking reader: exactly one frame, the bound judged before allocation, and a peer
-    /// that stops early is an I/O failure rather than a short frame handed up as a whole one.
+    /// The streaming reader over bytes that arrived together: exactly one frame per call, the
+    /// bound judged on the prefix alone, and a peer that stopped early yields NO frame rather
+    /// than a short one handed up as whole. (These cases were written against a blocking
+    /// `read_one_frame` that nothing outside this module's tests called; it is gone, and the
+    /// same inputs are put to the two readers that are called.)
     #[test]
-    fn read_one_frame_reads_exactly_one_bounded_frame() {
+    fn the_streaming_decoder_reads_exactly_one_bounded_frame_at_a_time() {
         let mut two = encode_frame(b"first").unwrap();
         two.extend_from_slice(&encode_frame(b"second").unwrap());
-        let mut stream = &two[..];
-        assert_eq!(read_one_frame(&mut stream).unwrap(), b"first".to_vec());
+        let mut d = FrameDecoder::new();
+        d.feed(&two);
+        assert_eq!(d.next_frame().unwrap(), Some(b"first".to_vec()));
         // It consumed exactly one frame: the second is still there to be read.
-        assert_eq!(read_one_frame(&mut stream).unwrap(), b"second".to_vec());
+        assert_eq!(d.next_frame().unwrap(), Some(b"second".to_vec()));
+        assert_eq!(d.next_frame().unwrap(), None);
+        // The one-shot decoder refuses the same bytes: one frame was expected, two arrived.
+        assert_eq!(decode_one(&two), Err(FrameError::TrailingBytes));
 
-        let mut evil = (u32::MAX).to_be_bytes().to_vec();
-        evil.extend_from_slice(b"x");
-        assert!(matches!(
-            read_one_frame(&mut &evil[..]),
-            Err(ReadFrameError::Frame(FrameError::DeclaredOversize(n))) if n == u32::MAX as usize
-        ));
-        let at_cap = (MAX_FRAME_PAYLOAD_BYTES as u32 + 1).to_be_bytes();
-        assert!(matches!(
-            read_one_frame(&mut &at_cap[..]),
-            Err(ReadFrameError::Frame(FrameError::DeclaredOversize(_)))
-        ));
+        // One over the cap, declared with nothing after it: refused on the prefix alone.
+        let over_cap = (MAX_FRAME_PAYLOAD_BYTES as u32 + 1).to_be_bytes();
+        let mut d = FrameDecoder::new();
+        d.feed(&over_cap);
+        assert_eq!(d.next_frame(), Err(FrameError::DeclaredOversize(MAX_FRAME_PAYLOAD_BYTES + 1)));
+        assert_eq!(decode_one(&over_cap), Err(FrameError::DeclaredOversize(MAX_FRAME_PAYLOAD_BYTES + 1)));
 
         let whole = encode_frame(b"hello").unwrap();
         for cut in [0, 2, 4, 6, whole.len() - 1] {
-            assert!(
-                matches!(read_one_frame(&mut &whole[..cut]), Err(ReadFrameError::Io(_))),
-                "a stream cut at {cut} bytes is not a frame"
-            );
+            let mut d = FrameDecoder::new();
+            d.feed(&whole[..cut]);
+            assert_eq!(d.next_frame(), Ok(None), "a stream cut at {cut} bytes is not a frame");
+            assert_eq!(decode_one(&whole[..cut]), Err(FrameError::Truncated), "cut at {cut}");
         }
+    }
+
+    /// The cap is INCLUSIVE: a payload of exactly [`MAX_FRAME_PAYLOAD_BYTES`] is a frame at every
+    /// door, and one byte more is not. Every other test in the workspace that names the constant
+    /// uses `+ 1`, so `>` could have become `>=` in `declared_len` or `encode_frame` — refusing
+    /// the largest frame the design allows — with nothing red (cockpit read R3-1241).
+    #[test]
+    fn a_frame_of_exactly_the_cap_is_accepted_and_one_byte_more_is_not() {
+        let exactly = vec![b'a'; MAX_FRAME_PAYLOAD_BYTES];
+        let frame = encode_frame(&exactly).expect("a payload of exactly the cap must encode");
+        assert_eq!(frame.len(), LENGTH_PREFIX_BYTES + MAX_FRAME_PAYLOAD_BYTES);
+        assert_eq!(frame[..LENGTH_PREFIX_BYTES], (MAX_FRAME_PAYLOAD_BYTES as u32).to_be_bytes());
+        assert_eq!(decode_one(&frame).expect("…and decode"), &exactly[..]);
+        let mut d = FrameDecoder::new();
+        d.feed(&frame);
+        assert_eq!(d.next_frame().expect("…and stream"), Some(exactly.clone()));
+
+        let mut over = exactly;
+        over.push(b'a');
+        assert_eq!(encode_frame(&over), Err(FrameError::Oversize(MAX_FRAME_PAYLOAD_BYTES + 1)));
+        let mut over_frame = (over.len() as u32).to_be_bytes().to_vec();
+        over_frame.extend_from_slice(&over);
+        assert_eq!(decode_one(&over_frame), Err(FrameError::DeclaredOversize(MAX_FRAME_PAYLOAD_BYTES + 1)));
     }
 
     #[test]
