@@ -823,6 +823,31 @@ fn a_link_under_a_key_files_name_is_not_a_key_file() {
     assert!(refused.to_string().contains("regular file"), "{refused}");
 }
 
+/// Cockpit read R3-0154: the idempotency marker and the two occupancy checks were
+/// `is_file()` / `exists()`, which answer `false` for EVERY error. A manifest this account is
+/// denied a `stat` of therefore read as "this machine is not provisioned" and a path it could
+/// not look at read as "nothing is there" — the two answers that let a mint proceed. The same
+/// defect this crate had already fixed for the custody record.
+#[test]
+fn only_not_found_is_absence_when_provisioning_asks_what_is_at_a_path() {
+    use std::io::{Error, ErrorKind};
+    let path = std::path::Path::new("/somewhere/manifest.json");
+
+    assert_eq!(prov::occupancy_from_probe(path, Err(Error::from(ErrorKind::NotFound))).unwrap(), prov::Occupancy::Absent);
+    for kind in [ErrorKind::PermissionDenied, ErrorKind::Other, ErrorKind::InvalidInput] {
+        let refused = prov::occupancy_from_probe(path, Err(Error::from(kind)));
+        let err = refused.expect_err("an error that is not `not found` is not absence");
+        assert!(err.to_string().contains("manifest.json"), "{err}");
+    }
+
+    // And the real things, asked without following a link.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("f");
+    fs::write(&file, b"x").unwrap();
+    assert_eq!(prov::occupancy_from_probe(&file, fs::symlink_metadata(&file)).unwrap(), prov::Occupancy::RegularFile);
+    assert_eq!(prov::occupancy_from_probe(dir.path(), fs::symlink_metadata(dir.path())).unwrap(), prov::Occupancy::Other);
+}
+
 #[test]
 fn the_manifest_states_what_became_of_the_operator_root_without_overclaiming() {
     let dir = tempfile::tempdir().unwrap();

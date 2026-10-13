@@ -1378,6 +1378,41 @@ pub fn custody_record_from_read(
     }
 }
 
+/// What is at a path, as a probe that does not follow links found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Occupancy {
+    /// The operating system said **not found**.
+    Absent,
+    /// A regular file.
+    RegularFile,
+    /// Something else: a directory, a link, a device.
+    Other,
+}
+
+/// The decision half of [`occupancy`], separated from the probe so "denied" and "absent" can be
+/// told apart by a test on a machine where a denial cannot be staged.
+///
+/// Only [`std::io::ErrorKind::NotFound`] is absence. `Path::is_file()` and `Path::exists()`
+/// answer `false` for every error, so a manifest this account is denied a `stat` of read as "not
+/// provisioned" and an unreadable path read as "nothing there" — the two answers that let a mint
+/// go ahead. Every other failure is an `Err`: the caller does not know what is there.
+pub fn occupancy_from_probe(
+    path: &Path,
+    probe: std::io::Result<std::fs::Metadata>,
+) -> Result<Occupancy, ProvisionError> {
+    match probe {
+        Ok(meta) if meta.file_type().is_file() => Ok(Occupancy::RegularFile),
+        Ok(_) => Ok(Occupancy::Other),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Occupancy::Absent),
+        Err(e) => io(Err(e), "asking what is at a provisioning path", path),
+    }
+}
+
+/// What is at `path`, without following a link there.
+fn occupancy(path: &Path) -> Result<Occupancy, ProvisionError> {
+    occupancy_from_probe(path, std::fs::symlink_metadata(path))
+}
+
 /// Mint the trust store on first launch, or verify the one that is already there.
 ///
 /// Call this immediately after `secure_data_dir(&app_data_dir)` and before the
@@ -1433,7 +1468,7 @@ pub fn provision_with_anchor(
     // The MANIFEST is the idempotency marker, and it lives in the anchor directory. That is
     // not incidental: the marker that says "this machine is provisioned" must not itself be a
     // file the provisioned machine can delete, or a first launch can be staged over and over.
-    if anchor_dir.join(MANIFEST_FILE).is_file() {
+    if occupancy(&anchor_dir.join(MANIFEST_FILE))? == Occupancy::RegularFile {
         return verify_existing(&trust, &anchor_dir);
     }
     // Refuse BEFORE minting anything if the location cannot become an anchor. Everything below
@@ -1458,7 +1493,7 @@ pub fn provision_with_anchor(
     if let Some(refusal) = anchor::preprovision_refusal(platform_name(), &anchor_dir) {
         return Err(refusal);
     }
-    if anchor_dir.exists() {
+    if occupancy(&anchor_dir)? != Occupancy::Absent {
         return corrupt(
             "the trust anchor path already holds something that is not a provisioned anchor",
             format!(
@@ -1492,7 +1527,7 @@ pub fn provision_with_anchor(
         let _ = std::fs::remove_dir_all(&staging);
         // A concurrent first launch may have won the race and put a complete store
         // there. That is a success, not a failure — verify theirs.
-        if anchor_dir.join(MANIFEST_FILE).is_file() {
+        if occupancy(&anchor_dir.join(MANIFEST_FILE))? == Occupancy::RegularFile {
             return verify_existing(&trust, &anchor_dir);
         }
         return Err(ProvisionError::Io {
@@ -1658,7 +1693,7 @@ fn write_anchor_files_for(
 /// `mint_store_without_custody_proof` mints too, and a refusal that only one of two minting
 /// paths performs is a refusal the other one does not have.
 fn refuse_occupied_trust_path(trust: &Path) -> Result<(), ProvisionError> {
-    if !trust.exists() {
+    if occupancy(trust)? == Occupancy::Absent {
         return Ok(());
     }
     corrupt(
@@ -2226,7 +2261,7 @@ pub fn mint_store_without_custody_proof(
     anchor: Option<&Value>,
 ) -> Result<Provisioned, ProvisionError> {
     let trust = app_data_dir.join(TRUST_DIR);
-    if anchor_dir.join(MANIFEST_FILE).is_file() {
+    if occupancy(&anchor_dir.join(MANIFEST_FILE))? == Occupancy::RegularFile {
         return verify_store(&trust, anchor_dir);
     }
     refuse_occupied_trust_path(&trust)?;
