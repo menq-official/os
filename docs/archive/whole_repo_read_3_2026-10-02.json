@@ -6734,7 +6734,7 @@
  {
   "already_recorded": false,
   "category": "design-contradiction",
-  "evidence": "CLAUDE.md:116 'The second round left 45 surviving findings (1 P0 · 5 P1 · 13 P2 · 26 P3)'. Index (same target 219c763, same date): '| | | 60 | 122 |', P0 1 · P1 7 · P2 32 · P3 82. 45 is its round 1 only; AUDIT_LEDGER_ARCHIVE.md:258 treats index findings as LIVE.",
+  "evidence": "CLAUDE.md:116 'The second round left 45 surviving findings (1 P0 · 5 P1 · 13 P2 · 26 P3)'. Index (same target c509705, same date): '| | | 60 | 122 |', P0 1 · P1 7 · P2 32 · P3 82. 45 is its round 1 only; AUDIT_LEDGER_ARCHIVE.md:258 treats index findings as LIVE.",
   "file": "CLAUDE.md",
   "id": "R3-0500",
   "line": 116,
@@ -6811,9 +6811,9 @@
   "other_location": "apps/desktop/AUDIT/2026-08-06-independent-audit.md:2177",
   "severity": "low",
   "src": "slice 1",
-  "suggested_fix": "Note in one of the two places which count was correct at b91f235.",
+  "suggested_fix": "Note in one of the two places which count was correct at 595594f.",
   "title": "The record gives two different counts and line lists for the setup-python pin in ci.yml",
-  "verify": "Line 1806 says the setup-python pin is 'used five times in ci.yml (lines 98, 111, 130, 154, 173)'; line 2177 says 'ci.yml:98, :111, :130, :154, :174, :191' (six, 174 not 173). Internal inconsistency confirmed; I did not check which matches ci.yml at b91f235. Not in either record."
+  "verify": "Line 1806 says the setup-python pin is 'used five times in ci.yml (lines 98, 111, 130, 154, 173)'; line 2177 says 'ci.yml:98, :111, :130, :154, :174, :191' (six, 174 not 173). Internal inconsistency confirmed; I did not check which matches ci.yml at 595594f. Not in either record."
  },
  {
   "already_recorded": false,
@@ -6879,7 +6879,7 @@
   "other_location": "/home/gevorg/os/apps/desktop/AUDIT/2026-08-06-remediation-audit.md:110",
   "severity": "low",
   "src": "slice 2",
-  "suggested_fix": "Correct to the one field count the code at 219c763 had.",
+  "suggested_fix": "Correct to the one field count the code at c509705 had.",
   "title": "Windows attested evidence is called 29-field and 28-field inside the same finding",
   "verify": "L1117 says 'the 29-field attested evidence'; L1134 says 'the 29-field attestation' and later '5 of 28 attested fields'; L110 says 'five of the 28 signed evidence fields'. The 10-01 entry at :382 concerns R-01's seven/six count, not this one."
  },
@@ -6905,7 +6905,7 @@
   "line": 2797,
   "severity": "low",
   "src": "slice 2",
-  "suggested_fix": "Note that the per-group counts are approximate, or recount once against the 219c763 snapshot.",
+  "suggested_fix": "Note that the per-group counts are approximate, or recount once against the c509705 snapshot.",
   "title": "§7 coverage gives different line counts for the same snapshot file in different groups (eight files, each off by one)",
   "verify": "Read the cited lines: run_live_turn.sh is 294 at L2759/2773/2831 and 295 at L2797; supervisor_ledger.sql 177 (L2732) vs 178 (L2771); run_supervisor.py 167 vs 168; build_tcb_pin_manifest.py 122 vs 121; AUDIT_LEDGER.md 70 vs 71; execution.rs 187 (L2743) vs 186 (L2783, L2888); tcb.rs 82 (L2836) vs 81 (L2888). Seven files confirmed, each off by one (cosmetic, likely trailing-newline counting); neither WHOLE_REPO_READ file has an entry for it."
  },
@@ -6913,7 +6913,7 @@
   "already_recorded": false,
   "category": "design-contradiction",
   "evidence": ":208 'Attacked with five forged chains through the real `derive_evidence_from_chain`', followed by cases (a) through (f) at :212-217; :297 '`attack_a02.py` — six forged chains through the real verifier | 4 refused, 1 accepted-by-design, 1 refused by `EvidenceMismatch`'.",
-  "file": "apps/desktop/AUDIT/2026-08-15-zero-trust-reaudit-0a9a1af.md",
+  "file": "apps/desktop/AUDIT/2026-08-15-zero-trust-reaudit-3844fef.md",
   "id": "R3-0513",
   "line": 208,
   "severity": "low",
@@ -6925,25 +6925,25 @@
  {
   "already_recorded": false,
   "category": "design-contradiction",
-  "evidence": ":223 '`apps/desktop/AUDIT/` holds reports for the first, third and fourth rounds.' git log: 2debb71 2026-08-06 added 2026-08-06-remediation-audit.md, which the third audit (:4-5, :13) names as 'the previous round'.",
-  "file": "apps/desktop/AUDIT/2026-08-17-sixth-audit-b16e572.md",
+  "evidence": ":223 '`apps/desktop/AUDIT/` holds reports for the first, third and fourth rounds.' git log: 5f44887 2026-08-06 added 2026-08-06-remediation-audit.md, which the third audit (:4-5, :13) names as 'the previous round'.",
+  "file": "apps/desktop/AUDIT/2026-08-17-sixth-audit-84cef03.md",
   "id": "R3-0514",
   "line": 223,
-  "other_location": "apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md:4",
+  "other_location": "apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md:4",
   "severity": "low",
   "src": "slice 3",
   "suggested_fix": "Note in the filing box that the second round's report (remediation-audit) was also present.",
   "title": "A-06 says the directory holds reports for the first, third and fourth rounds, omitting the second, which was filed on 2026-08-06",
-  "verify": "Sixth report :223 says the directory 'holds reports for the first, third and fourth rounds'; git ls-tree b16e572 shows 2026-08-06-remediation-audit.md present (added 2026-08-06, de38cb1), which the third report :4 names as the previous round's brief and the archive :156 calls the Round-2 remediation audit. No entry for sixth-audit :223 found in either WHOLE_REPO_READ file."
+  "verify": "Sixth report :223 says the directory 'holds reports for the first, third and fourth rounds'; git ls-tree 84cef03 shows 2026-08-06-remediation-audit.md present (added 2026-08-06, 72908b2), which the third report :4 names as the previous round's brief and the archive :156 calls the Round-2 remediation audit. No entry for sixth-audit :223 found in either WHOLE_REPO_READ file."
  },
  {
   "already_recorded": false,
   "category": "design-contradiction",
   "evidence": "Tenth :36 '| `I-07` | P2 | the roadmap status board disagreed with its own checkboxes'. Ninth :299 '### `I-07` (P3) — the roadmap status board disagrees with its own checkboxes'. The archive (:929) also carries P2.",
-  "file": "apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md",
+  "file": "apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md",
   "id": "R3-0515",
   "line": 36,
-  "other_location": "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md:299",
+  "other_location": "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md:299",
   "severity": "low",
   "src": "slice 3",
   "suggested_fix": "Restore P3 in the archive row, or record who raised the severity and why.",
@@ -6957,7 +6957,7 @@
   "file": "apps/desktop/AUDIT/AUDIT_LEDGER.md",
   "id": "R3-0516",
   "line": 81,
-  "other_location": "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md:148",
+  "other_location": "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md:148",
   "severity": "low",
   "src": "slice 3",
   "suggested_fix": "Rename the heading to 'The ninth round's findings, as decided by the tenth'.",
@@ -8173,7 +8173,7 @@
   "src": "slice 22",
   "suggested_fix": "Retitle as a builder-side agent review and state it is not the standing independent verdict.",
   "title": "File titles itself the 'independent audit verdict: GREEN'; the builder audit and the ledger say no independent audit passed and the verdict is RED",
-  "verify": "VERDICT.md:1,4-6,56 titles itself 'independent audit verdict' / 'independent zero-trust audit standing in for the external Architect gate' and 'VERDICT: GREEN', and by its own line 5 it is agent passes plus a builder review; BUILDER_AUDIT:9-11 (same commit de38cb1) says the independent audit is still a prerequisite and current_state.json says no independent audit has passed with code_audit.gate ARCHITECT_PENDING. Lowered: its GREEN is scoped to the Windows kit and the corrections block already says it overstates."
+  "verify": "VERDICT.md:1,4-6,56 titles itself 'independent audit verdict' / 'independent zero-trust audit standing in for the external Architect gate' and 'VERDICT: GREEN', and by its own line 5 it is agent passes plus a builder review; BUILDER_AUDIT:9-11 (same commit 72908b2) says the independent audit is still a prerequisite and current_state.json says no independent audit has passed with code_audit.gate ARCHITECT_PENDING. Lowered: its GREEN is scoped to the Windows kit and the corrections block already says it overstates."
  },
  {
   "already_recorded": false,
@@ -9067,7 +9067,7 @@
   "src": "slice 10",
   "suggested_fix": "Define one DEMONSTRATION_CUSTODY constant beside TRUSTED_VERIFIED and use it in all three.",
   "title": "'demonstration_custody' is a bare literal in three production places while trusted_verified is a named constant",
-  "verify": "The literal stands at governed_message_store.rs:22, in the SQL CHECK at :59 and at production_trust.rs:80, while trusted_verified is the constant TRUSTED_VERIFIED; a nit, not a behaviour. The 10-01 entry at governed_message_store.rs:22 was 'sha256_hex is implemented twice' (recovered from 73e5ccb), a different defect."
+  "verify": "The literal stands at governed_message_store.rs:22, in the SQL CHECK at :59 and at production_trust.rs:80, while trusted_verified is the constant TRUSTED_VERIFIED; a nit, not a behaviour. The 10-01 entry at governed_message_store.rs:22 was 'sha256_hex is implemented twice' (recovered from 1961bd7), a different defect."
  },
  {
   "already_recorded": false,
@@ -12132,7 +12132,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "line 22 '(Wave 3b-0 design merged PR #30; Wave 3b-1 in progress on PR #31/#32, not merged)'. apps/desktop/SECURITY.md:15 '#31 merged 2026-07-27 as 9c1b901, #32 closed unmerged'; `git log -1 9c1b901` resolves on main.",
+  "evidence": "line 22 '(Wave 3b-0 design merged PR #30; Wave 3b-1 in progress on PR #31/#32, not merged)'. apps/desktop/SECURITY.md:15 '#31 merged 2026-07-27 as 748c508, #32 closed unmerged'; `git log -1 748c508` resolves on main.",
   "file": "MASTER_EXECUTION_ROADMAP.md",
   "id": "R3-0888",
   "line": 22,
@@ -12140,8 +12140,8 @@
   "severity": "low",
   "src": "slice 0",
   "suggested_fix": "Correct the clause or remove the dated status block.",
-  "title": "Roadmap says Wave 3b-1 is 'in progress on PR #31/#32, not merged'; #31 merged as 9c1b901 and #32 closed",
-  "verify": "MASTER_EXECUTION_ROADMAP.md:22 still says 'Wave 3b-1 in progress on PR #31/#32, not merged'; `git log -1 9c1b901` resolves to 'Wave 3b-1 ... (#31)' on main. The block is dated 2026-07-27, so low. The 10-01 entry at this file's :20 covers only the phase-status sentence, not this one."
+  "title": "Roadmap says Wave 3b-1 is 'in progress on PR #31/#32, not merged'; #31 merged as 748c508 and #32 closed",
+  "verify": "MASTER_EXECUTION_ROADMAP.md:22 still says 'Wave 3b-1 in progress on PR #31/#32, not merged'; `git log -1 748c508` resolves to 'Wave 3b-1 ... (#31)' on main. The block is dated 2026-07-27, so low. The 10-01 entry at this file's :20 covers only the phase-status sentence, not this one."
  },
  {
   "already_recorded": false,
@@ -12257,16 +12257,16 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "Ledger :51-53 'phases 1, 2, 8 and 9 each hold Definition-of-Done rows open for stated reasons'. docs/roadmap/phase-2.md today: 11 '[x]', 0 '[ ]' (lines 125-137); git log: 'a94513e T-021d: PHASE 2 CLOSED, 11/11 (#257)'. It had 3 open boxes at 75fca65.",
+  "evidence": "Ledger :51-53 'phases 1, 2, 8 and 9 each hold Definition-of-Done rows open for stated reasons'. docs/roadmap/phase-2.md today: 11 '[x]', 0 '[ ]' (lines 125-137); git log: 'b7d4a05 T-021d: PHASE 2 CLOSED, 11/11 (#257)'. It had 3 open boxes at f4ffc8d.",
   "file": "apps/desktop/AUDIT/AUDIT_LEDGER.md",
   "id": "R3-0897",
   "line": 52,
   "other_location": "docs/roadmap/phase-2.md:125-137",
   "severity": "low",
   "src": "slice 3",
-  "suggested_fix": "Date the sentence to 75fca65 or drop phase 2 from it.",
+  "suggested_fix": "Date the sentence to f4ffc8d or drop phase 2 from it.",
   "title": "The ledger says phase 2 holds open Definition-of-Done rows; phase 2 is fully checked today",
-  "verify": "Ledger :52 says in the present tense that 'phases 1, 2, 8 and 9 each hold Definition-of-Done rows open'; docs/roadmap/phase-2.md today has 11 '[x]' and 0 '[ ]', and commit a94513e is 'PHASE 2 CLOSED, 11/11 (#257)'. The sentence was true at the round's head 75fca65, so low; no entry for it found in either WHOLE_REPO_READ file."
+  "verify": "Ledger :52 says in the present tense that 'phases 1, 2, 8 and 9 each hold Definition-of-Done rows open'; docs/roadmap/phase-2.md today has 11 '[x]' and 0 '[ ]', and commit b7d4a05 is 'PHASE 2 CLOSED, 11/11 (#257)'. The sentence was true at the round's head f4ffc8d, so low; no entry for it found in either WHOLE_REPO_READ file."
  },
  {
   "already_recorded": false,
@@ -12294,7 +12294,7 @@
   "src": "slice 8",
   "suggested_fix": "Say the six are registered but not grantable to the window, in the gate's own words.",
   "title": "SECURITY.md calls the six unlisted commands 'allowlisted as ungated'; they are refused to the window",
-  "verify": "apps/desktop/SECURITY.md:13 reads '(six registered commands are explicitly allowlisted as ungated — the gate prints them)'; the gate's GREEN line says the window is refused them. The wording was introduced by #314 itself (git show 712163a); the 10-01 entry at SECURITY.md:13 ('fixed, #314') is the earlier count defect, and the root defect is recorded only under tools/check_capabilities.py."
+  "verify": "apps/desktop/SECURITY.md:13 reads '(six registered commands are explicitly allowlisted as ungated — the gate prints them)'; the gate's GREEN line says the window is refused them. The wording was introduced by #314 itself (git show 546c3f0); the 10-01 entry at SECURITY.md:13 ('fixed, #314') is the earlier count defect, and the root defect is recorded only under tools/check_capabilities.py."
  },
  {
   "already_recorded": false,
@@ -12545,7 +12545,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "AGENT_FLOWS:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 'T-145 wave 1' changed this file (16 lines).",
+  "evidence": "AGENT_FLOWS:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 'T-145 wave 1' changed this file (16 lines).",
   "file": "apps/desktop/docs/product/AGENT_FLOWS.md",
   "id": "R3-0918",
   "line": 5,
@@ -12553,12 +12553,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "AGENT_FLOWS.md:5 reads 'Last updated: 2026-07-19'; git log shows 712163a (2026-10-02, #314) changed the file by 16 lines."
+  "verify": "AGENT_FLOWS.md:5 reads 'Last updated: 2026-07-19'; git log shows 546c3f0 (2026-10-02, #314) changed the file by 16 lines."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "CHAT_FLOWS:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (6 lines).",
+  "evidence": "CHAT_FLOWS:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (6 lines).",
   "file": "apps/desktop/docs/product/CHAT_FLOWS.md",
   "id": "R3-0919",
   "line": 5,
@@ -12566,7 +12566,7 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "CHAT_FLOWS.md:5 reads 'Last updated: 2026-07-19'; 712163a (2026-10-02) changed the file by 6 lines."
+  "verify": "CHAT_FLOWS.md:5 reads 'Last updated: 2026-07-19'; 546c3f0 (2026-10-02) changed the file by 6 lines."
  },
  {
   "already_recorded": false,
@@ -12585,7 +12585,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "DAF:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (10 lines).",
+  "evidence": "DAF:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (10 lines).",
   "file": "apps/desktop/docs/product/DECISION_APPROVAL_FLOWS.md",
   "id": "R3-0921",
   "line": 5,
@@ -12593,7 +12593,7 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "DECISION_APPROVAL_FLOWS.md:5 reads 'Last updated: 2026-07-19'; 712163a (2026-10-02) changed the file by 10 lines."
+  "verify": "DECISION_APPROVAL_FLOWS.md:5 reads 'Last updated: 2026-07-19'; 546c3f0 (2026-10-02) changed the file by 10 lines."
  },
  {
   "already_recorded": false,
@@ -12626,7 +12626,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "GROUP_CHAT:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (2 lines).",
+  "evidence": "GROUP_CHAT:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (2 lines).",
   "file": "apps/desktop/docs/product/GROUP_CHAT.md",
   "id": "R3-0924",
   "line": 5,
@@ -12634,12 +12634,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "GROUP_CHAT.md:5 reads 'Last updated: 2026-07-19'; 712163a (2026-10-02) changed the file by 2 lines."
+  "verify": "GROUP_CHAT.md:5 reads 'Last updated: 2026-07-19'; 546c3f0 (2026-10-02) changed the file by 2 lines."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "IA:5 '**Last updated:** 2026-07-19.' and :245 '**Վերջին թարմացում:** 2026-07-19'. git log: 712163a 2026-10-02 changed this file (34 lines).",
+  "evidence": "IA:5 '**Last updated:** 2026-07-19.' and :245 '**Վերջին թարմացում:** 2026-07-19'. git log: 546c3f0 2026-10-02 changed this file (34 lines).",
   "file": "apps/desktop/docs/product/INFORMATION_ARCHITECTURE.md",
   "id": "R3-0925",
   "line": 5,
@@ -12648,12 +12648,12 @@
   "src": "slice 5",
   "suggested_fix": "Set both dates to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' (also the Armenian header) — the file was edited on 2026-10-02",
-  "verify": "Opened apps/desktop/docs/product/INFORMATION_ARCHITECTURE.md: line 5 reads '**Last updated:** 2026-07-19.' and line 245 '**Վերջին թարմացում:** 2026-07-19։'. git log shows 712163a (2026-10-02, #314) changed the file (19 insertions, 15 deletions). Neither WHOLE_REPO_READ document has an entry about the date header at this path (the only entry is :95, breakpoint tables)."
+  "verify": "Opened apps/desktop/docs/product/INFORMATION_ARCHITECTURE.md: line 5 reads '**Last updated:** 2026-07-19.' and line 245 '**Վերջին թարմացում:** 2026-07-19։'. git log shows 546c3f0 (2026-10-02, #314) changed the file (19 insertions, 15 deletions). Neither WHOLE_REPO_READ document has an entry about the date header at this path (the only entry is :95, breakpoint tables)."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "NAVIGATION:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (9 lines).",
+  "evidence": "NAVIGATION:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (9 lines).",
   "file": "apps/desktop/docs/product/NAVIGATION.md",
   "id": "R3-0926",
   "line": 5,
@@ -12661,12 +12661,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "NAVIGATION.md line 5 reads '**Last updated:** 2026-07-19.'; git log shows 712163a (2026-10-02) changed it (7 insertions, 2 deletions). The only recorded entry at this path is :11 'fixed, #314', which is not the date header."
+  "verify": "NAVIGATION.md line 5 reads '**Last updated:** 2026-07-19.'; git log shows 546c3f0 (2026-10-02) changed it (7 insertions, 2 deletions). The only recorded entry at this path is :11 'fixed, #314', which is not the date header."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "PTF:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (22 lines).",
+  "evidence": "PTF:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (22 lines).",
   "file": "apps/desktop/docs/product/PROJECT_TASK_FLOWS.md",
   "id": "R3-0927",
   "line": 5,
@@ -12674,12 +12674,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "PROJECT_TASK_FLOWS.md line 5 reads '**Last updated:** 2026-07-19.'; 712163a (2026-10-02) changed 22 lines. The only recorded entry at this path is :74, not the date header."
+  "verify": "PROJECT_TASK_FLOWS.md line 5 reads '**Last updated:** 2026-07-19.'; 546c3f0 (2026-10-02) changed 22 lines. The only recorded entry at this path is :74, not the date header."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "SCREEN_INVENTORY:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (7 lines).",
+  "evidence": "SCREEN_INVENTORY:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (7 lines).",
   "file": "apps/desktop/docs/product/SCREEN_INVENTORY.md",
   "id": "R3-0928",
   "line": 5,
@@ -12687,12 +12687,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "SCREEN_INVENTORY.md line 5 reads '**Last updated:** 2026-07-19.'; 712163a (2026-10-02) changed it (4 insertions, 3 deletions). The only recorded entry at this path is :52, not the date header."
+  "verify": "SCREEN_INVENTORY.md line 5 reads '**Last updated:** 2026-07-19.'; 546c3f0 (2026-10-02) changed it (4 insertions, 3 deletions). The only recorded entry at this path is :52, not the date header."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "SEARCH:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (2 lines).",
+  "evidence": "SEARCH:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (2 lines).",
   "file": "apps/desktop/docs/product/SEARCH_AND_COMMAND_PALETTE.md",
   "id": "R3-0929",
   "line": 5,
@@ -12700,12 +12700,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "SEARCH_AND_COMMAND_PALETTE.md line 5 reads '**Last updated:** 2026-07-19.'; 712163a (2026-10-02) changed one line of it. Neither WHOLE_REPO_READ document mentions this path."
+  "verify": "SEARCH_AND_COMMAND_PALETTE.md line 5 reads '**Last updated:** 2026-07-19.'; 546c3f0 (2026-10-02) changed one line of it. Neither WHOLE_REPO_READ document mentions this path."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "STATES:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (12 lines).",
+  "evidence": "STATES:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (12 lines).",
   "file": "apps/desktop/docs/product/STATES.md",
   "id": "R3-0930",
   "line": 5,
@@ -12713,12 +12713,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "STATES.md line 5 reads '**Last updated:** 2026-07-19.'; 712163a (2026-10-02) changed it (6 insertions, 6 deletions). Recorded entries at this path are :2, :25, :87, :140 (all 'fixed, #314'); none is line 5, and no entry in either document mentions a 'Last updated' header on a product doc."
+  "verify": "STATES.md line 5 reads '**Last updated:** 2026-07-19.'; 546c3f0 (2026-10-02) changed it (6 insertions, 6 deletions). Recorded entries at this path are :2, :25, :87, :140 (all 'fixed, #314'); none is line 5, and no entry in either document mentions a 'Last updated' header on a product doc."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "USER_FLOWS:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (4 lines).",
+  "evidence": "USER_FLOWS:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (4 lines).",
   "file": "apps/desktop/docs/product/USER_FLOWS.md",
   "id": "R3-0931",
   "line": 5,
@@ -12726,12 +12726,12 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "USER_FLOWS.md line 5 reads '**Last updated:** 2026-07-19.'; 712163a (2026-10-02) changed it (2 insertions, 2 deletions). The only recorded entry at this path is :57, not the date header."
+  "verify": "USER_FLOWS.md line 5 reads '**Last updated:** 2026-07-19.'; 546c3f0 (2026-10-02) changed it (2 insertions, 2 deletions). The only recorded entry at this path is :57, not the date header."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "WORKSPACES:5 '**Last updated:** 2026-07-19.' git log: 712163a 2026-10-02 changed this file (7 lines).",
+  "evidence": "WORKSPACES:5 '**Last updated:** 2026-07-19.' git log: 546c3f0 2026-10-02 changed this file (7 lines).",
   "file": "apps/desktop/docs/product/WORKSPACES.md",
   "id": "R3-0932",
   "line": 5,
@@ -12739,7 +12739,7 @@
   "src": "slice 5",
   "suggested_fix": "Set the date to the last edit or drop the field.",
   "title": "'Last updated: 2026-07-19' — the file was edited on 2026-10-02",
-  "verify": "WORKSPACES.md line 5 reads '**Last updated:** 2026-07-19.'; 712163a (2026-10-02) changed it (5 insertions, 2 deletions). The only recorded entry at this path is :1, not the date header."
+  "verify": "WORKSPACES.md line 5 reads '**Last updated:** 2026-07-19.'; 546c3f0 (2026-10-02) changed it (5 insertions, 2 deletions). The only recorded entry at this path is :1, not the date header."
  },
  {
   "already_recorded": false,
@@ -12758,7 +12758,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": ":5 \"**Last updated:** 2026-07-19.\" `git log -- docs/product/WORKSPACE_FLOWS.md` newest commit: 2026-10-02 712163a (T-145 wave 1, #314); the text itself cites #67 and the Bridge route, both later than July 19.",
+  "evidence": ":5 \"**Last updated:** 2026-07-19.\" `git log -- docs/product/WORKSPACE_FLOWS.md` newest commit: 2026-10-02 546c3f0 (T-145 wave 1, #314); the text itself cites #67 and the Bridge route, both later than July 19.",
   "file": "apps/desktop/docs/product/WORKSPACE_FLOWS.md",
   "id": "R3-0934",
   "line": 5,
@@ -12766,7 +12766,7 @@
   "src": "slice 6",
   "suggested_fix": "Update the date in the same commit as any content change, or drop the field.",
   "title": "\"Last updated: 2026-07-19\" on a document last changed on 2026-10-02",
-  "verify": "apps/desktop/docs/product/WORKSPACE_FLOWS.md:5 reads \"**Last updated:** 2026-07-19.\"; `git log` for the file shows 712163a on 2026-10-02 (#314) after the 2026-07-20 import, and line 1 itself cites #67."
+  "verify": "apps/desktop/docs/product/WORKSPACE_FLOWS.md:5 reads \"**Last updated:** 2026-07-19.\"; `git log` for the file shows 546c3f0 on 2026-10-02 (#314) after the 2026-07-20 import, and line 1 itself cites #67."
  },
  {
   "already_recorded": false,
@@ -12784,7 +12784,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": ":16 \"T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit)\". config/current_state.json: CURRENT_DESIGN_CANDIDATE \"rev-30\", design_pr 48; apps/desktop/SECURITY.md: \"#31 **merged** 2026-07-27 as `9c1b901`\". `tracking` is the one field the gate requires for this state.",
+  "evidence": ":16 \"T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit)\". config/current_state.json: CURRENT_DESIGN_CANDIDATE \"rev-30\", design_pr 48; apps/desktop/SECURITY.md: \"#31 **merged** 2026-07-27 as `748c508`\". `tracking` is the one field the gate requires for this state.",
   "file": "apps/desktop/src-tauri/ai-surface-policy.json",
   "id": "R3-0936",
   "line": 16,
@@ -12793,12 +12793,12 @@
   "src": "slice 6",
   "suggested_fix": "Point the tracking string at the live item (rev-30 / PR #48 and the open Phase-1 row).",
   "title": "stream_reply's tracking reference names rev-26 and PR #31 as 'PENDING Architect design audit'",
-  "verify": "ai-surface-policy.json:16 `tracking` reads \"T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit)\"; config/current_state.json has CURRENT_DESIGN_CANDIDATE rev-30 and design_pr 48, and apps/desktop/SECURITY.md says \"#31 **merged** 2026-07-27 as `9c1b901`\". Lowered to low: tools/check_ai_surfaces.py:212 only requires the string to be non-empty, so nothing acts on its content."
+  "verify": "ai-surface-policy.json:16 `tracking` reads \"T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit)\"; config/current_state.json has CURRENT_DESIGN_CANDIDATE rev-30 and design_pr 48, and apps/desktop/SECURITY.md says \"#31 **merged** 2026-07-27 as `748c508`\". Lowered to low: tools/check_ai_surfaces.py:212 only requires the string to be non-empty, so nothing acts on its content."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": ":16 '\"tracking\": \"T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit)…'. apps/desktop/SECURITY.md: '#31 **merged** 2026-07-27 as `9c1b901`'; status tokens: CURRENT_DESIGN_CANDIDATE: rev-30.",
+  "evidence": ":16 '\"tracking\": \"T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit)…'. apps/desktop/SECURITY.md: '#31 **merged** 2026-07-27 as `748c508`'; status tokens: CURRENT_DESIGN_CANDIDATE: rev-30.",
   "file": "apps/desktop/src-tauri/ai-surface-policy.json",
   "id": "R3-0937",
   "line": 16,
@@ -12807,7 +12807,7 @@
   "src": "sweep dead-and-placeholder",
   "suggested_fix": "Update the tracking text to rev-30 and the merged state.",
   "title": "stream_reply tracking note still says 'rev-26, PR #31 PENDING Architect design audit'",
-  "verify": "ai-surface-policy.json:16 still reads 'rev-26, PR #31 PENDING Architect design audit', while apps/desktop/SECURITY.md:15 says '#31 **merged** 2026-07-27 as `9c1b901`'. Not in either record."
+  "verify": "ai-surface-policy.json:16 still reads 'rev-26, PR #31 PENDING Architect design audit', while apps/desktop/SECURITY.md:15 says '#31 **merged** 2026-07-27 as `748c508`'. Not in either record."
  },
  {
   "already_recorded": false,
@@ -16401,12 +16401,12 @@
   "file": "docs/OWNER_ACTION_REQUIRED.md",
   "id": "R3-1200",
   "line": 1059,
-  "other_location": "apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md:55-62",
+  "other_location": "apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md:55-62",
   "severity": "low",
   "src": "slice 3",
   "suggested_fix": "Cite the document that actually contains F13, or remove the attribution to the tenth audit.",
   "title": "The OWNER page cites a tenth-audit finding `F13` that exists in no audit report or ledger",
-  "verify": "docs/OWNER_ACTION_REQUIRED.md:1059 reads 'The tenth round's audit found them (`F13`)'; git grep -w F13 over the whole tree returns only that line, and the tenth report has zero matches for 'licen' or 'font' (its findings are I-01..I-13 verdicts and J-01..J-04). Introduced by 93df81f; an unresolvable citation, not a behaviour defect, so low. Not found in either WHOLE_REPO_READ file (R2-0915 at :1065 is a different defect)."
+  "verify": "docs/OWNER_ACTION_REQUIRED.md:1059 reads 'The tenth round's audit found them (`F13`)'; git grep -w F13 over the whole tree returns only that line, and the tenth report has zero matches for 'licen' or 'font' (its findings are I-01..I-13 verdicts and J-01..J-04). Introduced by c230d3b; an unresolvable citation, not a behaviour defect, so low. Not found in either WHOLE_REPO_READ file (R2-0915 at :1065 is a different defect)."
  },
  {
   "already_recorded": false,
@@ -16808,7 +16808,7 @@
   "src": "slice 11",
   "suggested_fix": "Delete the line; the regex-length behaviour is already pinned by an_eight_digit_token_count_is_refused_by_the_REGEX_not_by_the_range.",
   "title": "An assertion on a string literal's length cannot fail",
-  "verify": "Opened governed_prepare.rs:837 on main @ 6743d7c: `assert_eq!(\"1048576\".len(), 7);` is there, inside the_widest_expressible_config_is_349_bytes_against_a_65536_cap. It is a constant expression tied to no constant or regex in the code, so it cannot go red."
+  "verify": "Opened governed_prepare.rs:837 on main @ 5c98e29: `assert_eq!(\"1048576\".len(), 7);` is there, inside the_widest_expressible_config_is_349_bytes_against_a_65536_cap. It is a constant expression tied to no constant or regex in the code, so it cannot go red."
  },
  {
   "already_recorded": false,
@@ -18263,7 +18263,7 @@
   "src": "slice 32",
   "suggested_fix": "Exclude values that parseTimestamp() accepts instead of matching the substring 'T0'.",
   "title": "Timestamp filter `!value.includes('T0')` no longer filters timestamps",
-  "verify": "The filter at pages.browser.spec.tsx:233 dates from #157 (fbd83a4) when T0 was '2026-08-19T09:00:00Z'; #317 (8a042eb) made T0/T1 epoch text ('1787130000000'/'1787135400000'), which pass `length >= 8 && !includes('T0')`, as does ISO1; only ISO0 is excluded. Note T1 ('…T10:30…') was never excluded even originally, and the assertion is `some`, so the effect is small."
+  "verify": "The filter at pages.browser.spec.tsx:233 dates from #157 (d1d7701) when T0 was '2026-08-19T09:00:00Z'; #317 (c20e546) made T0/T1 epoch text ('1787130000000'/'1787135400000'), which pass `length >= 8 && !includes('T0')`, as does ISO1; only ISO0 is excluded. Note T1 ('…T10:30…') was never excluded even originally, and the assertion is `some`, so the effect is small."
  },
  {
   "already_recorded": false,

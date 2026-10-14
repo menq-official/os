@@ -88,7 +88,7 @@ was a DATED entry in ``config/deferred-enforcement.json`` rather than an intenti
 "once the queue drains" is satisfied by never adding a task and a date is not.
 
 **The deferral was honoured.** Measured: the context was promoted and the deferral entry removed
-in the SAME commit — ``157e292`` (#220, 2026-09-19). What was left behind was this paragraph,
+in the SAME commit — ``d79262a`` (#220, 2026-09-19). What was left behind was this paragraph,
 which went on describing the deferral, and a sentence in the RED output asserting that the
 context was "NOT in config/required-checks.json". Both were false for a day before an audit
 caught them, which is the whole reason the status line below is READ from the two config files
@@ -118,7 +118,7 @@ def _enforcement_line(root: pathlib.Path) -> str:
 
     This used to be a sentence, and the sentence was false for a day: it claimed the context was absent
     from ``required-checks.json`` and covered by a dated deferral, when the context had been promoted and
-    the deferral removed in the same commit (``157e292``, #220). A control that describes its own
+    the deferral removed in the same commit (``d79262a``, #220). A control that describes its own
     enforcement from memory is the same defect one level up from the one this gate exists to catch, so it
     is derived.
 

@@ -5,7 +5,7 @@ verification core it depends on. This is the independent zero-trust audit standi
 Architect gate (Owner-directed). It reflects **three** independent adversarial agent passes plus a
 builder review, over the branch `feat/windows-broker-machineproof`.
 
-> **Builder's note, 2026-10-14 (cockpit read R3-0603) — this was not an independent audit, and its GREEN is not the standing verdict.** By the paragraph above it is three agent passes plus a builder review. `BUILDER_AUDIT_VERDICT_2026-08-04.md` beside it, first committed in the same commit (`git log --reverse` on either file starts at `de38cb1`), says of that work that it "is **not** the independent external Architect CODE-audit"; `config/current_state.json` records `code_audit.authority` as "the BUILDER's evidence only" and `code_audit.gate` as `ARCHITECT_PENDING`; the independent verdict is in `apps/desktop/AUDIT/AUDIT_LEDGER.md` and is RED. The text above is left as written.
+> **Builder's note, 2026-10-14 (cockpit read R3-0603) — this was not an independent audit, and its GREEN is not the standing verdict.** By the paragraph above it is three agent passes plus a builder review. `BUILDER_AUDIT_VERDICT_2026-08-04.md` beside it, first committed in the same commit (`git log --reverse` on either file starts at `72908b2`), says of that work that it "is **not** the independent external Architect CODE-audit"; `config/current_state.json` records `code_audit.authority` as "the BUILDER's evidence only" and `code_audit.gate` as `ARCHITECT_PENDING`; the independent verdict is in `apps/desktop/AUDIT/AUDIT_LEDGER.md` and is RED. The text above is left as written.
 
 > # CORRECTIONS — 2026-08-10 (remediation audit **R-19**)
 >
@@ -16,7 +16,7 @@ builder review, over the branch `feat/windows-broker-machineproof`.
 > rather than deleted, because this file is a record and a document that quietly repairs itself is
 > worse than one that is wrong out loud.
 >
-> **Builder's note, 2026-10-14 (cockpit read R3-1082) — "two facts" and "two more" make four, and the block written with that sentence lists five.** `git show b46a6ab:apps/desktop/src-tauri/win-live/proof/WINDOWS_BROKER_AUDIT_VERDICT.md` has corrections numbered 1 to 5, so re-checking turned up three more; 6 and 7 below were added on 2026-10-13. The text above is left as written.
+> **Builder's note, 2026-10-14 (cockpit read R3-1082) — "two facts" and "two more" make four, and the block written with that sentence lists five.** `git show 4f1bbb7:apps/desktop/src-tauri/win-live/proof/WINDOWS_BROKER_AUDIT_VERDICT.md` has corrections numbered 1 to 5, so re-checking turned up three more; 6 and 7 below were added on 2026-10-13. The text above is left as written.
 >
 > **1. "it does not even link this kit" — FALSE.** `apps/desktop/src-tauri/Cargo.toml` carries
 > `[target.'cfg(windows)'.dependencies] brops-win-live = { path = "win-live" }`, and TWO shipped
@@ -115,7 +115,7 @@ resolution, never a hop reply:
 *(Read with the CORRECTIONS block at the top of this file: four of these rows overstate what the code
 does, and the remediation audit's R-19 is exactly that overstatement.)*
 
-> **Builder's note, 2026-10-14 (cockpit read R3-1083) — five rows of this table carry a correction, not four.** Counted in the table below, and the same in `b46a6ab`, the commit that wrote "four": P2 and R1 (correction 4), R3 (correction 2), Seed custody (correction 3), Shipped honesty (correction 1). Four is the number of corrections those rows cite. The text above is left as written.
+> **Builder's note, 2026-10-14 (cockpit read R3-1083) — five rows of this table carry a correction, not four.** Counted in the table below, and the same in `4f1bbb7`, the commit that wrote "four": P2 and R1 (correction 4), R3 (correction 2), Seed custody (correction 3), Shipped honesty (correction 1). Four is the number of corrections those rows cite. The text above is left as written.
 
 | Finding | Status |
 |---|---|
@@ -153,7 +153,7 @@ These are honest limitations of a software-only proof kit; the gate stays closed
    any file — defeating any software custody — so hardware monotonic/TPM-backed freshness remains the answer
    for that (explicitly out of scope, same class as "admin defeats DPAPI").
 
-   > **Builder's note, 2026-10-14 (cockpit read R3-1084) — there was no `floor.sig` file at this record's commit, and the floor's signature is not tamper-evidence.** In `de38cb1` the signature is the `sig` field of `floor.json` (`win-live/src/resolver.rs:213`, `v.get("sig")`; row D of the table above says the same: "ONE self-contained signed file"), and `resolver.rs:147` in that commit says the signing key is a public source constant, so the signature detects corruption only (correction 4). The text above is left as written.
+   > **Builder's note, 2026-10-14 (cockpit read R3-1084) — there was no `floor.sig` file at this record's commit, and the floor's signature is not tamper-evidence.** In `72908b2` the signature is the `sig` field of `floor.json` (`win-live/src/resolver.rs:213`, `v.get("sig")`; row D of the table above says the same: "ONE self-contained signed file"), and `resolver.rs:147` in that commit says the signing key is a public source constant, so the signature detects corruption only (correction 4). The text above is left as written.
 
 Bottom line: **for the question the gate actually asks — can anything in scope forge a shipped
 `trusted_verified`? — the answer is no.** The kit is GREEN as an audited proof, and the enablement path is

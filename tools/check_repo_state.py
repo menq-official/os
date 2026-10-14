@@ -543,7 +543,7 @@ def _have_gh() -> bool:
 
 #: The fallback slug, used ONLY to name what a failed resolution was looking for. It is never the
 #: address a REST call is made against — see `_repo_slug()`.
-_REPO_FALLBACK = "menqstudio/OS"
+_REPO_FALLBACK = "menq-official/os"
 
 #: Resolved once per process. `None` means "not yet asked"; a resolved failure is cached as `False`
 #: so a repository with no `gh` context does not pay for three subprocess calls to learn it twice.
@@ -580,7 +580,7 @@ def live_main_ci_past_stale_pages(slug: str, declared: object) -> tuple[dict | N
 
     On 2026-10-02 the runs endpoint answered `branch=main` with a window months old seven
     times: four went into the mirror through `sync_active_pr.py` (T-161 refuses that now), and
-    three made THIS gate say "the newest is failure at 95c52c5" about a `main` that was green,
+    three made THIS gate say "the newest is failure at 79f5e42" about a `main` that was green,
     once in CI on a pull request that then needed a re-run. A re-run is a number, not a
     verdict; so the gate takes the reading again itself, and when the page stays stale it says
     THAT, by name, instead of blaming the mirror.
@@ -643,10 +643,10 @@ def _live_main_ci(slug: str) -> dict | None:
 def _repo_slug() -> str | None:
     """`owner/name` for this checkout, from `gh`, or `None` when it cannot be established.
 
-    **Eighth audit, `H-05`.** This was the literal `"menqstudio/OS"` while every GraphQL road in this
+    **Eighth audit, `H-05`.** This was the literal `"menq-official/os"` while every GraphQL road in this
     file — `gh pr view`, `gh pr list` — infers the slug from the git remote. In a fork the two roads
     therefore answered about **different repositories**: `gh pr view 7` would report the fork's PR #7
-    and the REST fallback would report `menqstudio/OS`'s PR #7, and nothing in the gate could tell.
+    and the REST fallback would report `menq-official/os`'s PR #7, and nothing in the gate could tell.
     The fallback exists so that one transport being down does not block every merge; a fallback that
     silently answers about somebody else's repository is worse than no fallback.
 

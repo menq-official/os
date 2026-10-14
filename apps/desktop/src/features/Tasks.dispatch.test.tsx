@@ -181,7 +181,7 @@ describe('Tasks — a dispatch produces a real contract-shaped assignment', () =
       contract_digest: digest,
       lease_id: 'lease-7',
       repository: {
-        full_name: 'menqstudio/OS', branch: 'wave/phase-push-1', worktree: '/repo',
+        full_name: 'menq-official/os', branch: 'wave/phase-push-1', worktree: '/repo',
         base_commit: commit, tree_identity: digest,
       },
     }));

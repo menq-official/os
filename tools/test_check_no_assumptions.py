@@ -88,7 +88,7 @@ class TheThreeWaysOut(unittest.TestCase):
 
     def test_a_line_that_names_its_evidence_is_not_flagged(self):
         for evidence in ("measured at 24 ms", "ran it twice", "it printed GREEN", "verified",
-                         "checked", "observed on the box", "git show 962743a", "git log -1",
+                         "checked", "observed on the box", "git show 27bff25", "git log -1",
                          "rev-parse HEAD", "cat-file -s", "see check_x.py:118", "88 tests",
                          "2437 OK", "1288 passed", "8446 bytes", "4034 lines"):
             with self.subTest(evidence=evidence):

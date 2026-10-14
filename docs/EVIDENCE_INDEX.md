@@ -29,8 +29,8 @@ ledger names the head each round judged.
 ## 2 · The audit rounds themselves
 
 Eleven rounds, in `apps/desktop/AUDIT/`. The current one is
-**[`apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`](../apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md)**
-— *"Eleventh round — independent code audit at `main` @ `e3fc507`"*, verdict RED with no P0.
+**[`apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md`](../apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md)**
+— *"Eleventh round — independent code audit at `main` @ `598400e`"*, verdict RED with no P0.
 Which round is current is the ledger's to say (§1).
 
 **What kind of independence these have, and what kind they lack.** The eleventh round is the
@@ -150,7 +150,7 @@ startup" and attributed it to `CLAUDE.md` §6, which no longer says that.)*
 **The standing verdict is RED, and the audits are AI sessions in an auditor role** —
 see §2 above for exactly what independence that is and is not. `CLAUDE.md` §7 rule 5:
 *"✅ means independently confirmed; ◑ means the Builder's own claim. Never promote your
-own work."* Work merged since the eleventh round's head (`e3fc507`) carries ◑.
+own work."* Work merged since the eleventh round's head (`598400e`) carries ◑.
 
 **All five residual engine items are OPEN**, O-1 the only HIGH — `check_residual_items`
 output in §4, inventory in `docs/PHASE_10_PRODUCTION_ITEMS.md`.

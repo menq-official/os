@@ -3,7 +3,7 @@
 `CLAUDE.md`'s continuous-documentation law already says the answer must always be yes:
 
     At every moment the repository must be sufficient for a brand-new Claude/GPT
-    session told only "Go to menqstudio/OS, read NEXT_CHAT.md and every file in
+    session told only "Go to menq-official/os, read NEXT_CHAT.md and every file in
     config/canonical-read-manifest.json, verify the exact GitHub HEAD/CI, and
     continue" -- and then continue correctly FROM GITHUB ALONE.
 
@@ -320,7 +320,7 @@ def canon_beside_main(root: pathlib.Path) -> list[str]:
     handoff is accepted when it names HEAD's parent, because a document cannot name the commit
     that contains it -- so on `main`, after the pull request that settled the canon has merged,
     the documents name the head BEFORE that merge and this gate is green. On 2026-10-03 it said
-    GREEN at `9bafc6e` over banners reading "`main` is at `9c1eb20`, the only thing open is
+    GREEN at `998a8b5` over banners reading "`main` is at `4c5c47d`, the only thing open is
     #337", with #337 merged. Both heads are printed side by side now, with the distance.
 
     Empty when they are the same commit: a pull-request branch whose handoff names the merge

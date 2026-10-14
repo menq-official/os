@@ -406,7 +406,7 @@ mod tests {
     /// A demonstration-custody run is a real chain run whose anchor proves nothing about who holds
     /// the root. It commits — the evidence that the chain ran is worth keeping — but it commits
     /// under its own label, and nothing downstream can mistake it for production.
-    /// The table as the release before `09b4803` created it: one trust state, by constraint.
+    /// The table as the release before `51a5519` created it: one trust state, by constraint.
     const FORMER_DDL: &str = "CREATE TABLE IF NOT EXISTS governed_messages (
             message_id     TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL,

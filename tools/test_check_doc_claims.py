@@ -1071,7 +1071,7 @@ class CountedClaimTests(unittest.TestCase):
         self.assertTrue(any("does not contain 22" in p for p in problems), problems)
 
     def test_a_superseded_number_inside_a_commit_sha_is_not_a_count(self):
-        """`main` at `999c988`: the banner names a merge base, and 999 was the frontend count once.
+        """`main` at `4dde579`: the banner names a merge base, and 999 was the frontend count once.
         A number glued to letters is part of a token, not a count -- on either side of it."""
         def problems_for(text):
             return self._write(
@@ -1080,7 +1080,7 @@ class CountedClaimTests(unittest.TestCase):
                                         "environments": {"ubuntu": {"ran": 1153, "skipped": 0}}},
                            "cited_in": ["d.md"], "superseded": [999]}},
                 {"d.md": text})
-        for harmless in ("1153 tests; `main` @ `999c988`", "1153 tests; head a7c999", "1153; build x999y"):
+        for harmless in ("1153 tests; `main` @ `4dde579`", "1153 tests; head a7c999", "1153; build x999y"):
             self.assertFalse(any("superseded value 999" in p for p in problems_for(harmless)), harmless)
         for stale in ("1153 tests, was 999", "1153; 999 tests", "1153 (999)", "999\n1153"):
             self.assertTrue(any("superseded value 999" in p for p in problems_for(stale)), stale)
@@ -1161,7 +1161,7 @@ class CountedClaimTests(unittest.TestCase):
         The five measured heads first named `9659281` — the branch commit the suites actually ran on.
         This repository squash-merges and deletes the branch, so that commit exists in the clone that
         made it and in no other: every local run passed and every CI job refused, which is the
-        "works on my machine" asymmetry in its purest form. The squash commit `9cc4d2c` has a
+        "works on my machine" asymmetry in its purest form. The squash commit `fb8d784` has a
         byte-identical tree, so the measurement holds there and a fresh checkout can resolve it.
         """
         claims = json.loads(

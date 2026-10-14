@@ -32,8 +32,8 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import check_repo_state as gate  # noqa: E402
 
-HEAD = "9c0888b7ead52f69e1a8005bca5898b0ea3de649"
-OTHER = "d745c50360a6902f7c23e75f0ecae6c67512eac8"
+HEAD = "b8dd68fe307a25d2213a2161c5a3f3faac63bf76"
+OTHER = "b7a3469bddb52b0c95303fdfbcd0afd52111c5d0"
 
 
 #: Two more heads, so a window can be built with a reading behind the newest run.
@@ -137,11 +137,11 @@ class MainCiReadingTests(unittest.TestCase):
 
 class StaleWindowTests(unittest.TestCase):
     """T-162. The runs endpoint answered `branch=main` from months ago, and this gate then
-    reported a green `main` as "the newest is failure at 95c52c5" — once in CI, where it cost a
+    reported a green `main` as "the newest is failure at 79f5e42" — once in CI, where it cost a
     re-run. Run ids only grow."""
 
     RECORDED = 36992048558
-    OLD = [("95c52c5" + "0" * 33, "failure", 35542745168), ("87bfe73" + "0" * 33, "success", 35542000000)]
+    OLD = [("79f5e42" + "0" * 33, "failure", 35542745168), ("2f1565d" + "0" * 33, "success", 35542000000)]
     NOW = [(HEAD, "success", RECORDED)]
     DECLARED = {"ci": {"head": HEAD, "conclusion": "success", "run_id": RECORDED, "note": ""}}
 

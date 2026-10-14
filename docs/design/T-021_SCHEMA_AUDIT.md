@@ -1,6 +1,6 @@
 # T-021 · audit of the `approval-request` schema, before the transport that carries it
 
-**Date** 2026-09-19 · **Head** `main` @ `ee6cf80` · **Subject**
+**Date** 2026-09-19 · **Head** `main` @ `94e68fa` · **Subject**
 `contracts/approval-request.schema.json` (vendored byte-identical at
 `engine/schemas/approval-request.schema.json`) · **Auditor role** delegated to Claude by the Owner.
 

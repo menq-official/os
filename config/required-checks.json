@@ -40,7 +40,8 @@
     "Spec · every § reference declares whether it is implemented",
     "Supervisor · durable-ledger DDL single-source gate (F-01)",
     "Trust anchor · no production root private in this tree",
-    "Trust provisioning + audit signer (both platforms) (ubuntu-latest)"
+    "Trust provisioning + audit signer (both platforms) (ubuntu-latest)",
+    "MenQ identity guard"
   ],
   "deliberately_excluded": {
     "AI-surface inventory gate": "Carries a `paths:` filter (.github/workflows/ai-surface.yml:9-15), so it does not report on a pull request that touches no Rust. GitHub treats a skipped required context as PENDING, so requiring it as-is would block every merge that does not touch apps/desktop/src-tauri/src/**. It can be required once the filter is removed or a no-op guard job reports in its place.",

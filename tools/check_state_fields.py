@@ -7,7 +7,7 @@
 The other twenty could, and did. The ninth independent audit's `I-06`:
 
     The machine mirror's prose drifted. `config/current_state.json.purpose` says "main is
-    at settled_at_main_head (b3010f6)" while that field is `d0bddc4` ... `check_repo_state.py`
+    at settled_at_main_head (458db6d)" while that field is `ff54fa6` ... `check_repo_state.py`
     is GREEN because it reads `settled_at_main_head` and `prs[]` and never these fields.
 
 That is the whole mechanism, and it is not carelessness. **A field nothing reads cannot be

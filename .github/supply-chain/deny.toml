@@ -1,4 +1,4 @@
-# deny.toml - cargo-deny policy for menqstudio/OS (Tauri host workspace).
+# deny.toml - cargo-deny policy for menq-official/os (Tauri host workspace).
 #
 # Consumed by .github/workflows/supply-chain.yml job `cargo-deny`:
 #   cargo deny --manifest-path apps/desktop/src-tauri/Cargo.toml \

@@ -1,6 +1,6 @@
 # Bro (harness) — Security Audit
 
-**Target:** `menqstudio/Bro` @ `979e564`
+**Target:** `menqstudio/Bro` @ `0712bbe`
 **Mode:** READ-ONLY. No source changed; findings + proposed patches only.
 **Method:** 7 parallel Fable 5 auditors (one per security subsystem) → Opus verification of every Critical/High against source, including reconciliation where two auditors disagreed on severity. Isolated clone.
 **Scale:** ~17,900 LOC Python (runtime/ + tools/) + 21 JSON schemas + signed control-plane config.

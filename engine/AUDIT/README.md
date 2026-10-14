@@ -1,6 +1,6 @@
 # AUDIT — Bro (harness)
 
-Security audit of **`menqstudio/Bro`** @ `979e564` — the agent-orchestration security-governance harness.
+Security audit of **`menqstudio/Bro`** @ `0712bbe` — the agent-orchestration security-governance harness.
 
 - **Mode:** READ-ONLY. Nothing was changed in the runtime; all tickets are *proposed* patches.
 - **Method:** 7 parallel Fable 5 auditors (one per security subsystem) → Opus verification of every Critical/High against source, including reconciling a Critical↔High disagreement.

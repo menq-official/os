@@ -1,6 +1,6 @@
 # The Builder's answers to the unfinished twelfth review
 
-The review itself is [`2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md`](./2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md),
+The review itself is [`2026-10-09-twelfth-audit-fd8e937-UNFINISHED.md`](./2026-10-09-twelfth-audit-fd8e937-UNFINISHED.md),
 kept as the reviewer left it. This file is the other side: what the Builder did with each finding.
 Every entry is ◑ — the Builder's own claim, read by no independent reviewer — and says whether the
 finding was reproduced before anything was changed.
@@ -11,7 +11,7 @@ reproduced below; none is fixed.
 
 ## Reproduced, not fixed
 
-All twenty engine findings were run on 2026-10-13 at `main` `2c12ddc`, each from a throwaway script
+All twenty engine findings were run on 2026-10-13 at `main` `87ef06c`, each from a throwaway script
 outside the repository that imported the engine's own modules and, where one exists, the test
 suite's own fixture. **No file under `engine/` was changed.** Each line says what was called and
 what came back. The scripts were not kept; every input is the reviewer's, quoted in the report.
@@ -188,7 +188,7 @@ Each of these changes a contract or picks a design, so none was changed.
   Not done: the refusal paths still settle best-effort (a lost write there leaves `live` until the
   stale reconciliation makes it `blocked`, which is what the reply already said); a failure of
   `COMMIT` itself is reported as blocked without re-reading what became durable.
-- **`L-35` (P3).** A broker database made by the release before `09b4803` kept the one-state
+- **`L-35` (P3).** A broker database made by the release before `51a5519` kept the one-state
   constraint, and a demonstration-custody turn failed there with `CommitReadbackMismatch` while a
   fresh database accepted it: reproduced with that release's own DDL, taken from history. Schema
   creation now reads back the table that is there: the current shape is left, the former one is

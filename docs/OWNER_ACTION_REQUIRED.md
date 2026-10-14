@@ -22,7 +22,7 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > draft, with two Windows installers: `BroPS_0.1.0_x64-setup.exe` (4,670,233 bytes) and
 > `BroPS_0.1.0_x64_en-US.msi` (6,467,584 bytes). Both were downloaded and read: **neither is
 > signed** — the `.exe` has an empty PE security directory and the `.msi` has no
-> `DigitalSignature` stream. The tag's commit is `fb304a2`, which is **not an ancestor of `main`**
+> `DigitalSignature` stream. The tag's commit is `4cfa5ca`, which is **not an ancestor of `main`**
 > (the release names the branch `feat/windows-broker-machineproof`). Download count: 0 on both.
 > `release.yml` has never run, so this was published by hand. The canon says the release refuses
 > to ship unsigned and that the production gate is shut; an unsigned installer marked *Latest* on
@@ -43,7 +43,7 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 >
 > **4. The Windows tools job (item 2 below) has met its condition six times over and is still not
 > required.** `Tools · gate self-tests on Windows (python)` concluded `success` on the six most
-> recent `ci` runs on `main` (`e9358e7` … `3c73d8b`). Promoting it means moving it from
+> recent `ci` runs on `main` (`c5428ca` … `5456c32`). Promoting it means moving it from
 > `deliberately_excluded` to `contexts` in `config/required-checks.json` AND adding it to live
 > branch protection **at the same moment** — `check_repo_state.py` compares the two, so either one
 > alone turns the gate RED. The session may not change repository rules; the file edit is one line
@@ -60,9 +60,9 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > `ArtifactStore.read_verified` into the refusal the design names. Small, and not to be done
 > without the audit: it changes what the signer answers on its trust boundary.
 >
-> **6. The independent audit — DONE 2026-10-09, the eleventh round.** It read `75fca65..e3fc507`
+> **6. The independent audit — DONE 2026-10-09, the eleventh round.** It read `f4ffc8d..598400e`
 > (128 commits, 916 files, 107,396 inserted lines) and returned RED; the banner below and the
-> ledger carry it. Everything merged after `e3fc507` is ◑ again. **Recommended: commission a second
+> ledger carry it. Everything merged after `598400e` is ◑ again. **Recommended: commission a second
 > pass limited to `engine/runtime` and `apps/desktop/src-tauri`, line by line** — this round ran
 > for about thirteen minutes and names what it did not read. A Builder cannot do this one:
 > a session auditing what it wrote is not independent.
@@ -76,7 +76,7 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > still wanted is the Owner's to say.
 
 > **2026-10-08 — settled: the repository is public again and `main` is protected (`T-168`).**
-> Read live on 2026-10-08, asked as the repository's owner: `GET /repos/menqstudio/OS` answers
+> Read live on 2026-10-08, asked as the repository's owner: `GET /repos/menq-official/os` answers
 > `"private": false`, and `GET /branches/main/protection` answers with **35** required contexts —
 > the same 35 as `config/required-checks.json`, none missing and none extra — `strict: true`,
 > `enforce_admins: true`, linear history, no force pushes, no deletions. `tools/check_repo_state.py`
@@ -124,16 +124,16 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > belonging to the runner; the reason is written beside it in that file. **That condition is now
 > MET and measured** — the job has been green on `main` three times running:
 >
->     main 9c76349  ci run 35426169236  ->  success
->     main 3772a65  ci run 35427124977  ->  success
->     main 68a2948  ci run 35427831438  ->  success
+>     main 8d01908  ci run 35426169236  ->  success
+>     main 5027aa5  ci run 35427124977  ->  success
+>     main a8ad151  ci run 35427831438  ->  success
 >
 > Its first run was green too, on `#232` itself. So the only thing left is moving the key from
 > `deliberately_excluded` into `contexts` and adding the context to live branch protection.
 >
 > **3. DONE 2026-09-29, on the Owner's instruction in `#286`.** Its deferral expired on 2026-09-27 and
 > turned `Repo-state` red on every pull request; the job was green on `main` five runs running
-> (`1eddc57`…`f3fdcce`), so the promise was executed rather than re-dated: the context is in `contexts`,
+> (`14cdb47`…`80691b3`), so the promise was executed rather than re-dated: the context is in `contexts`,
 > the deferral is deleted, and live protection carries 35 contexts. What it said:
 > **3. `config/required-checks.json` — add `Trust anchor · no production root private in this tree`
 > to `contexts`, after its first green run on `main`.** New with `T-094`. The gate derives an Ed25519
@@ -166,14 +166,14 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 >
 > **The `T-055` deferral is executed — by the Owner, in `#220`.** `config/deferred-enforcement.json` deferred
 > `Production half · the five conditions (T-055)` until **2026-09-06** with an empty `sign_off`; the date
-> passed, and `Repo-state · live GitHub truth verifier` turned RED on `main` @ `2a50081` the first time
+> passed, and `Repo-state · live GitHub truth verifier` turned RED on `main` @ `a500e8c` the first time
 > `ci` ran there. The deferral's own precondition — *the job observed green on `main`* — held on run
 > 35390005029, so the promise was executed rather than re-dated: that name is in `contexts` in
 > `config/required-checks.json` and the deferral entry is deleted. The Builder did not edit the registry;
 > the Owner ran the two-line edit himself on 2026-09-19. Live protection follows once it exists again (above).
 
 > **2026-09-20 — and one decision that is NOT a one-line edit: the public repository grants nothing.**
-> See **§2f**. There is no `LICENSE` anywhere in the tree, `gh repo view menqstudio/OS --json
+> See **§2f**. There is no `LICENSE` anywhere in the tree, `gh repo view menq-official/os --json
 > licenseInfo,visibility` answers `{"licenseInfo": null, "visibility": "PUBLIC"}`, and four bundled
 > fonts ship with no notice at all. The outbound TERMS for your own code are yours to name — one file,
 > your words. Everything after that sentence is a Builder task.
@@ -181,7 +181,7 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > **2026-08-29 — the ninth round's thirteen findings are answered, and NOTHING here needs you.**
 > `I-01`..`I-13` had no owner in `TASKS.md` five days after they were written, twelve were still
 > marked OPEN in the ledger, and `I-04` was marked OPEN two days after its fix merged. All of that is
-> closed in PR #166, on `main` @ `4c98856`.
+> closed in PR #166, on `main` @ `a415771`.
 >
 > **Every mark is ◑ — the Builder's own claim, not a tick.** `A-09` and `T-034` were each reopened
 > after the session that fixed them called them closed, and repeating that here would be the same
@@ -202,8 +202,8 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > evidence), and `T-040` (a load-only flake, measured and unpatched, with the decisive experiment
 > named in order and `--retry` ruled out).
 
-> **ELEVENTH AUDIT, 2026-10-09 — RED, on `main` @ `e3fc507`.** Filed at
-> [`2026-10-09-eleventh-audit-e3fc507.md`](../apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md).
+> **ELEVENTH AUDIT, 2026-10-09 — RED, on `main` @ `598400e`.** Filed at
+> [`2026-10-09-eleventh-audit-598400e.md`](../apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md).
 > **No P0. Four P1, five P2, one P3** (`K-01`–`K-10`), all open. The three production-gate refusals
 > are confirmed in the code. The auditor was OpenAI Codex, commissioned by you — another vendor's
 > model; who wrote the brief and what the Builder touched during the run is in the ledger.
@@ -223,8 +223,8 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > signed command and a separate principal; take `K-01`, `K-02` and `K-04` before anything clears
 > refusal 3. `K-07` is engine security code and waits for its own audited pull request.
 
-> **TENTH AUDIT, 2026-09-19 — RED, on `main` @ `75fca65`.** Filed at
-> [`2026-09-19-tenth-audit-75fca65.md`](../apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md).
+> **TENTH AUDIT, 2026-09-19 — RED, on `main` @ `f4ffc8d`.** Filed at
+> [`2026-09-19-tenth-audit-f4ffc8d.md`](../apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md).
 > **No P0.** The ninth round's thirteen were re-attacked, each one differently from the way its own fix
 > describes: **twelve earned ✅**, and the one REOPENED (`I-10`) is a documentation count, stale for the
 > third consecutive round. Nothing touching a control, a gate or a trust boundary was found overstated.
@@ -244,8 +244,8 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 >
 > The two one-line edits below are still the Owner's, and neither blocks a merge.
 
-> **NINTH AUDIT, 2026-08-19 — RED, on `main` @ `5cf9b8c` (tree `9580b86d`, pin proven).** Filed
-> at [`2026-08-19-ninth-audit-5cf9b8c.md`](../apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md).
+> **NINTH AUDIT, 2026-08-19 — RED, on `main` @ `5cf6d2e` (tree `9580b86d`, pin proven).** Filed
+> at [`2026-08-19-ninth-audit-5cf6d2e.md`](../apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md).
 > **No P0** — the three production-gate refusals were read at the source and are closed for the
 > fourth round running, `AnswerProvenance::Governed` is constructed only inside `#[cfg(test)]`, and
 > nothing in the tree sets `$BROPS_BROKER_CONFIG`.
@@ -279,8 +279,8 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 >
 > _The eighth round's summary, superseded by the above, is kept below for provenance._
 >
-> **EIGHTH AUDIT, 2026-08-18 — RED, on `main` @ `9ae2fd2` (tree `30b3c966`, pin proven).** Filed
-> at [`2026-08-18-eighth-audit-9ae2fd2.md`](../apps/desktop/AUDIT/2026-08-18-eighth-audit-9ae2fd2.md).
+> **EIGHTH AUDIT, 2026-08-18 — RED, on `main` @ `5242027` (tree `30b3c966`, pin proven).** Filed
+> at [`2026-08-18-eighth-audit-5242027.md`](../apps/desktop/AUDIT/2026-08-18-eighth-audit-5242027.md).
 > No P0 — the three production-gate refusals verified closed for the third round running.
 >
 > **This round is the one that mattered for a reason that is not a finding.** Its primary output was
@@ -306,14 +306,14 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > the keyboard cursor points at and Enter will take — was the least readable row in the list in the
 > light theme. It was created by the fix for the sixth round's own `A-01`.
 >
-> **SIXTH AUDIT, 2026-08-17 — RED, on `main` @ `b16e572` (pin proved by tree digest
+> **SIXTH AUDIT, 2026-08-17 — RED, on `main` @ `84cef03` (pin proved by tree digest
 > `098df1d5`).** Filed at
-> [`2026-08-17-sixth-audit-b16e572.md`](../apps/desktop/AUDIT/2026-08-17-sixth-audit-b16e572.md).
+> [`2026-08-17-sixth-audit-84cef03.md`](../apps/desktop/AUDIT/2026-08-17-sixth-audit-84cef03.md).
 > It confirmed **all three production-gate refusals still closed** and found **no P0** — so RED
 > stands exactly where it stood, and for the first time it stands on the **surface**.
 >
 > Its headline is `A-01`: **the ⌘K palette, the shell's only modal, has had no CSS at all since
-> 2026-07-28.** Its rules were deleted whole with `layout.css`'s palette section in `0c08dd8`
+> 2026-07-28.** Its rules were deleted whole with `layout.css`'s palette section in `4583dea`
 > (PR #47) and never replaced, while the component went on rendering every class. No overlay, no
 > backdrop, no panel, no scroll container for 23 rows, and an "active" row that highlighted nothing
 > while `aria-activedescendant` told a screen reader the selection had moved. The page behind stayed
@@ -326,7 +326,7 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > in the ledger found stale or false. Two are fixed (`A-01`, `A-13`) and `A-06` is structurally
 > closed; the rest are `T-025`…`T-032` on the board.
 >
-> **FIFTH AUDIT, 2026-08-16 — RED, on `main` @ `5fe4740`.** Confirmed the three refusals closed, no
+> **FIFTH AUDIT, 2026-08-16 — RED, on `main` @ `d2f05dc`.** Confirmed the three refusals closed, no
 > P0, **11 findings**, and promoted **15 Builder claims to ✅**. Its headline was `A-01`: the round
 > it audited **shipped a rendering regression in the one file whose header argues that a comment is
 > not an honesty property.** The `sigbreathe` rule used the `animation` shorthand, which replaced
@@ -358,19 +358,19 @@ item below is settled, a **separate** audit passes, and the Owner approves — i
 > has never been re-run" until today, which was true when written and false the moment the third
 > round finished — on the page every banner sends a cold reader to for what is blocked and on whom.
 >
-> * **Third**, [`2026-08-14-zero-trust-audit-e0dd969.md`](../apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md),
->   of `main` @ `e0dd969`: **RED for materially fewer reasons.** It could **not reopen the second
+> * **Third**, [`2026-08-14-zero-trust-audit-402888e.md`](../apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md),
+>   of `main` @ `402888e`: **RED for materially fewer reasons.** It could **not reopen the second
 >   round's P0** on either platform and **confirmed all three of the gate's refusals closed** at that
 >   head. 5 new findings (`A-01`…`A-05`, P2 1 · P3 4); of 14 Builder claims attacked, **9 survived**
 >   and are the first ✅ this repository's ledger has carried.
-> * **Fourth**, [`2026-08-15-zero-trust-reaudit-0a9a1af.md`](../apps/desktop/AUDIT/2026-08-15-zero-trust-reaudit-0a9a1af.md),
+> * **Fourth**, [`2026-08-15-zero-trust-reaudit-3844fef.md`](../apps/desktop/AUDIT/2026-08-15-zero-trust-reaudit-3844fef.md),
 >   a re-audit of those five fixes against a **pinned snapshot** (`main` moved three times mid-run;
 >   the auditor proved the pin by tree digest): **still RED — now for one platform rather than one
 >   mechanism.** Four of five could not be reopened. `B-01` found the fifth fixed on Linux only while
 >   the ledger row claimed both platforms — closed on Windows the same day. **`B-02` stays OPEN.**
 >
 > **Prior:** [`2026-08-06-remediation-audit.md`](../apps/desktop/AUDIT/2026-08-06-remediation-audit.md),
-> of `main` @ `219c763` — **4 of 18** blockers closed, **45 surviving findings** (1 P0, 5 P1, 13 P2,
+> of `main` @ `c509705` — **4 of 18** blockers closed, **45 surviving findings** (1 P0, 5 P1, 13 P2,
 > 26 P3). Its P0 was the supervisor copying the executing chain's own `output_handle` into the
 > attestation it signed: the F-01 signing oracle surviving a fix that addressed F-01's symptom. That
 > P0 is now closed and was attacked twice more without reopening.
@@ -468,7 +468,7 @@ decision. *(The as-posed record below is NOT verbatim in one place, and says so 
 custody row originally named a person-held root custodian, a label `T-130` removed and
 `tools/check_no_owner_key_ceremony.py` refuses outside history, so it reads `1 custody row`. `#303` and
 `#309` had gone further and written `(T-131)` and then `1 install-minted-root (T-140)` beside the
-record's own "Measured at `a94513e`" — tasks that did not exist at that head. Those are removed; the
+record's own "Measured at `b7d4a05`" — tasks that did not exist at that head. Those are removed; the
 counts 13 / 11 / 1 / 2 are the as-posed ones, and today's five-way count lives here, above it.)*
 
 ---
@@ -478,7 +478,7 @@ counts 13 / 11 / 1 / 2 are the as-posed ones, and today's five-way count lives h
 Phase 1 has two open Definition-of-Done rows — *"One governed round-trip proven end-to-end"* and
 *"Governed output delivery through the wall"* — and their own text blames three refusals:
 `governed_verification_unconfigured`, the Linux-only `connect_broker`, and `build_governed_executor`.
-That account is true and **incomplete**. Measured at `a94513e`:
+That account is true and **incomplete**. Measured at `b7d4a05`:
 
 `apps/desktop/src-tauri/broker/src/preflight.rs` lists **27** prerequisites for a governed round trip,
 each with the party that can create it: **13 installer · 11 machine-admin · 1 custody row ·
@@ -699,7 +699,7 @@ setuid helper is not taken.
    Linux, the named-pipe peer-auth broker on Windows (`§0.W broker syscall proof`). A floor-writer is a
    small append-only op over paths that are already gated.
 3. **`A-01` argues for it, and this reason is newer than the question.** The third audit
-   ([`2026-08-14-zero-trust-audit-e0dd969.md`](../apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md))
+   ([`2026-08-14-zero-trust-audit-402888e.md`](../apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md))
    found the floor's **scope key** (`install_id`) is chosen by the party the floor constrains. 1b is
    about the floor's **writer** being that same party. They are two faces of one defect: *the floor is
    controlled by its own subject.* A resident principal that **owns** the marks directory is the
@@ -835,7 +835,7 @@ proof under `apps/desktop/AUDIT/` or `apps/desktop/src-tauri/win-live/proof/` co
 VALUE at all. Established by grepping every tracked file for a `"challenge_handle"` JSON field with a 64-hex
 value (no hits) and every 64-hex literal in those directories (5 hits: 4 are the `supervisor_ledger.sql`
 digest, 1 is an `output_handle`). `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:166` *describes* the old
-formula in prose — it is a historical record of the code at `219c763` and is deliberately left as written.
+formula in prose — it is a historical record of the code at `c509705` and is deliberately left as written.
 
 **Nothing was unlocked by this.** `governed_verification_unconfigured()`, `UpstreamBlockedExecutor` and
 `connect_broker()` are untouched; no governed surface became reachable and no production `trusted_verified`
@@ -930,7 +930,7 @@ page carries what they found. The gate is still shut and the standing verdict is
 the *reason* has changed shape: it is no longer "nobody who did not build this has looked."
 
 This paragraph used to end with exactly that sentence — *"nobody who did not build this has looked at
-any of it"* — beside *"as of 2026-08-09"* and *"`main` is now `b3010f6`"*. All three went false when
+any of it"* — beside *"as of 2026-08-09"* and *"`main` is now `458db6d`"*. All three went false when
 the third round ran, and the fix landed on the block at the top of this page while **this** paragraph,
 four hundred lines down and on the same subject, kept saying the opposite. A page can contradict
 itself in two places and still look maintained from either one; that is the whole failure mode this
@@ -938,7 +938,7 @@ document exists against.
 
 What has **not** changed, and is still the item on this page with the longest lead time: an audit
 covering the **whole chain** at a **current** head. Rounds three and four were scoped — five findings
-and then a re-audit of those five fixes — and `main` has moved many times since `0a9a1af`. Everything
+and then a re-audit of those five fixes — and `main` has moved many times since `3844fef`. Everything
 closed since is the Builder's claim until someone who did not build it says otherwise.
 
 ---
@@ -1127,7 +1127,7 @@ The Owner was given the open decisions as options with a recommendation each, an
 four. Recorded here as **decisions**, not as status, so the next reader inherits the reasoning and
 not just the outcome.
 
-**A — the sixth independent audit runs NOW, on `main` @ `35cc40b`.** Not after `T-021`/`T-022`
+**A — the sixth independent audit runs NOW, on `main` @ `ec1360a`.** Not after `T-021`/`T-022`
 land. Twenty-four merged pull requests have accumulated since the fifth round's pinned head and
 **not one of them has been looked at by anyone who did not write it**. Waiting would have doubled
 that, and the deferred work is itself sequenced *behind* the audit — so "audit once, later" was a

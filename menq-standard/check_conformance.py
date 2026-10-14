@@ -44,7 +44,7 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent
 
-STANDARD_REPOSITORY = "menqstudio/MenQ-Standard"
+STANDARD_REPOSITORY = "menq-official/standard"
 PIN_REL = ".menq-standard.json"
 PIN_SCHEMA_VERSION = 1
 KIT_MANIFEST_SCHEMA_VERSION = 1

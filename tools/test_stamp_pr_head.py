@@ -47,8 +47,8 @@ class RestampTests(unittest.TestCase):
         self.assertEqual(st.restamp(once, SHA), once)
 
     def test_keeps_the_prose(self):
-        body = "Line one.\n\n    git diff --numstat 5cf9b8c..40be210\n\nLine two."
-        self.assertIn("git diff --numstat 5cf9b8c..40be210", st.restamp(body, SHA))
+        body = "Line one.\n\n    git diff --numstat 5cf6d2e..a2893d6\n\nLine two."
+        self.assertIn("git diff --numstat 5cf6d2e..a2893d6", st.restamp(body, SHA))
 
 
 class MarkerReadBackTests(unittest.TestCase):
@@ -67,18 +67,18 @@ class MarkerReadBackTests(unittest.TestCase):
 
 class PatchCommandTests(unittest.TestCase):
     def test_writes_over_rest(self):
-        argv = st.patch_command("menqstudio/OS", 183)
-        self.assertEqual(argv[:5], ["gh", "api", "-X", "PATCH", "repos/menqstudio/OS/pulls/183"])
+        argv = st.patch_command("menq-official/os", 183)
+        self.assertEqual(argv[:5], ["gh", "api", "-X", "PATCH", "repos/menq-official/os/pulls/183"])
 
     def test_never_uses_gh_pr_edit(self):
         # The regression: gh 2.46.0's `pr edit` dies on the deprecated projectCards GraphQL field.
-        argv = st.patch_command("menqstudio/OS", 183)
+        argv = st.patch_command("menq-official/os", 183)
         self.assertNotIn("edit", argv)
         self.assertNotEqual(argv[1], "pr")
 
     def test_reads_the_body_from_stdin(self):
         # --input - keeps a long body out of argv, where it would hit the length limit.
-        self.assertEqual(st.patch_command("menqstudio/OS", 1)[-2:], ["--input", "-"])
+        self.assertEqual(st.patch_command("menq-official/os", 1)[-2:], ["--input", "-"])
 
 
 class StampedShaTests(unittest.TestCase):
@@ -165,7 +165,7 @@ class WriteDecisionTests(unittest.TestCase):
         self._run, self._write, self._slug = st.run, st.write_body, st._repo_slug
         st.write_body = lambda repo, pr, body: self.written.append((repo, pr, body))
         # The resolver asks `gh repo view`. A test must not, and must say which repository it
-        # is pretending to be -- a fork, so a literal `menqstudio/OS` anywhere would show.
+        # is pretending to be -- a fork, so a literal `menq-official/os` anywhere would show.
         st._repo_slug = lambda: "someone/fork"
         self.addCleanup(self._restore)
 
@@ -196,12 +196,12 @@ class WriteDecisionTests(unittest.TestCase):
             sys.argv = argv
 
     def test_the_repository_is_the_one_this_checkout_names_not_a_literal(self):
-        """`--repo` defaulted to the literal `menqstudio/OS` while the tip comes from
+        """`--repo` defaulted to the literal `menq-official/os` while the tip comes from
         `git ls-remote origin`: in a fork, the body of one repository and the head of another."""
         self.assertEqual(self._drive("prose", SHA), 0)
         self.assertIn("someone/fork", self.viewed[0])
         self.assertEqual([repo for repo, _pr, _body in self.written], ["someone/fork"])
-        self.assertFalse(any("menqstudio/OS" in str(call) for call in self.viewed + self.written))
+        self.assertFalse(any("menq-official/os" in str(call) for call in self.viewed + self.written))
 
     def test_an_explicit_repo_wins_over_the_resolved_one(self):
         self.assertEqual(self._drive("prose", SHA, extra=("--repo", "other/place")), 0)

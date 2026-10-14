@@ -1,6 +1,6 @@
 name: supply-chain
 
-# Supply-chain scan gate for menqstudio/OS.
+# Supply-chain scan gate for menq-official/os.
 #
 # INDEPENDENT jobs (one per ecosystem / concern) so a failure in one scanner
 # never masks the others and each surfaces its own red X:

@@ -5,26 +5,26 @@
 > `config/canon-budget.json` holds it to 8500 bytes; over that, the wall accepts only an edit that
 > shrinks it.
 
-**Active branch:** `main` — `main` @ `248ff66`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
+**Active branch:** `main` — `main` @ `75c8d60`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `248ff66`.** PR #492 on `ck-m122` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **✅ SETTLED as of `main` `75c8d60`.** PR #492 on `ck-m122` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
 >
 > **Next:** cockpit read; Owner: L-17/25/26/36; open: K-01/09
 >
-> **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
+> **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
 
 **OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 952 closed.
 
-**Next: T-020's FW-1 correction MERGED as `#219` (`2a50081`) and is NOT approved.** B1-B7 and C1, C2,
+**Next: T-020's FW-1 correction MERGED as `#219` (`a500e8c`) and is NOT approved.** B1-B7 and C1, C2,
 C4, C6, C7 are done and measured — the full account and the B/C list live only in `#219`'s body;
 `SECURITY_MODEL.md` §1.3a names what enforces each row. Proofs: `engine/ci/floor_writer_boundary_proof.sh` 23/23 ×3 here and in CI;
 `test_floor_writer_durability.py`. **NOT done:** C3 test structure and a second Architect pass. §1.7
 stays **partial**; §1.10 is **implemented** and does not close **O-5**. FW-3 is OUT.
 
-**`#220` merged as `157e292`:** the supply-chain gate is green again, the `T-055` promise is executed
+**`#220` merged as `d79262a`:** the supply-chain gate is green again, the `T-055` promise is executed
 (context required, entry deleted), and `main_ci` is no longer typed — `#221` makes the generator take
-the reading. `main`'s own `ci` at `157e292` is `success` (run 35403529178), read by the generator into
+the reading. `main`'s own `ci` at `d79262a` is `success` (run 35403529178), read by the generator into
 `config/current_state.json.main_ci` -- the first green reading of `main` since 2026-08-31.
 
 **T-061, and a slice of T-062.** The gate set is what CI runs, not `tools/check_*.py`:
@@ -77,8 +77,8 @@ verifies under the floor-pinned root anchor — nothing shipped sets it, and the
 `demonstration_custody` while `INSTALL_MINTED_CUSTODY_ACCEPTED` is `false`.
 
 **The standing independent verdict is RED.** ELEVEN rounds; the current one is
-[`2026-10-09-eleventh-audit-e3fc507.md`](apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md)
-— no P0, four P1 (`K-01`–`K-04`), open: `K-01`, `K-07`, `K-09`; `L-01`–`L-43` (12th; 20 of 43 ◑; 20 repro). Read `e3fc507`;
+[`2026-10-09-eleventh-audit-598400e.md`](apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md)
+— no P0, four P1 (`K-01`–`K-04`), open: `K-01`, `K-07`, `K-09`; `L-01`–`L-43` (12th; 20 of 43 ◑; 20 repro). Read `598400e`;
 everything merged after it is ◑.
 
 **Two things wait on the Owner** *(the unsigned `BroPS 0.1.0` release is a DRAFT since 2026-10-08)*:

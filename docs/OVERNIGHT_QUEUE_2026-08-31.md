@@ -4,7 +4,7 @@ One session, six queued tasks, **nothing merged**. Four pull requests are open a
 green; two tasks did not produce one. Every number below was measured in this
 session; where a number is a repeat of somebody else's, it says so.
 
-`main` was `d42cb65` throughout, read at the start of each task with
+`main` was `f35377a` throughout, read at the start of each task with
 `gh run list --branch main` — seven workflows of seven `success`, `.conclusion`
 read rather than inferred, because a cancelled run is not a failure.
 

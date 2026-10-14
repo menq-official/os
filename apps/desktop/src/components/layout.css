@@ -27,7 +27,7 @@
 }
 
 /* --- ⌘K command palette ----------------------------------------------------
-   RESTORED. These rules lived here until `0c08dd8` (PR #47, "UI refreshes",
+   RESTORED. These rules lived here until `4583dea` (PR #47, "UI refreshes",
    2026-07-28), which deleted the section whole. `CommandPalette.tsx` kept
    rendering every one of the classes, so for nineteen days the app's only modal
    was a stack of unstyled block divs in normal flow: no overlay, no backdrop,

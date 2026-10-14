@@ -1,12 +1,12 @@
-# Twelfth independent security-perimeter audit — ca6fc74
+# Twelfth independent security-perimeter audit — fd8e937
 
 **Date:** 2026-10-09  
-**HEAD:** `ca6fc74`  
+**HEAD:** `fd8e937`  
 **Status:** UNFINISHED
 
 This report is being written incrementally during a line-by-line audit of every tracked Python file under `engine/runtime` and every tracked Rust file under `apps/desktop/src-tauri`. Findings are appended when established. The verdict and complete read/unread lists will be added only after the scope is exhausted.
 
-Process note: the canonical handoff names `main` at `9194b40`, but this commissioned audit is intentionally detached at `ca6fc74`. The mandatory `git pull` could not run because the sandbox exposes `.git/FETCH_HEAD` read-only; the brief also states that the network is unavailable. No remote state was verified.
+Process note: the canonical handoff names `main` at `186255b`, but this commissioned audit is intentionally detached at `fd8e937`. The mandatory `git pull` could not run because the sandbox exposes `.git/FETCH_HEAD` read-only; the brief also states that the network is unavailable. No remote state was verified.
 
 Resume note: the first continuation resumed at `engine/runtime/bro_execution_lease.py`. A later continuation resumed at `engine/runtime/bro_repository_state.py`. This continuation read the report and complete progress ledger first and resumed at `engine/runtime/challenge_key_registry.py`, the first remaining Python file marked `TODO`; files already marked `READ` or `READ-WITH-FINDINGS` were not re-read.
 

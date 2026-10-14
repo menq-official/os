@@ -9,7 +9,7 @@ import {
  * The ⌘K palette, measured — sixth independent audit, `A-01`.
  *
  * The finding, in its own words: the palette *"has had no CSS since 2026-07-28; it is not a
- * modal."* Its five classes were defined in `layout.css`, deleted whole in `0c08dd8` (PR #47,
+ * modal."* Its five classes were defined in `layout.css`, deleted whole in `4583dea` (PR #47,
  * "UI refreshes") and never replaced. `layout.css` still exists and is still imported at
  * `Shell.tsx:2`. The component kept rendering `palette-scrim`, `palette`, `palette-list`,
  * `palette-item` and `palette-section-label` into a stylesheet that had stopped defining them.
@@ -24,7 +24,7 @@ import {
  * comment about "pressing on the panel's padding"; the panel has no padding.
  *
  * So the assertions below are about the palette being a MODAL, not about it having a class list.
- * Each is a fact the auditor measured in Chromium at `b16e572` and each one failed there.
+ * Each is a fact the auditor measured in Chromium at `84cef03` and each one failed there.
  */
 
 const invokeMock = vi.fn();
@@ -115,7 +115,7 @@ describe('⌘K palette — it behaves as a modal, not as block divs in normal fl
   });
 
   it('the scrim is a visible backdrop, not transparent', async () => {
-    // Measured at b16e572 as `rgba(0, 0, 0, 0)` — present in the DOM, absent on screen.
+    // Measured at 84cef03 as `rgba(0, 0, 0, 0)` — present in the DOM, absent on screen.
     await openPalette();
     const bg = getComputedStyle(q('.palette-scrim')).backgroundColor;
     expect(alphaOf(bg),
@@ -232,7 +232,7 @@ describe('⌘K palette — it behaves as a modal, not as block divs in normal fl
     await openPalette();
     const row = q('.palette-item');
     expect(row.getBoundingClientRect().height,
-      'measured 0px padding at b16e572').toBeGreaterThanOrEqual(32);
+      'measured 0px padding at 84cef03').toBeGreaterThanOrEqual(32);
   });
 });
 

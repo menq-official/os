@@ -838,7 +838,7 @@ RUNS_A_MERGE = [
     "FOO=1 gh pr merge 5",
     "sudo -E gh pr merge 5",
     "/usr/bin/gh pr merge 5",
-    "gh -R menqstudio/OS pr merge 5",
+    "gh -R menq-official/os pr merge 5",
     "gh pr merge --squash 5",
     "x=$(gh pr merge 5)",
     'echo "$(gh pr merge 5)"',            # inside double quotes the shell still runs it
@@ -1055,7 +1055,7 @@ class TheTwoNamedCommandsRefused(unittest.TestCase):
 
     def test_a_merge_in_another_repository_is_said_and_allowed(self):
         with mock.patch.object(self.wall, "_git_answer",
-                               lambda directory, *args: "git@github.com:menqstudio/OS.git"):
+                               lambda directory, *args: "git@github.com:menq-official/os.git"):
             other = self.shell(f"gh pr merge 5 -R someone/else --match-head-commit {SHA}",
                                self.RED)
             self.assertIsNone(decision(other), other)

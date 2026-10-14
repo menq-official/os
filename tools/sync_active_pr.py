@@ -166,8 +166,8 @@ def live_main_head() -> str:
 
     This used to run ``git rev-parse origin/main``, which reads a local ref and therefore returns
     whatever the last ``git fetch`` happened to leave behind. On 2026-08-10 that wrote a
-    ``baseline_main_head_at_sync`` of ``6bd3027`` into the snapshot while main had already moved to
-    ``5a72258``, and the Repo-state gate — which compares the field against the PR's live base sha —
+    ``baseline_main_head_at_sync`` of ``74c632d`` into the snapshot while main had already moved to
+    ``5103d0c``, and the Repo-state gate — which compares the field against the PR's live base sha —
     went RED. The function was named ``live_main_head`` the whole time.
 
     ``git ls-remote`` asks the remote and needs no fetch, so a stale local ref cannot produce a
@@ -241,7 +241,7 @@ def _rest_open_prs() -> list[dict] | None:
     turns main red for.
 
     The slug comes from `_repo_slug()` — the eighth audit's `H-05` fix in check_repo_state.py — and
-    not from a literal. Until 2026-09-19 this road said `repos/menqstudio/OS/pulls` while the gate
+    not from a literal. Until 2026-09-19 this road said `repos/menq-official/os/pulls` while the gate
     that reads this tool's output inferred the slug from the remote, so in a fork the two would have
     answered about different repositories and nothing could tell. No slug, no read: a road that
     cannot establish which repository it is asking about has not asked.
@@ -715,7 +715,7 @@ def take_main_ci_reading() -> dict | None:
     """The newest COMPLETED run of each MAIN_CI_WORKFLOWS on main, read the way the gate reads it.
 
     `main_ci` was the last field of config/current_state.json written by hand. On 2026-09-19 it
-    still said `success` at 87bfe73 while `main` had been red at 2a50081 for a day — nobody had
+    still said `success` at 2f1565d while `main` had been red at a500e8c for a day — nobody had
     taken the reading, because taking it meant running `gh run list` and typing four values into
     a JSON file. A generator that asserts a fact it never measured writes that assertion into the
     canon; this one measures. `None` means the reading could not be taken, and the caller REFUSES:

@@ -31,8 +31,8 @@ Only then start. **No exceptions.** When Gev says *"go read the repo / կարդ�
 > **⚠ The standing independent-audit verdict is RED.** **Nine** independent audits have run, not
 > two — this paragraph said two until 2026-08-29, seven rounds after that stopped being true, in the
 > file that is supposed to be the brain. The standing one is
-> [`apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md`](./apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md),
-> of `main` @ `5cf9b8c` (tree `9580b86d`, pin proved): **RED, no P0** — all three production-gate
+> [`apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md`](./apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md),
+> of `main` @ `5cf6d2e` (tree `9580b86d`, pin proved): **RED, no P0** — all three production-gate
 > refusals read at the source and closed for the fourth round running. It attacked nine Builder
 > claims, promoted **six** to ✅, **reopened `A-09` and `T-034`**, held `T-023` at ◑, and filed
 > thirteen new findings `I-01`..`I-13`. Nothing merged since is independently confirmed. The index is
@@ -43,18 +43,18 @@ Only then start. **No exceptions.** When Gev says *"go read the repo / կարդ�
 > back clean. It had not.
 
 > **⚠ Գործող անկախ աուդիտի վճիռը RED ա։** **Ինը** անկախ աուդիտ ա անցել, ոչ թե երկու — այս պարբերությունը
-> գրում էր «երկու» մինչև 2026-08-29։ Գործողը իններորդն ա՝ `apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md`,
-> `main` @ `5cf9b8c` (tree `9580b86d`, pin ապացուցված)՝ **RED, P0 չկա**, երեք production-gate մերժումն էլ
+> գրում էր «երկու» մինչև 2026-08-29։ Գործողը իններորդն ա՝ `apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md`,
+> `main` @ `5cf6d2e` (tree `9580b86d`, pin ապացուցված)՝ **RED, P0 չկա**, երեք production-gate մերժումն էլ
 > աղբյուրից կարդացված ու փակ։ Ինը Builder-ի պնդումից **վեցը** ✅ դարձան, `A-09`-ը ու `T-034`-ը **նորից բացվեցին**,
 > `T-023`-ը մնաց ◑, ու գրանցվեց տասներեք նոր գտածո՝ `I-01`..`I-13`։ Ստորև պահվում ա երկրորդ ռաունդի
 > պատմությունը՝ Երկրորդը —
-> `apps/desktop/AUDIT/2026-08-06-remediation-audit.md`, `main` @ `219c763`-ի վրա, առաջին փուլի
+> `apps/desktop/AUDIT/2026-08-06-remediation-audit.md`, `main` @ `c509705`-ի վրա, առաջին փուլի
 > ուղղումներից հետո — հաստատել ա **18-ից 4** blocker-ի փակումը ու թողել **122 գտած** (1 P0,
 > 5 P1, 13 P2, 26 P3), ու **երբեք չի կրկնվել** որևէ ավելի ուշ head-ի վրա։ Դրանից հետո merge
 > արվածը անկախ հաստատված չի։ Ցուցակը՝ `apps/desktop/AUDIT/AUDIT_LEDGER.md` — կարդա համարով
 > այս փաստաթղթերի որևէ ✅-ին հավատալուց առաջ; ◑-ը նշանակում ա *builder-ի չստուգված պնդում*։
 
-> **📍 Exact current state (branch, PR, HEAD, blockers, next action) lives in [`NEXT_CHAT.md`](./NEXT_CHAT.md).** This §3 roadmap is the durable product plan; the active **security-remediation track** (Waves 1–5, closing the Challenger Deep audit's P0/P1 findings) is tracked in `NEXT_CHAT.md` + `PROJECT_STATE.md` + `TASKS.md`. As of 2026-08-02: Wave 1 (T-012), Wave 2a (T-013), T-010, T-011 **merged**; Wave 3 design **GREEN + merged**; **Wave 3a is COMPLETE** — slice 1 (T-014, PR #24 `6c920d0`), slice 2 (T-015, PR #26 `9b214e5`, migration 0014), slice 3 (T-016, PR #28 `8a580028`) all zero-trust GREEN + merged. **Wave 3b-0** isolated-signer design merged via **PR #30** (`df3c0ac`). **Wave 3b (T-017) was consolidated on `feat/cockpit-pages` / PR #48 and MERGED — as was everything through PR #81; nothing on this track is open, and `main` is settled (see `config/current_state.json.settled_at_main_head`). Provenance:** (base `chore/main-resync`, head `38d5d715…`; supersedes the earlier PR #46 impl / PR #31 design / PR #32 impl split): the **3b-1B design is Architect DESIGN GREEN at rev-30** (design-GREEN ≠ code-GREEN); the implementation + live-proof kit are built and the full 7-service production governed turn is **proven live on Linux** (first `trusted_verified`); the external **Architect CODE-audit is still pending**, and the **shipped desktop "Verified" stays fail-closed**. Exact live state: [`NEXT_CHAT.md`](./NEXT_CHAT.md) + [`config/current_state.json`](./config/current_state.json).
+> **📍 Exact current state (branch, PR, HEAD, blockers, next action) lives in [`NEXT_CHAT.md`](./NEXT_CHAT.md).** This §3 roadmap is the durable product plan; the active **security-remediation track** (Waves 1–5, closing the Challenger Deep audit's P0/P1 findings) is tracked in `NEXT_CHAT.md` + `PROJECT_STATE.md` + `TASKS.md`. As of 2026-08-02: Wave 1 (T-012), Wave 2a (T-013), T-010, T-011 **merged**; Wave 3 design **GREEN + merged**; **Wave 3a is COMPLETE** — slice 1 (T-014, PR #24 `2d592ff`), slice 2 (T-015, PR #26 `e25832e`, migration 0014), slice 3 (T-016, PR #28 `82dae6fb`) all zero-trust GREEN + merged. **Wave 3b-0** isolated-signer design merged via **PR #30** (`da13b9c`). **Wave 3b (T-017) was consolidated on `feat/cockpit-pages` / PR #48 and MERGED — as was everything through PR #81; nothing on this track is open, and `main` is settled (see `config/current_state.json.settled_at_main_head`). Provenance:** (base `chore/main-resync`, head `38d5d715…`; supersedes the earlier PR #46 impl / PR #31 design / PR #32 impl split): the **3b-1B design is Architect DESIGN GREEN at rev-30** (design-GREEN ≠ code-GREEN); the implementation + live-proof kit are built and the full 7-service production governed turn is **proven live on Linux** (first `trusted_verified`); the external **Architect CODE-audit is still pending**, and the **shipped desktop "Verified" stays fail-closed**. Exact live state: [`NEXT_CHAT.md`](./NEXT_CHAT.md) + [`config/current_state.json`](./config/current_state.json).
 
 ---
 
@@ -111,7 +111,7 @@ Both halves arrived **already audited and fixed** (see §6). They were brought i
 
 > **The canonical execution plan is [`MASTER_EXECUTION_ROADMAP.md`](./MASTER_EXECUTION_ROADMAP.md)**
 > (status `v1.0 · Canonical Execution Authority` — 🔒 **Locked** (Owner-approved 2026-07-21, basis HEAD
-> `2e0157b`); product content is change-controlled per its §I). It expands the product into **11 phases** with
+> `8888011`); product content is change-controlled per its §I). It expands the product into **11 phases** with
 > per-phase Objective / Scope / Architecture / UI-UX / Backend / Contracts / Data models / Dependencies /
 > Security gates / Tests / CI / Docs / Acceptance / Merge gate / Stop conditions / Definition of Done,
 > and per-page UI specs from the canonical prototype `brops-aios.html`. A cold-start session takes the
@@ -252,7 +252,7 @@ OS/
 
 > **Կանոնական կատարման պլանը՝ [`MASTER_EXECUTION_ROADMAP.md`](./MASTER_EXECUTION_ROADMAP.md)**
 > (կարգավիճակ՝ `v1.0 · Canonical Execution Authority` — 🔒 **Locked** (Owner-approved 2026-07-21, basis
-> HEAD `2e0157b`); product content-ը change-controlled ա ըստ §I-ի)։ Ընդլայնում է product-ը **11 phase**-ի՝ ամեն
+> HEAD `8888011`); product content-ը change-controlled ա ըստ §I-ի)։ Ընդլայնում է product-ը **11 phase**-ի՝ ամեն
 > phase-ի Objective/Scope/Architecture/UI-UX/Backend/Contracts/Data models/Dependencies/Security gates/
 > Tests/CI/Docs/Acceptance/Merge gate/Stop conditions/Definition of Done-ով, ու էջ-առ-էջ UI spec-երով՝
 > canonical prototype `brops-aios.html`-ից։ Cold-start session-ը վերցնում է հաջորդ **unchecked** task-ը

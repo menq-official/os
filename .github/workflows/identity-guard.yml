@@ -1,0 +1,41 @@
+# MenQ identity guard
+# Every commit in every MenQ repository has exactly one identity:
+#   MenQ <office@menqstudio.am>  (author AND committer)
+# and carries no Co-Authored-By / Signed-off-by trailers.
+# Uses only git on the runner — no third-party actions, read-only token.
+
+name: identity-guard
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    name: MenQ identity guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check every commit in the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git init -q guard && cd guard
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c http.extraheader="$auth" fetch -q --filter=blob:none \
+            "https://github.com/$REPO.git" "$BASE" "$HEAD"
+          violations="$(git log --format='%h%x09%an <%ae>%x09%cn <%ce>' "$BASE..$HEAD" \
+            | awk -F'\t' '$2 != "MenQ <office@menqstudio.am>" || $3 != "MenQ <office@menqstudio.am>"')"
+          trailers="$(git log --format='%h %B' "$BASE..$HEAD" | grep -iE '^(co-authored-by|signed-off-by):' || true)"
+          if [ -n "$violations$trailers" ]; then
+            echo "::error::Commits must be authored and committed by 'MenQ <office@menqstudio.am>' with no Co-Authored-By/Signed-off-by trailers."
+            printf '%s\n%s\n' "$violations" "$trailers"
+            exit 1
+          fi
+          echo "All commits: MenQ <office@menqstudio.am>, no extra trailers."

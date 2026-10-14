@@ -233,7 +233,7 @@ class ProjectStateDateTests(unittest.TestCase):
 
     def test_the_date_moves_to_the_day_it_is_run(self):
         import datetime as dt
-        self.write("**Last updated · Վերջին թարմացում:** 2026-09-20 — 49 merged, `main` at `2045830`.")
+        self.write("**Last updated · Վերջին թարմացում:** 2026-09-20 — 49 merged, `main` at `d41e994`.")
         moved = sap.refresh_project_state_date(dt.date(2026, 9, 21))
         self.assertEqual(moved, "2026-09-21")
         self.assertIn("2026-09-21 — 49 merged", self.state.read_text(encoding="utf-8"))
@@ -242,11 +242,11 @@ class ProjectStateDateTests(unittest.TestCase):
         """The prose after the date is the state's own summary, and the label is bilingual. A tool
         that rewrote the line rather than the date would delete both."""
         import datetime as dt
-        self.write("**Last updated · Վերջին թարմացում:** 2026-09-20 — 49 merged, `main` at `2045830`.")
+        self.write("**Last updated · Վերջին թարմացում:** 2026-09-20 — 49 merged, `main` at `d41e994`.")
         sap.refresh_project_state_date(dt.date(2026, 9, 21))
         text = self.state.read_text(encoding="utf-8")
         self.assertIn("**Last updated · Վերջին թարմացում:**", text)
-        self.assertIn("49 merged, `main` at `2045830`.", text)
+        self.assertIn("49 merged, `main` at `d41e994`.", text)
         self.assertIn("second line of the same paragraph.", text)
         self.assertIn("## Body", text)
         self.assertNotIn("2026-09-20", text)
@@ -263,12 +263,12 @@ class ProjectStateDateTests(unittest.TestCase):
         self.state.write_text(
             "# PROJECT_STATE\n\n"
             "**Last updated:** 2026-09-20 — 49 merged.\n"
-            "Before: 2026-09-20 — `main` at `2045830`, a state this line must keep naming.\n\n"
+            "Before: 2026-09-20 — `main` at `d41e994`, a state this line must keep naming.\n\n"
             + sap.BANNER_OPEN + "\nold\n" + sap.BANNER_CLOSE + "\n", encoding="utf-8")
         sap.refresh_project_state_date(dt.date(2026, 9, 21))
         text = self.state.read_text(encoding="utf-8")
         self.assertIn("**Last updated:** 2026-09-21 — 49 merged.", text)
-        self.assertIn("Before: 2026-09-20 — `main` at `2045830`", text)
+        self.assertIn("Before: 2026-09-20 — `main` at `d41e994`", text)
 
     def test_a_second_run_on_the_same_day_changes_nothing(self):
         import datetime as dt
@@ -521,7 +521,7 @@ class CarrierProseTests(_StateFile):
 class RestRoadSlugTests(unittest.TestCase):
     """`_rest_open_prs` asks about THIS repository, established by `_repo_slug()`, never a literal.
 
-    Eighth audit `H-05`, one file over: check_repo_state.py's REST fallback said `menqstudio/OS`
+    Eighth audit `H-05`, one file over: check_repo_state.py's REST fallback said `menq-official/os`
     while its GraphQL road inferred the slug from the remote, so a fork's two roads answered about
     different repositories. That was fixed there on 2026-08-18; this file kept the literal.
     """
@@ -532,7 +532,7 @@ class RestRoadSlugTests(unittest.TestCase):
         self.addCleanup(lambda: setattr(sap.subprocess, "run", self._real[1]))
 
     def test_the_road_is_built_from_the_resolved_slug(self):
-        """Mutant: the literal back ⇒ the URL names menqstudio/OS, not the fork."""
+        """Mutant: the literal back ⇒ the URL names menq-official/os, not the fork."""
         seen = []
 
         page = json.dumps([{"number": 7, "head": {"ref": "b", "sha": "c" * 40},
@@ -546,7 +546,7 @@ class RestRoadSlugTests(unittest.TestCase):
         rows = sap._rest_open_prs()
         self.assertEqual([r["number"] for r in rows], [7])
         self.assertIn("repos/someone/fork/pulls?state=open&per_page=100", seen[0])
-        self.assertFalse(any("menqstudio/OS" in a for a in seen[0]))
+        self.assertFalse(any("menq-official/os" in a for a in seen[0]))
 
     def test_no_slug_means_no_read_and_no_gh_call(self):
         calls = []
@@ -563,7 +563,7 @@ class ActiveLineTests(unittest.TestCase):
     branch and a `main` two merges old under a banner that named #221.
     """
 
-    LINE = ("**Active branch:** `fix/supply-chain-browserslist` — `main` @ `2a50081`. A handoff "
+    LINE = ("**Active branch:** `fix/supply-chain-browserslist` — `main` @ `a500e8c`. A handoff "
             "names the merge base or `main`; a branch commit is a dead object after a squash. "
             "· **task** `floor-writer`\n")
 
@@ -585,9 +585,9 @@ class ActiveLineTests(unittest.TestCase):
     def test_branch_and_head_move_and_the_tail_is_kept(self):
         """Mutant: skip the substitution ⇒ the old branch is still on the line."""
         p = self.doc()
-        self.assertTrue(sap.rewrite_active_line("tools/utf8-decode-and-carrier-prose", "157e292e" + "f" * 32))
+        self.assertTrue(sap.rewrite_active_line("tools/utf8-decode-and-carrier-prose", "d79262a9" + "f" * 32))
         text = p.read_text(encoding="utf-8")
-        self.assertIn("**Active branch:** `tools/utf8-decode-and-carrier-prose` — `main` @ `157e292`.", text)
+        self.assertIn("**Active branch:** `tools/utf8-decode-and-carrier-prose` — `main` @ `d79262a`.", text)
         self.assertNotIn("fix/supply-chain-browserslist", text)
         self.assertIn("a branch commit is a dead object after a squash. · **task** `floor-writer`", text)
         self.assertEqual(text.count("**Active branch:**"), 1)
@@ -603,7 +603,7 @@ class MainCiReadingTests(_StateFile):
     """`main_ci` is written from a reading, never typed.
 
     Until 2026-09-19 it was the last hand-maintained field in config/current_state.json, and on
-    that day it still said `success` at 87bfe73 while `main` had been red at 2a50081 for a day —
+    that day it still said `success` at 2f1565d while `main` had been red at a500e8c for a day —
     nobody had taken the reading. The generator now takes it the way the gate reads it
     (`check_repo_state._live_main_ci`) and refuses to write anything when it cannot.
     """
@@ -705,7 +705,7 @@ class StaleReadingTests(_StateFile):
             calls.append(1)
             run_id = queue.pop(0) if len(queue) > 1 else queue[0]
             return None if run_id is None else {"ci": {
-                "head": "f3fdcce" + "0" * 33, "conclusion": "success", "run_id": run_id,
+                "head": "80691b3" + "0" * 33, "conclusion": "success", "run_id": run_id,
                 "failing": []}}
         sap.take_main_ci_reading = take
         return calls
@@ -717,7 +717,7 @@ class StaleReadingTests(_StateFile):
             sap.measured_main_ci()
         message = str(cm.exception)
         self.assertIn("OLDER than the one already recorded", message)
-        self.assertIn("run 35542745168 at f3fdcce is older than run 36992048558", message)
+        self.assertIn("run 35542745168 at 80691b3 is older than run 36992048558", message)
         self.assertIn("Nothing has been", message)
         self.assertEqual(len(calls), sap.STALE_READING_TRIES, "it is taken again before refusing")
         self.assertEqual(self.path.read_bytes(), self.before)

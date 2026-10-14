@@ -7,7 +7,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXPECTED_REVIEWED_AT = "2026-07-19"
 EXPECTED_BRANCH = "main"
 EXPECTED_MERGED_PR = 36
-EXPECTED_MERGE_COMMIT = "60a94dc1412bc41e592949281a623825ab66c76a"
+EXPECTED_MERGE_COMMIT = "1972816a0d9f7ddff4381a1822e1c050a09a4c7c"
 EXPECTED_STATUS = "operational-rollout-scaffolded"
 EXPECTED_DEPLOYMENT = "blocked-pending-security-remediation"
 
@@ -59,7 +59,7 @@ def validate_docs(root: pathlib.Path = ROOT) -> int:
     stale = {
         "README.md": [
             "merged PR: `#4`",
-            "main merge commit: `61bf9bc4a42b512926bf848b79a0cac063196993`",
+            "main merge commit: `9f847a29b2b37c33eb6a9a6c9fd468e4d8a045ad`",
             "The next scoped phase is **Orchestration Runtime V1**",
         ],
         # `NEXT_CHAT.md` had an entry here. The file was removed from `engine/` on 2026-08-08:
@@ -72,7 +72,7 @@ def validate_docs(root: pathlib.Path = ROOT) -> int:
         # `tools/check_coordination.py` rather than by this tool.
         "docs/ORCHESTRATION_RUNTIME_V1_SPEC.md": [
             "implementation active in PR #6",
-            "**Baseline:** `main` at `b5d1a343a8777738d4113e3e28cf27527f04020a`",
+            "**Baseline:** `main` at `58b55c6329249fa69d2ad93481840ff9403ede74`",
             "**Branch:** `orchestration-runtime-v1`",
         ],
         "docs/ORCHESTRATION_CONTROL_ROOM_V1_SPEC.md": [
@@ -81,7 +81,7 @@ def validate_docs(root: pathlib.Path = ROOT) -> int:
         ],
         "docs/CONTROL_ROOM_API_V1_SPEC.md": [
             "implementation active in draft PR #8",
-            "**Baseline:** `main` at `6bb29bd61b171757a6aaef016fbd46e8b970ada9`",
+            "**Baseline:** `main` at `9dc4fc95a609e4fbb327b5f90bc5e87301394bd8`",
         ],
     }
     for rel, needles in stale.items():

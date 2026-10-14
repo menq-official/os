@@ -15,7 +15,7 @@ import check_repo_state as rs  # noqa: E402
 
 HEAD_31 = "6ebeca88627640eef8effe576b3d388417cb4949"
 HEAD_32 = "0e7ee1af0b96ca768cabe43c71d9caec30230430"
-MAIN = "df3c0aca80cbe4a5537a9fdd53e16e26541c9c19"
+MAIN = "da13b9c403e64f003086d5e86b9214b2e37d17ef"
 NEWMAIN = "1111111111111111111111111111111111111111"
 
 
@@ -566,7 +566,7 @@ class RestSecondRoad(unittest.TestCase):
         self.assertEqual(len(calls), 1, "resolved once per process, not per REST call")
 
     def test_an_unresolvable_slug_REFUSES_rather_than_guessing(self):
-        # The whole point of H-05: in a fork, guessing `menqstudio/OS` answers about a DIFFERENT
+        # The whole point of H-05: in a fork, guessing `menq-official/os` answers about a DIFFERENT
         # repository than the GraphQL road did, and nothing downstream could tell.
         for reply in [(1, "", "gh: not a repository"), (0, ""), (0, "not json"),
                       (0, '{"nameWithOwner":null}'), (0, '{"nameWithOwner":"no-slash"}'),

@@ -368,7 +368,7 @@ class TheGateTellsTheTruthAboutItsOwnEnforcement(unittest.TestCase):
     """Every RED run used to end with two false clauses.
 
     It said the context was "NOT in config/required-checks.json" and that a DATED deferral covered it.
-    Measured: the context was promoted and the deferral entry removed in the SAME commit (`157e292`, #220,
+    Measured: the context was promoted and the deferral entry removed in the SAME commit (`d79262a`, #220,
     2026-09-19). A control describing its own enforcement from memory is the defect this gate exists to
     catch, one level up — so the line is now read from the two config files, and these are the four
     answers they can give.

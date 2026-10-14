@@ -4,7 +4,7 @@
 
 Every row here shipped: its pull request is merged and `main` was green after it. **None of it is
 independently confirmed.** The standing verdict is RED — the TENTH round,
-[`apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md`](../../apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md)
+[`apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md`](../../apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md)
 — and a `◑` on a row here is the Builder's own claim, never a confirmation. Check any tick in prose
 against [`apps/desktop/AUDIT/AUDIT_LEDGER.md`](../../apps/desktop/AUDIT/AUDIT_LEDGER.md) before
 believing it. This paragraph named the NINTH round until 2026-09-21, three weeks after the tenth
@@ -52,7 +52,7 @@ Nothing was summarised on the way in. Each row is verbatim from the board on the
 | **T-085** | **No gate read the front page's pictures** - `check_artwork_geometry.py`, eleven rules; it found a dark panel a step lighter than every other panel on its first run ◑ | Bro | Review | merged `#252` |
 | **T-086** | **The roadmap was in no gate, and three documents were stale** - `check_doc_claims` reads all 11 phase files now; START_HERE said 23 gates against 40 ◑ | Bro | Review | merged `#253` |
 | **T-087** | **Phase 1 waits on a decision, not a deployment** - `custody.committed_label_resolver` is `NotProvisionableOnAMachine` and was on no Owner page; a test now refuses that class of silence ◑ | Bro | Review | merged `#258` |
-| **T-089** | **The roadmap sheet said all ten phases were partly built** - seven of eleven have every box ticked; the figure, its alt text and both summaries re-trued at `a94513e` ◑ | Bro | Review | merged `#259` |
+| **T-089** | **The roadmap sheet said all ten phases were partly built** - seven of eleven have every box ticked; the figure, its alt text and both summaries re-trued at `b7d4a05` ◑ | Bro | Review | merged `#259` |
 | **T-090** | **Three roadmap rows named things that had stopped being absent** - a schema that exists now, a count of five that is six, and a record that ended in the present tense ◑ | Bro | Review | merged `#261` |
 | **T-091** | **NM-MAN-06 bound** - an attestation key id the manifest never pinned is refused before any signature check, and the refusal spends neither the receipt nor the nonce ◑ | Bro | Review | merged `#262` |
 | **T-092** | **NM-TCB-25 bound** - an allowlist emptied after signing refuses the NEXT turn and leaves the signed record verifying byte for byte; read on exactly one path ◑ | Bro | Review | merged `#263` |

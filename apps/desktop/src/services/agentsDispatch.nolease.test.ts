@@ -111,7 +111,7 @@ describe('dispatch — the desktop never serializes a lease or a key', () => {
       contract_digest: SHA256,
       lease_id: 'lease-from-the-engine',
       repository: {
-        full_name: 'menqstudio/OS', branch: 'main', worktree: '/w',
+        full_name: 'menq-official/os', branch: 'main', worktree: '/w',
         base_commit: SHA1, tree_identity: SHA256,
       },
     };

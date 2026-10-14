@@ -7,11 +7,11 @@ THE DEFECT, 2026-08-30. Eleven of the thirteen Definition-of-Done and Task-check
     - [ ] One governed round-trip proven end-to-end. **Still open, and an independent auditor has now
     - [x] `task-request` + `bridge-result` contracts defined and tested — **but only `task-request` is
 
-They have read that way since commit `8e446d4` (2026-08-10), which rewrote those rows; the split
+They have read that way since commit `438f9b0` (2026-08-10), which rewrote those rows; the split
 into `docs/roadmap/` carried the halves over unchanged, and `tools/fixtures/roadmap-pre-split.md`
 preserves them, so the fixture agrees with the file and the byte-identity test stays green over
 text that says nothing. `check_roadmap_order.py` reads these very rows to decide which phase a
-session may work, and `git show c82f06a:MASTER_EXECUTION_ROADMAP.md` shows the round-trip row at
+session may work, and `git show 5ed8596:MASTER_EXECUTION_ROADMAP.md` shows the round-trip row at
 363 characters before that commit and 98 after.
 
 Thirty gates and not one of them looked. That is not an oversight so much as a category: every

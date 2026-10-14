@@ -21,7 +21,7 @@ TOKEN = "gho_" + "x" * 36
 class FakeRun:
     """`git remote get-url origin` and `gh auth token --user <owner>`, answered from a table."""
 
-    def __init__(self, origin="https://github.com/menqstudio/OS.git", logins=None):
+    def __init__(self, origin="https://github.com/menq-official/os.git", logins=None):
         self.origin, self.logins, self.calls = origin, dict(logins or {}), []
 
     def __call__(self, args, cwd):
@@ -34,15 +34,15 @@ class FakeRun:
 
 class OriginOwnerTests(unittest.TestCase):
     def test_the_three_spellings_of_a_github_origin_name_the_same_owner(self):
-        for url in ("https://github.com/menqstudio/OS.git", "https://github.com/menqstudio/OS",
-                    "git@github.com:menqstudio/OS.git", "ssh://git@github.com/menqstudio/OS.git",
-                    "https://github.com/menqstudio/OS.git/\n"):
+        for url in ("https://github.com/menq-official/os.git", "https://github.com/menq-official/os",
+                    "git@github.com:menq-official/os.git", "ssh://git@github.com/menq-official/os.git",
+                    "https://github.com/menq-official/os.git/\n"):
             self.assertEqual(gh_account.origin_owner(url), "menqstudio", url)
 
     def test_an_origin_that_is_not_githubs_names_nobody(self):
-        for url in ("", "https://gitlab.com/menqstudio/OS.git", "/srv/git/OS.git",
-                    "https://github.com.evil.example/menqstudio/OS.git",
-                    "https://evil.example/github.com/menqstudio/OS.git",
+        for url in ("", "https://gitlab.com/menq-official/os.git", "/srv/git/OS.git",
+                    "https://github.com.evil.example/menq-official/os.git",
+                    "https://evil.example/github.com/menq-official/os.git",
                     "https://github.com/menqstudio", "https://github.com//OS.git",
                     "https://github.com/a b/OS.git"):
             self.assertIsNone(gh_account.origin_owner(url), url)
@@ -74,7 +74,7 @@ class UseRepoAccountTests(unittest.TestCase):
         self.assertEqual(environ, {})
 
     def test_an_origin_that_cannot_be_read_or_is_not_githubs_changes_nothing(self):
-        for origin in (None, "https://gitlab.com/menqstudio/OS.git"):
+        for origin in (None, "https://gitlab.com/menq-official/os.git"):
             environ, run = {}, FakeRun(origin=origin, logins={"menqstudio": TOKEN})
             self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "active account")
             self.assertEqual(environ, {})

@@ -1,6 +1,6 @@
 # Whole-repository read — 2026-10-01
 
-**What this is.** The Owner asked for the whole repository to be read file by file for duplication, design contradictions, wrong code and any other error. This file is the record of that read: what was read, what was not, and every finding a second agent confirmed. It is a work list, **not an audit** — the Builder commissioned it and the Builder's agents ran it, so nothing here is independent (◑). `main` was at `962743a`.
+**What this is.** The Owner asked for the whole repository to be read file by file for duplication, design contradictions, wrong code and any other error. This file is the record of that read: what was read, what was not, and every finding a second agent confirmed. It is a work list, **not an audit** — the Builder commissioned it and the Builder's agents ran it, so nothing here is independent (◑). `main` was at `27bff25`.
 
 **The uncapped second pass** — the 605 findings this read saw and did not return, and more — is recorded in [`WHOLE_REPO_READ_2026-10-02.md`](WHOLE_REPO_READ_2026-10-02.md).
 
@@ -126,11 +126,11 @@ All open. Grouped by kind; within a kind, by path.
   - also: `apps/desktop/src-tauri/core/src/governed_turn_ipc.rs:226-252; tools/test_renderer_broker_schemas.py:148-150 (locks the old const)`
   - fix: Make trust_state an enum of the two committable labels (or record in the schema that the renderer deliberately rejects the second) and update the lock-step test.
 - **`config/current_state.json:110`** — The mirror names two different standing audits: the tenth in one field, the ninth in two others
-  - :49 last_independent_audit = 2026-09-19-tenth-audit-75fca65.md; :50 its note: "The NINTH round, of main @ 5cf9b8c"; :110 stop_gates: "standing independent-audit verdict is RED -- the NINTH round, apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md". AUDIT_LEDGER.md:12 says the TENTH, main @ 75fca65.
+  - :49 last_independent_audit = 2026-09-19-tenth-audit-f4ffc8d.md; :50 its note: "The NINTH round, of main @ 5cf6d2e"; :110 stop_gates: "standing independent-audit verdict is RED -- the NINTH round, apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md". AUDIT_LEDGER.md:12 says the TENTH, main @ f4ffc8d.
   - also: `apps/desktop/AUDIT/AUDIT_LEDGER.md:12`
-  - fix: Change the note at :50 and the stop gate at :110 to the tenth round at 75fca65, or drop the round name from both and point only at last_independent_audit.
+  - fix: Change the note at :50 and the stop gate at :110 to the tenth round at f4ffc8d, or drop the round name from both and point only at last_independent_audit.
 - **`config/required-checks.json:50`** — A temporary exclusion whose own condition is met sits in the permanent bucket, where no date forces it
-  - :50 "NOT required yet on purpose ... Require it ... after one green run on main." Main run 36851213190 (962743a): `Tools · gate self-tests on Windows (python)` success. deferred-enforcement.json:17-18 says deliberately_excluded is "permanently excluded" and temporary ones go in `deferrals` with a date; deferrals is {}.
+  - :50 "NOT required yet on purpose ... Require it ... after one green run on main." Main run 36851213190 (27bff25): `Tools · gate self-tests on Windows (python)` success. deferred-enforcement.json:17-18 says deliberately_excluded is "permanently excluded" and temporary ones go in `deferrals` with a date; deferrals is {}.
   - also: `config/deferred-enforcement.json:17`
   - fix: Move the context into `contexts` (Owner's branch-protection edit) or into deferred-enforcement.json `deferrals` with a deferred_until date.
 - **`docs/design/SECURITY_NEGATIVE_TEST_MATRIX.md:309`** — Matrix (and its ACL rows) say the evidence-head floor is a brops-signer-owned DB; in code the supervisor owns it and the signer opens no SQLite
@@ -193,7 +193,7 @@ All open. Grouped by kind; within a kind, by path.
   - also: `bridge/contracts/bridge-result.schema.json:4; bridge/contracts/task-request.schema.json:8`
   - fix: Replace both Shape cells with the current required field sets and drop the receipt.verified rule in favour of 'desktop verifies the signature'.
 - **`TASKS.md:34`** — T-021 row says the approval-request half 'exists nowhere'; it is built on engine, sidecar and desktop
-  - TASKS.md:34 'the request half exists nowhere', Blocked. But engine/runtime/bro_approval_requests.py and engine/schemas/approval-request.schema.json exist (c7a0450 #255, 12d6efb #254), engine_sidecar._OPS serves approval.request, and governance.rs:683 calls governed_sidecar_approval_request.
+  - TASKS.md:34 'the request half exists nowhere', Blocked. But engine/runtime/bro_approval_requests.py and engine/schemas/approval-request.schema.json exist (bcf0e6e #255, 68bef14 #254), engine_sidecar._OPS serves approval.request, and governance.rs:683 calls governed_sidecar_approval_request.
   - also: `docs/ARCHITECTURE.md:84 ('no approval-request schema in engine/schemas/, no desktop->engine command'); docs/OWNER_ACTION_REQUIRED.md:881 ('21 schemas; none is one' - there are 22 and one is)`
   - fix: Rewrite the T-021 row and ARCHITECTURE.md:84 to say what exists (an unauthenticated, non-adjudicating ask log) and what is still missing (adjudication).
 - **`TASKS.md:34`** — Live board row T-021 says the approval-request half 'exists nowhere' and is Blocked, while rows T-021a..d on the same board say it shipped (found cross-checking the archive's T-021 row; TASKS.md is outside bucket 47)
@@ -205,7 +205,7 @@ All open. Grouped by kind; within a kind, by path.
   - also: `apps/desktop/src-tauri/win-live/src/bin/win_live_turn.rs:234-246 (execution.rs:92-97 itself calls this sentence a missing comparison stated as a guarantee)`
   - fix: Rewrite both passages to say the driver measures and spawns the executor uncontained, and correct the uncorrected "Restricted-token executor launch: real" row in proof/WINDOWS_BROKER_AUDIT_VERDICT.md:103.
 - **`config/current_state.json:107`** — next_action describes PR #219 as frozen and unapproved and the matrix baseline as 182; #219 merged and the baseline is 35
-  - "T-020 (#219) is measured and frozen ... NOT approved ... the B/C list lives only in #219's body"; "unreviewed baseline is 182, down from 189". gh: #219 MERGED 2026-09-18 (2a50081). negative-matrix.json unreviewed_baseline has 35 entries. Line 124 gives a different next action (Owner reads design §10).
+  - "T-020 (#219) is measured and frozen ... NOT approved ... the B/C list lives only in #219's body"; "unreviewed baseline is 182, down from 189". gh: #219 MERGED 2026-09-18 (a500e8c). negative-matrix.json unreviewed_baseline has 35 entries. Line 124 gives a different next action (Owner reads design §10).
   - also: `config/current_state.json:124`
   - fix: Replace next_action with the one live instruction that next_action_by_carrier.current carries and move the T-020/T-059/T-060/T-061/T-062 narrative to docs/archive.
 - **`docs/roadmap/phase-1.md:30`** — Scope paragraph says the desktop output-pull hop is still open and rust_symbols is empty; both are false
@@ -217,7 +217,7 @@ All open. Grouped by kind; within a kind, by path.
   - also: `apps/desktop/src/services/agentsDispatch.boundary.test.ts:267 ; TASKS.md:37 ; docs/roadmap/phase-9.md:81 (defers to this row)`
   - fix: Rewrite the row to the ninth-audit result (8 unvalidated + 11 pattern-bound = 19 credential-capable leaves, Route 1 open by design) and drop 'T-030's open question is answered'.
 - **`engine/skills/index.json:49`** — All 42 skill index entries carry a stale sha256 and version; nothing reads them
-  - I recomputed sha256 for every entries[].path: 42 of 42 mismatch. index says "version": "1.0.0"; all 42 SKILL.md front-matters say `version: 1.1.0`. The index hash for auditing (fbde7413...) equals the blob at e289654 (subtree import); bodies were rewritten in de38cb1. No .py reads `entries`.
+  - I recomputed sha256 for every entries[].path: 42 of 42 mismatch. index says "version": "1.0.0"; all 42 SKILL.md front-matters say `version: 1.1.0`. The index hash for auditing (fbde7413...) equals the blob at 8bd3108 (subtree import); bodies were rewritten in 72908b2. No .py reads `entries`.
   - also: `engine/skills/*/SKILL.md:3 (version: 1.1.0); engine/skills/README.md:5 calls this file the 'canonical 42-skill inventory'`
   - fix: Regenerate entries (version + sha256) from the bodies and add a gate comparing index entries, the skills list and count to the files on disk, or delete the unread entries block.
 
@@ -305,11 +305,11 @@ All open. One line each; the evidence is in the workflow journal named in §6.
 - `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:411` — All 45 'fill this in BEFORE changing any code' implementer gates are blank, yet the file landed in the PR that changed the code
 - `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:718` — Finding bodies still argue the pre-review severity that the header and index contradict
 - `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:2478` — §4 judges narrowing §3.1 UNACCEPTABLE on the exact ground §6 kills as INVALID; the headline 6/8 counts it
-- `apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md:351` — Third audit's gate tally does not add up: 'all 19' gates split as 16 + 3 + 1
-- `apps/desktop/AUDIT/2026-08-17-seventh-audit-491f923.md:8` — 'Six reports — first through sixth' contradicts A-06 (the fifth was never filed) and the git history it cites
-- `apps/desktop/AUDIT/2026-08-17-seventh-audit-491f923.md:83` — The seventh round's only surviving record says 'eleven findings closed' and then lists thirteen
-- `apps/desktop/AUDIT/2026-08-17-sixth-audit-b16e572.md:24` — Sixth report's summary says 20 unrefuted claim groups; its list has 19
-- `apps/desktop/AUDIT/2026-08-18-eighth-audit-9ae2fd2.md:138` — Eighth report's headline '27 of 29 earn a tick' does not match its own promotion tables, and the archive repeats 27
+- `apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md:351` — Third audit's gate tally does not add up: 'all 19' gates split as 16 + 3 + 1
+- `apps/desktop/AUDIT/2026-08-17-seventh-audit-08a41d0.md:8` — 'Six reports — first through sixth' contradicts A-06 (the fifth was never filed) and the git history it cites
+- `apps/desktop/AUDIT/2026-08-17-seventh-audit-08a41d0.md:83` — The seventh round's only surviving record says 'eleven findings closed' and then lists thirteen
+- `apps/desktop/AUDIT/2026-08-17-sixth-audit-84cef03.md:24` — Sixth report's summary says 20 unrefuted claim groups; its list has 19
+- `apps/desktop/AUDIT/2026-08-18-eighth-audit-5242027.md:138` — Eighth report's headline '27 of 29 earn a tick' does not match its own promotion tables, and the archive repeats 27
 - `apps/desktop/AUDIT/AUDIT_LEDGER.md:15` — The ledger's third RED reason is 'three documentation counts'; the report it summarises says two counts and one mis-filed row
 - `apps/desktop/AUDIT/AUDIT_LEDGER.md:60` — Ledger and tenth report attribute thirteen findings to the ninth report; the ninth report files twelve and never contains I-13
 - `apps/desktop/AUDIT/AUDIT_LEDGER.md:101` — The ledger says the archive holds rounds 1-8, and also says round 9 is in it
@@ -320,7 +320,7 @@ All open. One line each; the evidence is in the workflow journal named in §6.
 - `apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md:192` — Keystone table says no independent audit confirmed any row and F-01 is 'NOT re-audited', while the same file records the third audit confirming it
 - `apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md:772` — Round 9 intro claims every row carries the tenth round's verdict; the nine promotion rows carry none
 - `apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md:864` — The record says the third audit's promotions are 'not applied in this file yet' while the same file carries them applied
-- `apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md:872` — The third audit's A-01 headline sits under the SECOND audit's 'Prior assessment', followed by 'That audit's target ... 219c763'
+- `apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md:872` — The third audit's A-01 headline sits under the SECOND audit's 'Prior assessment', followed by 'That audit's target ... c509705'
 - `apps/desktop/docs/product/INFORMATION_ARCHITECTURE.md:95` — Three incompatible responsive breakpoint tables
 - `apps/desktop/src-tauri/capabilities/default.json:7` — The capability covers 'bro-win-*' windows, while its own description, command-policy.json and the design doc say it is the single 'main' window
 - `apps/desktop/src-tauri/capabilities/default.json:80` — delete_automation is an irreversible hard delete that is granted, by classifying it X instead of L2
@@ -369,7 +369,7 @@ All open. One line each; the evidence is in the workflow journal named in §6.
 - `CLAUDE.md:128` — 'Not packaged yet' for the POSIX root installer contradicts the .deb bundle config
 - `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:21` — The verdict's operative gate, platform_governed_execution_supported(), was only a doc comment at the audited commit
 - `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:2607` — §5.3 reports `cargo test -p brops-core` as '16 passed' while the crate held 257 #[test] attributes at that commit
-- `apps/desktop/AUDIT/2026-08-17-seventh-audit-491f923.md:27` — The reconstructed seventh report sends the reader to AUDIT_LEDGER.md for the G-01..G-15 confirmations; they are in the archive
+- `apps/desktop/AUDIT/2026-08-17-seventh-audit-08a41d0.md:27` — The reconstructed seventh report sends the reader to AUDIT_LEDGER.md for the G-01..G-15 confirmations; they are in the archive
 - `apps/desktop/AUDIT/AUDIT_LEDGER.md:3` — Canonical ledger's opening describes a ticket folder that no longer exists and says it links both ticket sets, which it does not
 - `apps/desktop/AUDIT/AUDIT_LEDGER.md:69` — The 'how to read the status column' text in the canonical ledger is frozen at about round three
 - `apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md:273` — Desktop-sweep heading counts 12 closed findings; the table under it has 15 rows
@@ -573,7 +573,7 @@ As the readers reported it, verbatim.
 `doc-vs-doc` and `doc-vs-code` returned on the second run: **21 more findings** a second agent confirmed, all open. They overlap the slices' findings above and were not de-duplicated against them.
 
 - **`config/current_state.json:110`** (medium, stale-claim) — The machine mirror names the NINTH round as the standing verdict and phases 2-10 as not done; the canon says TENTH round and phases 2-7 done
-  - :110 stop_gates "verdict is RED -- the NINTH round, ...2026-08-19-ninth-audit-5cf9b8c.md"; :50 "The NINTH round" beside :49's tenth-audit path; :101 "phases_2_to_10": "not_done". NEXT_CHAT.md:76 "TEN rounds"; PROJECT_STATE.md:30-35 phases 2-7 Done. START_HERE.md:59 "Two independent audits have run".
+  - :110 stop_gates "verdict is RED -- the NINTH round, ...2026-08-19-ninth-audit-5cf6d2e.md"; :50 "The NINTH round" beside :49's tenth-audit path; :101 "phases_2_to_10": "not_done". NEXT_CHAT.md:76 "TEN rounds"; PROJECT_STATE.md:30-35 phases 2-7 Done. START_HERE.md:59 "Two independent audits have run".
   - fix: Point stop_gates[1] and last_independent_audit_note at the tenth round, replace phases_2_to_10 with per-phase status, and cut START_HERE's 2026-08-14 'where things stand' block down to a pointer.
 - **`docs/ARCHITECTURE.md:32`** (medium, design-contradiction) — Architecture claims CI proves the Windows cross-account named-pipe turn on every PR; the kit's own docs say no CI runs it and it cannot be reproduced
   - :32 "machine-proven end to end on Linux ... and on Windows (named pipes, cross-account, distinct service accounts), and CI runs both on every PR" vs WIRING_LIVE_TRUST.md:14-17 "built but not reproducibly proven from this tree ... no CI workflow runs any of it". ci.yml:796,814 run only cargo test and -SelfTest.

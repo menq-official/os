@@ -1,6 +1,6 @@
 # Evidence: a conscientious agent bypassed the coordination wall dozens of times, in silence
 
-**Date:** 2026-08-30 · **Repository:** `menqstudio/OS` · **Head at measurement:** `main` @ `fe26a78`
+**Date:** 2026-08-30 · **Repository:** `menqstudio/OS` · **Head at measurement:** `main` @ `6ee586b`
 
 **Status of every claim below: `measured`.** Each is followed by the command that produced it and
 what that command printed. Nothing here is inferred, and nothing is the Builder's recollection.

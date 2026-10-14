@@ -3,8 +3,8 @@
 **Status:** merged to `main`  
 **Reviewed:** 2026-07-15  
 **Repository:** `menqstudio/Bro`  
-**Approved candidate HEAD:** `65f95171853cecacbfdff98be8e15884c1029909`  
-**Merge commit:** `2395570bc9571e6c721373751a6dbfa2b6a8f75b`
+**Approved candidate HEAD:** `2a00e51955e3152a5d765524960ecbb2e4891ac6`  
+**Merge commit:** `8b454d934c779f534d459c47976e3aaba424a70c`
 
 ## Purpose
 
@@ -73,7 +73,7 @@ Control Room projections are derived from validated transition records. Empty or
 
 ## Verification evidence
 
-- exact candidate HEAD: `65f95171853cecacbfdff98be8e15884c1029909`
+- exact candidate HEAD: `2a00e51955e3152a5d765524960ecbb2e4891ac6`
 - GitHub Actions run `29392001475`: Windows GREEN and Ubuntu GREEN
 - exact artifact digest: `sha256:2a8c9e0150a335f5be1a4b982f59162f28fb2ce957f8dbd8f13aaad5f2f27b8a`
 - independent real-worktree audit: foundation GREEN; documentation freshness GREEN
@@ -84,7 +84,7 @@ Control Room projections are derived from validated transition records. Empty or
 
 ## Next phase
 
-Control Room API V1 was subsequently merged in PR #8 at merge commit `f736bce585e0e911c36a73d0181c8eb4ef3aebef`. The next scoped phase is **Control Room visual surfaces V1**, consuming the merged API without redefining runtime or policy truth.
+Control Room API V1 was subsequently merged in PR #8 at merge commit `3bbe41492ff819160742c325e7d158476856dc59`. The next scoped phase is **Control Room visual surfaces V1**, consuming the merged API without redefining runtime or policy truth.
 
 ## Out of scope
 

@@ -1,6 +1,6 @@
 # Independent zero-trust audit — menqstudio/OS
 
-**Target:** `main` @ `e0dd9693430b8251a00e6ecd485eeb1d0bad4cc1` (PR #98 merged; working tree clean, `git status --porcelain` empty)
+**Target:** `main` @ `402888ea040d86ed707e443bea0d63621675db29` (PR #98 merged; working tree clean, `git status --porcelain` empty)
 **Brief:** the brief of [`2026-08-06-remediation-audit.md`](./2026-08-06-remediation-audit.md) — same central
 question, same adversary model, same rule that a finding must be walked to a concrete attack.
 **Commissioned by:** Gev (Owner). **Auditor role only — not the Builder.**
@@ -227,7 +227,7 @@ apps/desktop/AUDIT/AUDIT_LEDGER.md (Engine sweep, "already closed" table, bro_si
 The later Windows sweep records that this is **FALSE** and explains why it matters. I checked the current
 head rather than either sweep.
 
-**Result: still false at `e0dd969`.** `grep -c windows_broker config/reachability-declarations.json` = **0**.
+**Result: still false at `402888e`.** `grep -c windows_broker config/reachability-declarations.json` = **0**.
 The file's `rust_symbols` block holds exactly six entries — `pull_output`, `governed_pull_output`,
 `governed_turn_output_read`, `prepare_governed_turn_v1b`, `resolve_governed_generation_config_v1b`,
 `governed_turn_submit_prepared` — and names no symbol in `windows_broker.rs`. By that file's
@@ -369,7 +369,7 @@ I did not drive either, and they stay unknown — see §6.
 Reported so the Owner is not reading open findings that the code has closed. I did not edit the ledger; that
 is the Builder's commit to make.
 
-| Row | Marked | Actually, at `e0dd969` |
+| Row | Marked | Actually, at `402888e` |
 |---|---|---|
 | `NULL DACL makes FILE_FLAG_FIRST_PIPE_INSTANCE inert` (Round-2 table) | ⚠️ OPEN | **Closed.** `win-live/src/pipe.rs` builds a real DACL (`:62`, `:146-150`) and a test asserts the pipe must **not** have a NULL DACL (`:572`), with a note that a regression restores it (`:470`). |
 | `Windows kit: no §2.5 floor, no anti-rollback floor` (Round-2 table) | ⚠️ OPEN | **Both halves now exist.** `win-live/src/tcb_floor.rs` is 834 lines; the anti-rollback floor runs through `brops_core::supervisor_ledger::evidence_floor_cas` with `head_sequence` from the durable counter in `win-live/src/head_sequence.rs`. Subject to `A-01`/`A-02`, which are defects *in* the floor, not its absence. |
@@ -383,11 +383,11 @@ Two further rows are false rather than stale and are written up as findings: `A-
 ## 5. What the auditor ran, personally
 
 Not agent output. Commands executed on this host (Windows 11, Python 3.12.10, cargo 1.96.1, node 22.22.3)
-against the clean `e0dd969` working tree.
+against the clean `402888e` working tree.
 
 | What | Result |
 |---|---|
-| `git rev-parse HEAD` / `git status --porcelain` | `e0dd969…`, clean — the tree audited is the tree named |
+| `git rev-parse HEAD` / `git status --porcelain` | `402888e…`, clean — the tree audited is the tree named |
 | engine suite: `BRO_ENV=ci python -B -m unittest discover -s tests` | **1995 tests, OK (skipped=43)**, 408 s |
 | `cargo test -p brops-core --lib` | **471 passed, 0 failed, 0 ignored** |
 | all 19 `tools/check_*.py` | 16 GREEN · 3 usage (args required) · 1 RED (`check_bundle_budget`, no Vite build) |

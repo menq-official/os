@@ -361,7 +361,7 @@ describe('parseDispatchReply — fail-closed', () => {
     contract_digest: DIGEST,
     lease_id: 'lease-1',
     repository: {
-      full_name: 'menqstudio/OS',
+      full_name: 'menq-official/os',
       branch: 'wave/phase-push-1',
       worktree: '/repo',
       base_commit: COMMIT,
@@ -440,7 +440,7 @@ describe('attemptDispatch', () => {
       client_request_id: 'a-different-request',
       assignment_id: 'asg-1', contract_digest: DIGEST, lease_id: 'lease-1',
       repository: {
-        full_name: 'menqstudio/OS', branch: 'main', worktree: '/repo',
+        full_name: 'menq-official/os', branch: 'main', worktree: '/repo',
         base_commit: COMMIT, tree_identity: DIGEST,
       },
     }));

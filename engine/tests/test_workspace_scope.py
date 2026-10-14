@@ -148,12 +148,12 @@ class RepositoryReferenceTests(unittest.TestCase):
     def test_the_comparison_form_is_what_it_was(self):
         from bro_workspace import normalize_repository_reference as normalize
         for value, expected in (
-            ("menqstudio/OS", "menqstudio/os"),
-            ("  menqstudio/OS.git ", "menqstudio/os"),
-            ("menqstudio\\OS", "menqstudio/os"),
-            ("https://github.com/menqstudio/OS.git", "github.com/menqstudio/os"),
-            ("git@github.com:menqstudio/OS.git", "github.com/menqstudio/os"),
-            ("https://gitlab.com/menqstudio/OS", "gitlab.com/menqstudio/os"),   # no host is refused
+            ("menq-official/os", "menq-official/os"),
+            ("  menq-official/os.git ", "menq-official/os"),
+            ("menqstudio\\OS", "menq-official/os"),
+            ("https://github.com/menq-official/os.git", "github.com/menq-official/os"),
+            ("git@github.com:menq-official/os.git", "github.com/menq-official/os"),
+            ("https://gitlab.com/menq-official/os", "gitlab.com/menq-official/os"),   # no host is refused
             (None, ""),
         ):
             self.assertEqual(normalize(value), expected, value)
@@ -163,9 +163,9 @@ class RepositoryReferenceTests(unittest.TestCase):
         # UNEQUAL here while normalize_remote folds them. Unequal is a refused binding,
         # never a false match; folding them is a decision about what a grant binds to.
         from bro_workspace import normalize_repository_reference as normalize
-        ssh_url, scp = "ssh://git@github.com/menqstudio/OS.git", "git@github.com:menqstudio/OS.git"
+        ssh_url, scp = "ssh://git@github.com/menq-official/os.git", "git@github.com:menq-official/os.git"
         self.assertEqual(normalize_remote(ssh_url), normalize_remote(scp))
-        self.assertEqual(normalize(ssh_url), "git@github.com/menqstudio/os")
+        self.assertEqual(normalize(ssh_url), "git@github.com/menq-official/os")
         self.assertNotEqual(normalize(ssh_url), normalize(scp))
         self.assertNotEqual(normalize(scp), normalize_remote(scp))
 

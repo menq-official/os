@@ -1,6 +1,6 @@
 # menqstudio/OS — consolidated audit index
 
-**Target:** `main` @ `219c76312e0a5204c4e9a4f1b012581742e93191`
+**Target:** `main` @ `c509705b4b0cb368a1ad752f53be6d109aedfad4`
 **Date:** 2026-08-06
 **Verdict:** **RED** — do not flip `platform_governed_execution_supported()`.
 

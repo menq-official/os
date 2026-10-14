@@ -2,7 +2,7 @@
 
 > **Status: DESIGN-ONLY.** No product code ships under this document until it is
 > **Architect-GREEN + Owner-approved**. This is the **3b-0** deliverable (design PR).
-> Builds on Wave 3a (slices 1–3, merged: `6c920d0`, `9b214e5`, `8a580028`) and on the
+> Builds on Wave 3a (slices 1–3, merged: `2d592ff`, `e25832e`, `82dae6fb`) and on the
 > ratified Wave 3 design ([`WAVE_3_RECEIPT_PROTOCOL_V1_DESIGN.md`](./WAVE_3_RECEIPT_PROTOCOL_V1_DESIGN.md) §1 Option B-core, §5).
 >
 > **Revision history.**

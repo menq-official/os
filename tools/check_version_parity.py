@@ -39,7 +39,7 @@ WHAT IS **NOT** CHECKED, AND WHY NOT -- THE GIT-TAG QUESTION
   decided.
 
   The facts, measured at this head:
-    * `git tag -l` prints exactly one tag, `brops-desktop-v0.1.0` (commit `fb304a2`, 2026-08-04),
+    * `git tag -l` prints exactly one tag, `brops-desktop-v0.1.0` (commit `4cfa5ca`, 2026-08-04),
       which came in with the BroPS subtree. `git tag -l 'v*'` prints nothing, so `release.yml`
       has never been triggered by a tag and its `preflight` refusal has never run.
     * `OWNERS.md`: *"Release and tagging stay the Owner's alone"* -- the 2026-08-14 §B.5

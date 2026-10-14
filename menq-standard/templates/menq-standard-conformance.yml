@@ -20,4 +20,4 @@ permissions:
 
 jobs:
   conformance:
-    uses: menqstudio/MenQ-Standard/.github/workflows/consumer-conformance.yml@__MENQ_STANDARD_COMMIT__
+    uses: menq-official/standard/.github/workflows/consumer-conformance.yml@__MENQ_STANDARD_COMMIT__

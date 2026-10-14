@@ -66,7 +66,7 @@ function footText(): string {
 /**
  * Wait until the data has rendered AND the effects that follow it have run. `useEasedCountUp` moves
  * its number in a `useEffect`, i.e. one render AFTER `total` changes, so reading the footer the moment
- * the label appears races that effect. It did, on `main` @ e181ee8: "expected '0' to be '42'" with
+ * the label appears races that effect. It did, on `main` @ f748472: "expected '0' to be '42'" with
  * the component correct, and green on the same tree one run earlier.
  */
 async function settled(): Promise<void> {

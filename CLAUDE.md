@@ -1,6 +1,6 @@
 <div align="center">
 
-# CLAUDE.md — the brain of `menqstudio/OS`
+# CLAUDE.md — the brain of `menq-official/os`
 
 **Read this first. Every new session — AI or human — starts here.**
 **Կարդա սա առաջինը։ Ամեն նոր session սկսում ա այստեղից։**
@@ -25,7 +25,7 @@ Then start. When Gev says *«գնա ռեպո կարդա ՄԴները»* that phr
 
 After **every** substantive change — design, code, audit verdict, HEAD change, blocker found or closed, merge — update the affected canonical documents, commit, push, and update the PR body **in the same cycle**. No required continuation state may live only in a chat, a memory or an unpushed commit.
 
-At every moment the repository must be sufficient for a brand-new session told only *"go to `menqstudio/OS`, read the manifest, verify the head, continue"* — and then continue correctly **from GitHub alone**.
+At every moment the repository must be sufficient for a brand-new session told only *"go to `menq-official/os`, read the manifest, verify the head, continue"* — and then continue correctly **from GitHub alone**.
 
 That was a sentence for weeks. It is a program now: **[`tools/check_handoff_ready.py`](./tools/check_handoff_ready.py)**. Run it before telling anyone to open a fresh session; until it is GREEN, saying so is telling them to start from a repository that cannot carry the work.
 
@@ -44,7 +44,7 @@ That was a sentence for weeks. It is a program now: **[`tools/check_handoff_read
 
 **The thesis:** the cockpit is the only surface a person touches, and every AI action it triggers must flow through the wall — `lease → gate → sandbox → signed receipt`. No direct, ungoverned model execution.
 
-**Owner:** Gev / MenQ (`menqstudio`, menqstudio@gmail.com). **Reply in Armenian by default**; English for code, identifiers and commands.
+**Owner:** Gev / MenQ (office@menqstudio.am). **Reply in Armenian by default**; English for code, identifiers and commands.
 
 ## 2. Repository map
 
@@ -101,7 +101,7 @@ Dated 2026-10-08 and 10-09. **Verify before claiming green** — never assume, a
 - **⚠ The wall loads from the SESSION's project root, not the repository you edit.** `.claude/settings.json` wires **six** events — `SessionStart`, `SubagentStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop` — all addressed `$CLAUDE_PROJECT_DIR/.claude/hooks/…`. **A session opened elsewhere that then works inside `OS/` gets none of them**, and nothing announces their absence: no read receipt, no phase declaration, no prior-art check, no Stop guard. That happened for the whole of `T-019`. **Open the session at this checkout.**
 - **Session-scoped gates cannot see a bare shell.** `check_read_receipt.py` and `check_roadmap_order.py` resolve the session from `CLAUDE_SESSION_ID`, which the hooks set and the Bash tool does not. Pass `--session`, or the RED you get means "could not find the session", not "the gate failed".
 - **Gates needing arguments** (they print usage, not a verdict, when run bare): `check_canonical_sync.py`, `check_prior_art.py`, `check_read_receipt.py`, `check_merge_ready.py`. **Needing a build or a package:** `check_bundle_budget.py` (a fresh `dist/`), `check_runbook_snippets.py` (`cryptography`).
-- **Commit identity:** `user.name "MenQ"`, `user.email "menqstudio@gmail.com"`. **No `Co-Authored-By` line** (Owner, 2026-10-08).
+- **Commit identity:** `user.name "MenQ"`, `user.email "office@menqstudio.am"`. **No `Co-Authored-By` line** (Owner, 2026-10-08).
 - **Enforcement-hook wedge:** the engine's own hooks can crash on a non-UTF-8 console and fail-closed-cascade a session. Set `PYTHONUTF8=1` and relaunch, or park the wiring with `deploy/wall.sh off` if that script is present in the checkout you are in.
 
 ## 6. Security discipline
@@ -114,7 +114,7 @@ The engine is a **security perimeter**. Any change to its wall, leases, gates, s
 2. `connect_broker()` returns `UnsupportedPlatform` **off Linux**
 3. the broker serves `UpstreamBlockedExecutor` **unless `$BROPS_BROKER_CONFIG` names a deployment whose manifest verifies under the floor-pinned root anchor** — which nothing in the shipped app sets; then it commits only `demonstration_custody` while `INSTALL_MINTED_CUSTODY_ACCEPTED` is `false` — the Owner's line
 
-**The standing independent verdict is RED.** ELEVEN rounds; the current one is [`2026-10-09-eleventh-audit-e3fc507.md`](./apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md) — RED, no P0, four P1; `K-03` is reachable today. The second round left **45** surviving findings (1 P0 · 5 P1 · 13 P2 · 26 P3).
+**The standing independent verdict is RED.** ELEVEN rounds; the current one is [`2026-10-09-eleventh-audit-598400e.md`](./apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md) — RED, no P0, four P1; `K-03` is reachable today. The second round left **45** surviving findings (1 P0 · 5 P1 · 13 P2 · 26 P3).
 
 **O-1…O-5 are all OPEN and none needs an Owner-minted artifact.** Inventory: [`docs/PHASE_10_PRODUCTION_ITEMS.md`](./docs/PHASE_10_PRODUCTION_ITEMS.md). What blocks them is deployment wiring and a second principal. Severities, which `tools/check_residual_items.py` holds identical here, in `docs/SECURITY_MODEL.md` §4 and in the inventory — a severity quietly downgraded in one document is how a production item stops being one: **O-1 (HIGH)** bytecode-shadow, the *read* half — CPython imports an existing `.pyc` before any Python check can run · **O-2 (MED)** audit-head anchor · **O-3 (MED)** conductor session token, fail-closed and set, open until a desktop turn reaches it · **O-4 (LOW)** control-room actor — nothing outside tests mints the artifact `_prove_command_actor` would verify · **O-5 (LOW)** evidence high-water, open deliberately: *when* it is minted is an unanswered design question. The one to know:
 
@@ -145,7 +145,7 @@ The engine is a **security perimeter**. Any change to its wall, leases, gates, s
 
 Մեկ product երկու կեսից՝ **`engine/`** (կառավարման ուղեղը, Python, Bro-ից) ու **`apps/desktop/`** (cockpit-ը, Tauri + React + Rust + SQLite, BroPS-ից)։ Իմաստը՝ cockpit-ն ա միակ մակերեսը որ մարդ դիպչում ա, ու նրա գործարկած ամեն AI գործողություն **պիտի անցնի wall-ով**՝ `lease → gate → sandbox → signed receipt`։ Ուղիղ, չկառավարվող model execution չկա։
 
-**Owner:** Gev / MenQ (`menqstudio`, menqstudio@gmail.com)։ Պատասխանը՝ հայերեն։
+**Owner:** Gev / MenQ (office@menqstudio.am)։ Պատասխանը՝ հայերեն։
 
 ## 2. Ո՞ր ֆայլն ինչի ա
 
@@ -159,7 +159,7 @@ Toolchain՝ cargo 1.97.1 · node 20.20.2 · npm 10.8.2։
 
 **⚠ Wall-ը բեռնվում ա SESSION-ի project root-ից, ոչ էն repo-ից որ խմբագրում ես։** `.claude/settings.json`-ը միացնում ա **վեց** event։ Ուրիշ տեղից բացված սեսիան, որ հետո աշխատում ա `OS/`-ի ներսում, դրանցից **ոչ մեկը չի ստանում**, ու ոչինչ չի ազդարարում բացակայությունը։ **Բացիր սեսիան հենց այս checkout-ից։**
 
-Engine-ի թեստերին պետք ա `BRO_ENV=ci`։ Commit identity՝ `MenQ` / `menqstudio@gmail.com`, `Co-Authored-By` տող չկա։
+Engine-ի թեստերին պետք ա `BRO_ENV=ci`։ Commit identity՝ `MenQ` / `office@menqstudio.am`, `Co-Authored-By` տող չկա։
 
 ## 4. Անվտանգություն
 

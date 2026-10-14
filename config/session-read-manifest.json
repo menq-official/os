@@ -358,14 +358,14 @@
       "apps/desktop/AUDIT/2026-08-06-consolidated-index.md",
       "apps/desktop/AUDIT/2026-08-06-independent-audit.md",
       "apps/desktop/AUDIT/2026-08-06-remediation-audit.md",
-      "apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md",
-      "apps/desktop/AUDIT/2026-08-15-zero-trust-reaudit-0a9a1af.md",
-      "apps/desktop/AUDIT/2026-08-17-seventh-audit-491f923.md",
-      "apps/desktop/AUDIT/2026-08-17-sixth-audit-b16e572.md",
-      "apps/desktop/AUDIT/2026-08-18-eighth-audit-9ae2fd2.md",
-      "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md",
-      "apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md",
-      "apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md",
+      "apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md",
+      "apps/desktop/AUDIT/2026-08-15-zero-trust-reaudit-3844fef.md",
+      "apps/desktop/AUDIT/2026-08-17-seventh-audit-08a41d0.md",
+      "apps/desktop/AUDIT/2026-08-17-sixth-audit-84cef03.md",
+      "apps/desktop/AUDIT/2026-08-18-eighth-audit-5242027.md",
+      "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md",
+      "apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md",
+      "apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md",
       "apps/desktop/AUDIT/AUDIT_LEDGER_ARCHIVE.md"
     ],
     "apps/desktop/AUDIT/changes": [
@@ -469,7 +469,7 @@
     "docs/audit-in-progress": [
       "docs/audit-in-progress/2026-10-09-twelfth-audit-BUILDER-ANSWERS.md",
       "docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md",
-      "docs/audit-in-progress/2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md"
+      "docs/audit-in-progress/2026-10-09-twelfth-audit-fd8e937-UNFINISHED.md"
     ],
     "docs/brand": [
       "docs/brand/README.md"

@@ -3,7 +3,7 @@
 - **Severity:** High
 - **Confidence:** High (source-verified)
 - **Files:** `.claude/settings.json` (all hook commands), `runtime/bro_hook.py:194` (deny delivered as exit-0 JSON), `.github/workflows/verify.yml` (live-wiring Linux-only)
-- **Status:** ⚠️ **partly open.** Fix 1 landed; fix 2 (the Windows CI leg) does **not** run in this monorepo — see the criteria (verified 2026-08-07 at `0efa99e`).
+- **Status:** ⚠️ **partly open.** Fix 1 landed; fix 2 (the Windows CI leg) does **not** run in this monorepo — see the criteria (verified 2026-08-07 at `3f50b55`).
 
 ## Problem
 Every hook is wired as `python3 "$CLAUDE_PROJECT_DIR/runtime/bro_hook.py" …`. On Windows `python3` is frequently not on PATH (Windows uses `python` / the `py` launcher; `python3` is often a missing Store alias). A PreToolUse hook blocks only via exit 2 or a deny payload; a hook whose **interpreter fails to launch** (exit 9009/127) is a *non-blocking* error, so the tool call **proceeds**. CI concedes `python3` isn't on the Windows runner and runs the live-wiring assurance (`bro_live_validate.py`) **Linux-only**, so nothing detects dead wiring. Net: on a Windows host without a resolvable `python3`, review-mode read-only, protected-control-plane denial, scope gates, and the full-read wall are all silently absent.

@@ -1,6 +1,6 @@
 # Floor-writer service — the principal that owns the anti-rollback marks · DESIGN PROPOSAL (rev 1)
 
-> **Status, corrected 2026-10-01: FW-1 is BUILT AND MERGED (`#219`, `2a50081`) — and still NOT
+> **Status, corrected 2026-10-01: FW-1 is BUILT AND MERGED (`#219`, `a500e8c`) — and still NOT
 > Architect-approved.** `engine/runtime/floor_writer.py` (`brops.floor-writer.v1`, a 4096-byte frame
 > cap), `run_floor_writer.py` and `provision_floor_writer.py` are in the tree; its boundary proof is
 > `engine/ci/floor_writer_boundary_proof.sh`. What is still a proposal: **FW-2** (Windows — the service
@@ -37,8 +37,8 @@
 > Architect-ի աուդիտն ա։ Այս փաստաթղթի տակ ոչ մի product code չի land-ում, ու ոչ մի դարպաս չի բացվում։
 >
 > **Revision history (non-normative appendix rule: history never redefines a current contract).**
-> - **rev 1** — first proposal. Authored 2026-08-15 against `main` @ `dc8d867`.
-> - **rev 1, re-verified 2026-08-31 against `main` @ `363c51c`** — no clause changed; this line records
+> - **rev 1** — first proposal. Authored 2026-08-15 against `main` @ `0933083`.
+> - **rev 1, re-verified 2026-08-31 against `main` @ `4595780`** — no clause changed; this line records
 >   what was re-measured, because a sixteen-day-old design that nobody re-read is a design nobody can cite.
 >   **It is NOT superseded by [`PRODUCTION_HALF_DESIGN.md`](./PRODUCTION_HALF_DESIGN.md)**, which designs the
 >   OUTPUT half and says so in its own scope note — *"It does not extend the containment half"*. This is a
@@ -543,7 +543,7 @@ Five things this proposal cannot decide, listed so the audit has a checklist rat
 
 ## 10. Provenance
 
-Authored 2026-08-15 by the Builder against `main` @ `dc8d867`, under a session-side canonical full-read
+Authored 2026-08-15 by the Builder against `main` @ `0933083`, under a session-side canonical full-read
 receipt (16 files, digest `93f770e902a5`), roadmap Phase 1 declared, prior-art search recorded for this
 path. **Nothing in this document has been independently reviewed.** It is a proposal; the next event on
 it is an Architect audit, and no implementation may begin before that verdict.

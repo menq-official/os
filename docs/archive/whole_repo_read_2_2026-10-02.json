@@ -941,7 +941,7 @@
   "src": "slice 3",
   "suggested_fix": "Rewrite the comment to say GREEN means a chain-bound turn committed as demonstration_custody, not a production claim, matching the script header.",
   "title": "live-governed-turn comment says the kit goes green only on production_verified=true; the script goes green on demonstration_custody with production_verified=false",
-  "verify": "ci.yml:166-167 today still says the script exits non-zero unless the driver prints `production_verified=true bound=true`; engine/ci/live/run_live_turn.sh:826 goes green on grep 'demonstration_custody.*bound=true' and :642 says the driver reports production_verified=false. Comment-only, so lowered from high. (Disclosure for the whole batch: the Read tool's PreToolUse hook timed out three times, so I could not open the pasted canonical read set; every verdict here rests on files read through Bash at main cf5f134. Cited line numbers have drifted about +10 in the lower half of ci.yml.)"
+  "verify": "ci.yml:166-167 today still says the script exits non-zero unless the driver prints `production_verified=true bound=true`; engine/ci/live/run_live_turn.sh:826 goes green on grep 'demonstration_custody.*bound=true' and :642 says the driver reports production_verified=false. Comment-only, so lowered from high. (Disclosure for the whole batch: the Read tool's PreToolUse hook timed out three times, so I could not open the pasted canonical read set; every verdict here rests on files read through Bash at main 5678de5. Cited line numbers have drifted about +10 in the lower half of ci.yml.)"
  },
  {
   "already_recorded": null,
@@ -955,7 +955,7 @@
   "src": "slice 2",
   "suggested_fix": "Cut lines 17-36 to docs/archive/ and leave the banner as the only Next.",
   "title": "The handoff carries two 'Next' statements, and its body still narrates #219-#221 from 96 pull requests ago",
-  "verify": "NEXT_CHAT.md:17 still opens '**Next: T-020's FW-1 correction MERGED as `#219` ... NOT approved**' and :23-34 narrate #220/#221/T-059/T-060; current_state.json:107 next_action is the same T-020 text, while PROJECT_STATE.md:3 says 100 PRs merged (#219-#319). The second 'Next: T-145 wave 2' line is gone; the banner now names PR #321/T-153, already merged as cf5f134."
+  "verify": "NEXT_CHAT.md:17 still opens '**Next: T-020's FW-1 correction MERGED as `#219` ... NOT approved**' and :23-34 narrate #220/#221/T-059/T-060; current_state.json:107 next_action is the same T-020 text, while PROJECT_STATE.md:3 says 100 PRs merged (#219-#319). The second 'Next: T-145 wave 2' line is gone; the banner now names PR #321/T-153, already merged as 5678de5."
  },
  {
   "already_recorded": null,
@@ -974,7 +974,7 @@
  {
   "already_recorded": null,
   "category": "stale-claim",
-  "evidence": ":285 'The whole table is measured at **one head**, `830fcec`'; :34 'Measured at 2026-09-19, main @ a94513e, on a Windows box'. config/counted-claims.json: engine_tests head 73e5ccb (2026-10-01, Debian), frontend_tests 81736b4, bridge_tests 9cc4d2c.",
+  "evidence": ":285 'The whole table is measured at **one head**, `bfd3bb6`'; :34 'Measured at 2026-09-19, main @ b7d4a05, on a Windows box'. config/counted-claims.json: engine_tests head 1961bd7 (2026-10-01, Debian), frontend_tests bcd20b1, bridge_tests fb8d784.",
   "file": "README.md",
   "id": "R2-0071",
   "line": 285,
@@ -982,22 +982,22 @@
   "severity": "medium",
   "src": "slice 2",
   "suggested_fix": "Delete both single-head statements and point at config/counted-claims.json, which already carries a head and date per row.",
-  "title": "README says the whole verification table is measured at one head, 830fcec; its rows were measured at three other heads",
-  "verify": "README.md:285 'The whole table is measured at **one head**, `830fcec`' and :34 'main @ a94513e, on a Windows box'; counted-claims.json has engine_tests and frontend_tests at head e33c7e9 (2026-10-02, Debian), a11y at 6b5604c, bridge at 9cc4d2c."
+  "title": "README says the whole verification table is measured at one head, bfd3bb6; its rows were measured at three other heads",
+  "verify": "README.md:285 'The whole table is measured at **one head**, `bfd3bb6`' and :34 'main @ b7d4a05, on a Windows box'; counted-claims.json has engine_tests and frontend_tests at head 3a59a1c (2026-10-02, Debian), a11y at 99fd816, bridge at fb8d784."
  },
  {
   "already_recorded": null,
   "category": "stale-claim",
-  "evidence": ":303-305 'RUNS 2617 tests in every environment ... measured at `9659281` on 2026-09-20, 14 ... 82 ... 97'. counted-claims.json: '2243 tests RAN in all three'; 2617 measured only on Debian (skipped 13). `git cat-file -e 9659281` fails; the file itself says it was replaced by 9cc4d2c.",
+  "evidence": ":303-305 'RUNS 2617 tests in every environment ... measured at `9659281` on 2026-09-20, 14 ... 82 ... 97'. counted-claims.json: '2243 tests RAN in all three'; 2617 measured only on Debian (skipped 13). `git cat-file -e 9659281` fails; the file itself says it was replaced by fb8d784.",
   "file": "README.md",
   "id": "R2-0072",
   "line": 303,
   "other_location": "config/counted-claims.json ($comment)",
   "severity": "medium",
   "src": "slice 2",
-  "suggested_fix": "Say the skip comparison was taken at 9cc4d2c with 2243 run, and that 2617 is a Debian-only figure.",
+  "suggested_fix": "Say the skip comparison was taken at fb8d784 with 2243 run, and that 2617 is a Debian-only figure.",
   "title": "README attributes 2617 engine tests to three environments measured when the suite was 2243, and cites a commit that does not exist",
-  "verify": "README.md:303-305 now reads 'RUNS 2666 tests in every environment ... measured at `9659281` on 2026-09-20, 14 ... 82 ... 97'. counted-claims.json: 2243 ran in all three then; 2666 is measured only on Debian (13 skipped). `git cat-file -e 9659281^{commit}` fails; the file's $comment says it was replaced by 9cc4d2c."
+  "verify": "README.md:303-305 now reads 'RUNS 2666 tests in every environment ... measured at `9659281` on 2026-09-20, 14 ... 82 ... 97'. counted-claims.json: 2243 ran in all three then; 2666 is measured only on Debian (13 skipped). `git cat-file -e 9659281^{commit}` fails; the file's $comment says it was replaced by fb8d784."
  },
  {
   "already_recorded": null,
@@ -1094,12 +1094,12 @@
   "src": "slice 44",
   "suggested_fix": "Rewrite 1b step text, 2b and 2d-C to say the design merged and FW-1 is implemented but not approved, keeping only what still waits on the Owner.",
   "title": "Owner page still says PR #112 is open and nothing of the floor writer is built; it merged on 2026-08-31 and the service exists",
-  "verify": "Opened docs/OWNER_ACTION_REQUIRED.md: :915 still reads 'PR #112 is open and deliberately not merged', :628 'Nothing is built', :1038 '#112 ... conflicts after every merge'. git log on main has 83357de '(#112)' and 2a50081 '(#219)', and engine/runtime/floor_writer.py + provision_floor_writer.py exist; SECURITY_MODEL.md:242 says the design merged. gh is unauthenticated here, so the merge was confirmed from git history, not from the API. Stale page-of-record text, no wrong behaviour, so medium not high."
+  "verify": "Opened docs/OWNER_ACTION_REQUIRED.md: :915 still reads 'PR #112 is open and deliberately not merged', :628 'Nothing is built', :1038 '#112 ... conflicts after every merge'. git log on main has 50dd29c '(#112)' and a500e8c '(#219)', and engine/runtime/floor_writer.py + provision_floor_writer.py exist; SECURITY_MODEL.md:242 says the design merged. gh is unauthenticated here, so the merge was confirmed from git history, not from the API. Stale page-of-record text, no wrong behaviour, so medium not high."
  },
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "OWNER_ACTION:915 'PR #112 is open and deliberately not merged'; :628 'Nothing is built, and merging the proposal is not approving it'. git: '83357de The floor-writer service has a design now (T-020) ... (#112)', '2a50081 Floor Writer ... (#219)'. SECURITY_MODEL:242 'Implementation exists ... the design merged as PR #112'.",
+  "evidence": "OWNER_ACTION:915 'PR #112 is open and deliberately not merged'; :628 'Nothing is built, and merging the proposal is not approving it'. git: '50dd29c The floor-writer service has a design now (T-020) ... (#112)', 'a500e8c Floor Writer ... (#219)'. SECURITY_MODEL:242 'Implementation exists ... the design merged as PR #112'.",
   "file": "docs/OWNER_ACTION_REQUIRED.md",
   "id": "R2-0080",
   "line": 915,
@@ -1108,7 +1108,7 @@
   "src": "sweep doc-vs-doc",
   "suggested_fix": "Mark §1b step text and §2b as resolved history with the merge commits, and state what is actually waiting (C3 and the second Architect pass).",
   "title": "The Owner's page says PR #112 is open and nothing of the floor writer is built; #112 merged and the service shipped in #219",
-  "verify": "OWNER_ACTION_REQUIRED.md:915 still says 'PR #112 is open and deliberately not merged' and :628 'Nothing is built'. git log shows 83357de '... (#112)' and 2a50081 'Floor Writer ... (#219)' merged. Section 2b carries no RESOLVED marker, unlike its neighbours."
+  "verify": "OWNER_ACTION_REQUIRED.md:915 still says 'PR #112 is open and deliberately not merged' and :628 'Nothing is built'. git log shows 50dd29c '... (#112)' and a500e8c 'Floor Writer ... (#219)' merged. Section 2b carries no RESOLVED marker, unlike its neighbours."
  },
  {
   "already_recorded": false,
@@ -3885,7 +3885,7 @@
   "src": "slice 58",
   "suggested_fix": "Remove the InstructionsLoaded wiring or implement the handler.",
   "title": "The InstructionsLoaded hook is wired to an event bro_hook has no branch for",
-  "verify": "engine/.claude/settings.json:90-95 still runs `bro_hook.py instructions-loaded`; bro_hook.main() (118-198) has no branch for it and falls to `return 0`; grep for 'instructions-loaded' in engine finds only the settings file. (Runner note, unrelated to this finding: the PostToolUse canonical_law_gate reported TASKS.md growing to 7,010 bytes during my read-only greps; git status shows staged canon edits on branch t155/settled-at-3c03955 made by another process. I wrote nothing in the repo and did not revert it.)"
+  "verify": "engine/.claude/settings.json:90-95 still runs `bro_hook.py instructions-loaded`; bro_hook.main() (118-198) has no branch for it and falls to `return 0`; grep for 'instructions-loaded' in engine finds only the settings file. (Runner note, unrelated to this finding: the PostToolUse canonical_law_gate reported TASKS.md growing to 7,010 bytes during my read-only greps; git status shows staged canon edits on branch t155/settled-at-0f6282f made by another process. I wrote nothing in the repo and did not revert it.)"
  },
  {
   "already_recorded": false,
@@ -4901,7 +4901,7 @@
  {
   "already_recorded": false,
   "category": "design-contradiction",
-  "evidence": "README:420 'npx vitest run   # test count NOT printed here: it was not measured'. README:299 'Cockpit frontend (jsdom) | 999 tests, 85 file'; :317 'The last three rows were absent until a57fd86 ... They are now'.",
+  "evidence": "README:420 'npx vitest run   # test count NOT printed here: it was not measured'. README:299 'Cockpit frontend (jsdom) | 999 tests, 85 file'; :317 'The last three rows were absent until 2d447d3 ... They are now'.",
   "file": "README.md",
   "id": "R2-0359",
   "line": 420,
@@ -6751,7 +6751,7 @@
  {
   "already_recorded": false,
   "category": "design-contradiction",
-  "evidence": "`rewrite_active_line(\"main\", head)` runs unconditionally, while rewrite_state sets active.branch to the settle branch. Today NEXT_CHAT.md:8 says \"**Active branch:** `main`\" and config/current_state.json active.branch is 't152/settled-at-db520c2'. Lines 908-911 call this shape \"two answers to one question\".",
+  "evidence": "`rewrite_active_line(\"main\", head)` runs unconditionally, while rewrite_state sets active.branch to the settle branch. Today NEXT_CHAT.md:8 says \"**Active branch:** `main`\" and config/current_state.json active.branch is 't152/settled-at-1deb8f8'. Lines 908-911 call this shape \"two answers to one question\".",
   "file": "tools/sync_active_pr.py",
   "id": "R2-0492",
   "line": 949,
@@ -6760,7 +6760,7 @@
   "src": "slice 73",
   "suggested_fix": "Pass `branch if pr and branch else \"main\"` to rewrite_active_line so the line and the mirror name the same branch.",
   "title": "A settle with --pr/--branch writes the settle branch into the mirror and `main` into NEXT_CHAT's Active-branch line",
-  "verify": "settle() calls rewrite_active_line(\"main\", head) unconditionally (line 949) while rewrite_state sets active.branch to the settle branch; today NEXT_CHAT.md:8 says Active branch `main` and config/current_state.json active.branch is 't155/settled-at-3c03955'. check_coordination is satisfied through the banner, so it is an inconsistency between two labels, not a red gate."
+  "verify": "settle() calls rewrite_active_line(\"main\", head) unconditionally (line 949) while rewrite_state sets active.branch to the settle branch; today NEXT_CHAT.md:8 says Active branch `main` and config/current_state.json active.branch is 't155/settled-at-0f6282f'. check_coordination is satisfied through the banner, so it is an inconsistency between two labels, not a red gate."
  },
  {
   "already_recorded": false,
@@ -6989,7 +6989,7 @@
  {
   "already_recorded": null,
   "category": "duplicate",
-  "evidence": "NEXT_CHAT.md:79 and PROJECT_STATE.md:59 '31 pull requests, 121 files and 10,599 inserted lines' (2026-09-21); README.md:351 '60 ... 172 files ... 21,997' (73e5ccb). Re-run on main 6b5604c: 63 PRs, 652 files changed, 37157 insertions. PROJECT_STATE:61 adds '#253–#284' beside its own '#219–#315'.",
+  "evidence": "NEXT_CHAT.md:79 and PROJECT_STATE.md:59 '31 pull requests, 121 files and 10,599 inserted lines' (2026-09-21); README.md:351 '60 ... 172 files ... 21,997' (1961bd7). Re-run on main 99fd816: 63 PRs, 652 files changed, 37157 insertions. PROJECT_STATE:61 adds '#253–#284' beside its own '#219–#315'.",
   "file": "NEXT_CHAT.md",
   "id": "R2-0509",
   "line": 79,
@@ -6998,12 +6998,12 @@
   "src": "slice 2",
   "suggested_fix": "Keep the number only in README with its two commands and have NEXT_CHAT and PROJECT_STATE say 'run the commands in README', with no figure.",
   "title": "The 'merged since the audited head' figure is written in three documents with two values, and both are behind the tree",
-  "verify": "NEXT_CHAT.md:79 and PROJECT_STATE.md:59-61 '31 pull requests, 121 files and 10,599 inserted lines' (dated 2026-09-21, '#253-#284'); README.md:351 '60 ... 172 ... 21,997' at 73e5ccb. Measured now on main cf5f134: 68 commits in 75fca65..main, 852 files changed, 56,482 insertions. Lowered because each figure carries its measurement date."
+  "verify": "NEXT_CHAT.md:79 and PROJECT_STATE.md:59-61 '31 pull requests, 121 files and 10,599 inserted lines' (dated 2026-09-21, '#253-#284'); README.md:351 '60 ... 172 ... 21,997' at 1961bd7. Measured now on main 5678de5: 68 commits in f4ffc8d..main, 852 files changed, 56,482 insertions. Lowered because each figure carries its measurement date."
  },
  {
   "already_recorded": false,
   "category": "duplicate",
-  "evidence": "NEXT_CHAT:79 and PROJECT_STATE:59 '31 pull requests, 121 files and 10,599 inserted lines' (measured 2026-09-21; PROJECT_STATE header says updated 2026-10-02). README:351 '60 pull requests, 172 files and 21,997 inserted lines' (2026-10-01). Today: 68 PRs, 852 files, 56,482 insertions (git diff --shortstat 75fca65..HEAD).",
+  "evidence": "NEXT_CHAT:79 and PROJECT_STATE:59 '31 pull requests, 121 files and 10,599 inserted lines' (measured 2026-09-21; PROJECT_STATE header says updated 2026-10-02). README:351 '60 pull requests, 172 files and 21,997 inserted lines' (2026-10-01). Today: 68 PRs, 852 files, 56,482 insertions (git diff --shortstat f4ffc8d..HEAD).",
   "file": "NEXT_CHAT.md",
   "id": "R2-0510",
   "line": 79,
@@ -7012,7 +7012,7 @@
   "src": "sweep doc-vs-doc",
   "suggested_fix": "Keep the two commands (README:357-358) in one place and remove the numbers from NEXT_CHAT and PROJECT_STATE.",
   "title": "'Merged since the tenth audit and unconfirmed' is stated in three files with two values",
-  "verify": "NEXT_CHAT.md:79 and PROJECT_STATE.md:59-60 say 31 PRs / 121 files / 10,599 lines (measured 2026-09-21); README.md:351-352 says 60 / 172 / 21,997 (2026-10-01). git diff --shortstat 75fca65..HEAD today prints 853 files, 58585 insertions. Each copy is dated, so it is drift between duplicates, not a false statement."
+  "verify": "NEXT_CHAT.md:79 and PROJECT_STATE.md:59-60 say 31 PRs / 121 files / 10,599 lines (measured 2026-09-21); README.md:351-352 says 60 / 172 / 21,997 (2026-10-01). git diff --shortstat f4ffc8d..HEAD today prints 853 files, 58585 insertions. Each copy is dated, so it is drift between duplicates, not a false statement."
  },
  {
   "already_recorded": null,
@@ -8207,7 +8207,7 @@
  {
   "already_recorded": false,
   "category": "duplicate",
-  "evidence": "CONTROL_ROOM_API_V1_SPEC.md:86-88, ORCHESTRATION_CONTROL_ROOM_V1_SPEC.md:59-61 and ORCHESTRATION_RUNTIME_V1_SPEC.md:85-87 each state the next phase; merge commit f736bce585e0... appears in all three (API l.7, Control Room l.57, Runtime l.87). All three are injected at startup. Not drifted.",
+  "evidence": "CONTROL_ROOM_API_V1_SPEC.md:86-88, ORCHESTRATION_CONTROL_ROOM_V1_SPEC.md:59-61 and ORCHESTRATION_RUNTIME_V1_SPEC.md:85-87 each state the next phase; merge commit 3bbe41492ff8... appears in all three (API l.7, Control Room l.57, Runtime l.87). All three are injected at startup. Not drifted.",
   "file": "engine/docs/CONTROL_ROOM_API_V1_SPEC.md",
   "id": "R2-0596",
   "line": 86,
@@ -8216,7 +8216,7 @@
   "src": "slice 56",
   "suggested_fix": "Keep the next-phase statement in one spec (the API one) and have the other two link to it.",
   "title": "The 'Next phase: Control Room visual surfaces V1' paragraph and the PR #8 merge record are repeated across three specs",
-  "verify": "The 'next scoped phase is Control Room visual surfaces V1' statement is at CONTROL_ROOM_API_V1_SPEC.md:86-88, ORCHESTRATION_CONTROL_ROOM_V1_SPEC.md:59-61 and ORCHESTRATION_RUNTIME_V1_SPEC.md:85-87, and merge commit f736bce5 is in all three (:7, :57, :87). They are in the engine's read manifest, not the monorepo's startup one; consistent today."
+  "verify": "The 'next scoped phase is Control Room visual surfaces V1' statement is at CONTROL_ROOM_API_V1_SPEC.md:86-88, ORCHESTRATION_CONTROL_ROOM_V1_SPEC.md:59-61 and ORCHESTRATION_RUNTIME_V1_SPEC.md:85-87, and merge commit 3bbe4149 is in all three (:7, :57, :87). They are in the engine's read manifest, not the monorepo's startup one; consistent today."
  },
  {
   "already_recorded": false,
@@ -11864,7 +11864,7 @@
   "other_location": "MASTER_EXECUTION_ROADMAP.md:144 ; docs/roadmap/phase-1.md:101",
   "severity": "low",
   "src": "slice 2",
-  "suggested_fix": "Cite the merge commit on main that phase-1.md:111 already names (41cf4ff), or say the hash is from the pre-import repository.",
+  "suggested_fix": "Cite the merge commit on main that phase-1.md:111 already names (8b0aa9a), or say the hash is from the pre-import repository.",
   "title": "Provenance and the bridge verify line cite commit 5be8d95, which is not an object in this repository",
   "verify": "`git cat-file -e 5be8d95^{commit}` fails; it is cited at roadmap :144 and :473 and docs/roadmap/phase-1.md:67, :101, :109."
  },
@@ -11885,7 +11885,7 @@
  {
   "already_recorded": null,
   "category": "stale-claim",
-  "evidence": ":44-48 '| Windows | |' then 'tools/ self-tests · 2026-10-01 | 1491 OK' and 'frontend · 2026-10-01 | typecheck clean, 801 / 85 files'. counted-claims.json frontend_tests: 'Debian 13 (trixie) native, node 20 (jsdom) @ 81736b4': 801; \"builder's Windows box (jsdom)\": 794.",
+  "evidence": ":44-48 '| Windows | |' then 'tools/ self-tests · 2026-10-01 | 1491 OK' and 'frontend · 2026-10-01 | typecheck clean, 801 / 85 files'. counted-claims.json frontend_tests: 'Debian 13 (trixie) native, node 20 (jsdom) @ bcd20b1': 801; \"builder's Windows box (jsdom)\": 794.",
   "file": "PROJECT_STATE.md",
   "id": "R2-0860",
   "line": 44,
@@ -11894,7 +11894,7 @@
   "src": "slice 2",
   "suggested_fix": "Move the two 2026-10-01 rows under the Debian heading and leave Windows with what was measured there.",
   "title": "The suites table files Debian measurements under the Windows heading",
-  "verify": "PROJECT_STATE.md:44-48 puts 'tools/ self-tests · 2026-10-02 | 1606 OK' and 'frontend · 2026-10-02 | 999 / 85 files' under the '| Windows |' heading; counted-claims.json frontend_tests records 999 on 'Debian 13 (trixie) native @ e33c7e9', Windows box 794."
+  "verify": "PROJECT_STATE.md:44-48 puts 'tools/ self-tests · 2026-10-02 | 1606 OK' and 'frontend · 2026-10-02 | 999 / 85 files' under the '| Windows |' heading; counted-claims.json frontend_tests records 999 on 'Debian 13 (trixie) native @ 3a59a1c', Windows box 794."
  },
  {
   "already_recorded": null,
@@ -11955,7 +11955,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "README:285 'The whole table is measured at one head, 830fcec'; :34 'Measured at 2026-09-19, main @ a94513e, on a Windows box'. Table: 'Gate scripts 45', 'Engine 2666'. git ls-tree 830fcec tools/ holds 37 check_*.py; 830fcec and a94513e are both dated 2026-09-19.",
+  "evidence": "README:285 'The whole table is measured at one head, bfd3bb6'; :34 'Measured at 2026-09-19, main @ b7d4a05, on a Windows box'. Table: 'Gate scripts 45', 'Engine 2666'. git ls-tree bfd3bb6 tools/ holds 37 check_*.py; bfd3bb6 and b7d4a05 are both dated 2026-09-19.",
   "file": "README.md",
   "id": "R2-0865",
   "line": 285,
@@ -11963,8 +11963,8 @@
   "severity": "low",
   "src": "sweep doc-vs-doc",
   "suggested_fix": "Delete the single-head sentence and the 'Measured at' row, and let each row carry its own date as PROJECT_STATE's suite table does.",
-  "title": "README says its whole verification table is measured at one head, 830fcec; the metadata says a94513e, and the table's values did not exist at either",
-  "verify": "README.md:285 says the whole table is measured at one head, 830fcec; README:34 says main @ a94513e. The table's 'Gate scripts 45' matches today's tree (45 check_*.py), whereas `git ls-tree 830fcec tools/` has 39."
+  "title": "README says its whole verification table is measured at one head, bfd3bb6; the metadata says b7d4a05, and the table's values did not exist at either",
+  "verify": "README.md:285 says the whole table is measured at one head, bfd3bb6; README:34 says main @ b7d4a05. The table's 'Gate scripts 45' matches today's tree (45 check_*.py), whereas `git ls-tree bfd3bb6 tools/` has 39."
  },
  {
   "already_recorded": null,
@@ -11983,7 +11983,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "START_HERE:108-111 '45 check_*.py files exist; 42 are invoked ... (Measured at 4b25650 on 2026-10-01 ...)'. git ls-tree 4b25650 tools/ | grep check_*.py → 43. Today: 45 exist, 42 invoked (recounted); check_merge_ready and check_push_ready arrived with #319.",
+  "evidence": "START_HERE:108-111 '45 check_*.py files exist; 42 are invoked ... (Measured at 5fd0ee3 on 2026-10-01 ...)'. git ls-tree 5fd0ee3 tools/ | grep check_*.py → 43. Today: 45 exist, 42 invoked (recounted); check_merge_ready and check_push_ready arrived with #319.",
   "file": "START_HERE.md",
   "id": "R2-0867",
   "line": 111,
@@ -11991,8 +11991,8 @@
   "severity": "low",
   "src": "sweep doc-vs-doc",
   "suggested_fix": "Update the provenance note to the head where 45/42 was measured, or drop the sha and keep only the command.",
-  "title": "The gate count 45/42 is said to be measured at 4b25650; that head held 43 check scripts",
-  "verify": "START_HERE.md:108-111 says 45/42 'Measured at 4b25650'; git ls-tree 4b25650 tools/ holds 43 check_*.py and neither check_merge_ready.py nor check_push_ready.py. Today's tree recounts to 45 existing, 42 invoked, so the number is right and the provenance sha is wrong."
+  "title": "The gate count 45/42 is said to be measured at 5fd0ee3; that head held 43 check scripts",
+  "verify": "START_HERE.md:108-111 says 45/42 'Measured at 5fd0ee3'; git ls-tree 5fd0ee3 tools/ holds 43 check_*.py and neither check_merge_ready.py nor check_push_ready.py. Today's tree recounts to 45 existing, 42 invoked, so the number is right and the provenance sha is wrong."
  },
  {
   "already_recorded": false,
@@ -12596,7 +12596,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": ":245-246 'as of 2026-08-15 it is NOT older than the code. **Six** independent audits have run.' The same page's header carries TENTH (:115); CLAUDE.md 'TEN rounds'; apps/desktop/AUDIT/ holds reports through 2026-09-19-tenth-audit-75fca65.md. The header also has no seventh-round entry.",
+  "evidence": ":245-246 'as of 2026-08-15 it is NOT older than the code. **Six** independent audits have run.' The same page's header carries TENTH (:115); CLAUDE.md 'TEN rounds'; apps/desktop/AUDIT/ holds reports through 2026-09-19-tenth-audit-f4ffc8d.md. The header also has no seventh-round entry.",
   "file": "docs/OWNER_ACTION_REQUIRED.md",
   "id": "R2-0911",
   "line": 246,
@@ -12763,7 +12763,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": ":3 'seven pull requests, **nothing merged**. main is d42cb65 throughout'; :88 'Four checks ... defended by nothing ... not fixed'; :137 produce_agent_artifact doc 'still says'. gh: #207-#213 all MERGED. VERIFICATION_QUEUE_1.md:162 'All six are closed now (2026-09-01, T-061)'.",
+  "evidence": ":3 'seven pull requests, **nothing merged**. main is f35377a throughout'; :88 'Four checks ... defended by nothing ... not fixed'; :137 produce_agent_artifact doc 'still says'. gh: #207-#213 all MERGED. VERIFICATION_QUEUE_1.md:162 'All six are closed now (2026-09-01, T-061)'.",
   "file": "docs/QUEUES_1_AND_2_REPORT.md",
   "id": "R2-0923",
   "line": 3,
@@ -12837,7 +12837,7 @@
   "file": "docs/REPO_STALENESS_SWEEP_2026-08-08.md",
   "id": "R2-0928",
   "line": 9,
-  "other_location": "apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md",
+  "other_location": "apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md",
   "severity": "low",
   "src": "slice 44",
   "suggested_fix": "Cut the banner's own status sentence and leave only the pointer to the ledger.",
@@ -12875,20 +12875,20 @@
  {
   "already_recorded": null,
   "category": "stale-claim",
-  "evidence": "L4-5: \"`git log --all --diff-filter=ADR` over every image extension in this repository returns no `menq*` image at any point in its history.\" Run today it returns docs/brand/menq-logo.png and docs/brand/menq-avatar.png, added by d745c50 (2026-08-30) — the commit that added this sentence.",
+  "evidence": "L4-5: \"`git log --all --diff-filter=ADR` over every image extension in this repository returns no `menq*` image at any point in its history.\" Run today it returns docs/brand/menq-logo.png and docs/brand/menq-avatar.png, added by b7a3469 (2026-08-30) — the commit that added this sentence.",
   "file": "docs/brand/README.md",
   "id": "R2-0931",
   "line": 4,
   "severity": "low",
   "src": "slice 49",
-  "suggested_fix": "Put the sentence in the past tense and bound the command to history before the commit that created docs/brand/ (e.g. `d745c50^`).",
+  "suggested_fix": "Put the sentence in the past tense and bound the command to history before the commit that created docs/brand/ (e.g. `b7a3469^`).",
   "title": "The cited proof command now returns the opposite of what the sentence says",
-  "verify": "Confirmed literally: running `git log --all --diff-filter=ADR` over image extensions today lists docs/brand/menq-logo.png and menq-avatar.png, added by d745c50 (2026-08-30), the same commit that introduced the sentence at L4-5. It is pedantic, since the surrounding 'until 2026-08-30 ... had ever been committed' makes the intent historical, but the present-tense 'returns no menq* image at any point in its history' is false as written and was false from the moment it was committed."
+  "verify": "Confirmed literally: running `git log --all --diff-filter=ADR` over image extensions today lists docs/brand/menq-logo.png and menq-avatar.png, added by b7a3469 (2026-08-30), the same commit that introduced the sentence at L4-5. It is pedantic, since the surrounding 'until 2026-08-30 ... had ever been committed' makes the intent historical, but the present-tense 'returns no menq* image at any point in its history' is false as written and was false from the moment it was committed."
  },
  {
   "already_recorded": null,
   "category": "stale-claim",
-  "evidence": "L3-8 say neither the MenQ wordmark nor the BroPS logo was ever committed, citing a search for `menq*` only, and that the only artwork was `src-tauri/icons/`. `apps/desktop/src-tauri/brops-icon-src.png` (1024x1024 RGBA) was added 2026-08-06 in de38cb1, outside icons/; `git grep brops-icon-src` returns nothing.",
+  "evidence": "L3-8 say neither the MenQ wordmark nor the BroPS logo was ever committed, citing a search for `menq*` only, and that the only artwork was `src-tauri/icons/`. `apps/desktop/src-tauri/brops-icon-src.png` (1024x1024 RGBA) was added 2026-08-06 in 72908b2, outside icons/; `git grep brops-icon-src` returns nothing.",
   "file": "docs/brand/README.md",
   "id": "R2-0932",
   "line": 6,
@@ -12897,7 +12897,7 @@
   "src": "slice 49",
   "suggested_fix": "Name brops-icon-src.png as the pre-existing BroPS icon source, state where brops-logo.png was recovered from (L10-12 account only for the MenQ file), and either reference or remove the unreferenced icon source.",
   "title": "\"The only brand artwork in the tree was the icon set under icons/\" omits brops-icon-src.png, and \"neither had ever been committed\" is evidenced only for menq*",
-  "verify": "Confirmed. apps/desktop/src-tauri/brops-icon-src.png (1024x1024 RGBA) is tracked, sits outside icons/, and `git grep brops-icon-src` matches nothing, so L6-8's 'only brand artwork ... under icons/' omits it; the cited history command is filtered to menq* only, though my own all-extension history listing shows no brops logo before docs/brand/brops-logo.png, so the 'never committed' half is true in fact, merely under-evidenced. One detail in the finding is off: in HEAD's ancestry the file arrives via de38cb1 (2026-08-06), but a96b698 (2026-08-03) on another ref added it earlier."
+  "verify": "Confirmed. apps/desktop/src-tauri/brops-icon-src.png (1024x1024 RGBA) is tracked, sits outside icons/, and `git grep brops-icon-src` matches nothing, so L6-8's 'only brand artwork ... under icons/' omits it; the cited history command is filtered to menq* only, though my own all-extension history listing shows no brops logo before docs/brand/brops-logo.png, so the 'never committed' half is true in fact, merely under-evidenced. One detail in the finding is off: in HEAD's ancestry the file arrives via 72908b2 (2026-08-06), but 0ffff8f (2026-08-03) on another ref added it earlier."
  },
  {
   "already_recorded": null,
@@ -12953,7 +12953,7 @@
   "src": "slice 50",
   "suggested_fix": "Cite the functions by name, as PRODUCTION_HALF §4.5 now tells its reader to.",
   "title": "'Every file:line in §0 still resolves' — six of the seven bro_completion.py citations no longer do",
-  "verify": "FLOOR_WRITER_SERVICE_DESIGN.md:48-52 and §0 (:70, :71, :248, :258) cite bro_completion.py:541/:805/:439/:705; today the defs are at 576 (_refuse_self_owned_floor), 849 (_advance_head_floor), 457, 749 and 701. Only bro_custody.py:87 still matches. The sentence is dated to 2026-08-31 @ 363c51c, so it was true when written; the citations are dead today."
+  "verify": "FLOOR_WRITER_SERVICE_DESIGN.md:48-52 and §0 (:70, :71, :248, :258) cite bro_completion.py:541/:805/:439/:705; today the defs are at 576 (_refuse_self_owned_floor), 849 (_advance_head_floor), 457, 749 and 701. Only bro_custody.py:87 still matches. The sentence is dated to 2026-08-31 @ 4595780, so it was true when written; the citations are dead today."
  },
  {
   "already_recorded": false,
@@ -13375,16 +13375,16 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "phase-1.md:103 '(`AUDIT/2026-08-14-zero-trust-audit-e0dd969.md`)'. There is no top-level AUDIT/; the file is apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md.",
+  "evidence": "phase-1.md:103 '(`AUDIT/2026-08-14-zero-trust-audit-402888e.md`)'. There is no top-level AUDIT/; the file is apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md.",
   "file": "docs/roadmap/phase-1.md",
   "id": "R2-0967",
   "line": 103,
-  "other_location": "apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md",
+  "other_location": "apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md",
   "severity": "low",
   "src": "slice 53",
   "suggested_fix": "Use the full path apps/desktop/AUDIT/….",
   "title": "Audit report is cited by a path that does not exist from the repository root",
-  "verify": "phase-1.md:103 cites `AUDIT/2026-08-14-zero-trust-audit-e0dd969.md`; ls AUDIT fails at the repository root and the file is apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md. Cosmetic path defect."
+  "verify": "phase-1.md:103 cites `AUDIT/2026-08-14-zero-trust-audit-402888e.md`; ls AUDIT fails at the repository root and the file is apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md. Cosmetic path defect."
  },
  {
   "already_recorded": false,
@@ -14884,7 +14884,7 @@
   "severity": "low",
   "src": "slice 72",
   "suggested_fix": "Rewrite the sentence: the tick's error is reported and `scheduler_ticks` records it; the run row is no longer the only record.",
-  "title": "Docstring says lib.rs still throws run_due's result away with `let _`; it has not since 8a042eb",
+  "title": "Docstring says lib.rs still throws run_due's result away with `let _`; it has not since c20e546",
   "verify": "check_produced_artifact.py:43-44 still says lib.rs 'throws the result away with let _ — still, as of 2026-10-01'; lib.rs:462 is `if let Err(e) = ...run_due(&conn, now_ms) { eprintln!(...) }` and its comment says the result 'used to be thrown away'. The record holds the lib.rs defect (fixed) and a different docstring line (:54), not this sentence."
  },
  {
@@ -15205,7 +15205,7 @@
  {
   "already_recorded": false,
   "category": "stale-claim",
-  "evidence": "Docstring says eleven rows truncated since 8e446d4. Recount with gate.is_truncated: the frozen baseline (tools/fixtures/roadmap-pre-split.md) has 12 in phase 1 - the same 12 indices test_roadmap_split.REPAIRED_LINES lists; at 8e446d4 phase 1 has 10, at 8e446d4^ it has 2.",
+  "evidence": "Docstring says eleven rows truncated since 438f9b0. Recount with gate.is_truncated: the frozen baseline (tools/fixtures/roadmap-pre-split.md) has 12 in phase 1 - the same 12 indices test_roadmap_split.REPAIRED_LINES lists; at 438f9b0 phase 1 has 10, at 438f9b0^ it has 2.",
   "file": "tools/test_check_truncated_lines.py",
   "id": "R2-1101",
   "line": 3,
@@ -15213,8 +15213,8 @@
   "severity": "low",
   "src": "slice 75",
   "suggested_fix": "Replace the count and the commit with what the fixture shows (twelve), or remove both.",
-  "title": "'the eleven Phase-1 rows ... since commit 8e446d4' matches neither the baseline nor that commit",
-  "verify": "tools/test_check_truncated_lines.py:3-4 says 'eleven Phase-1 ... rows ... since commit 8e446d4'; counted with is_truncated: the fixture has 12 in phase 1, 8e446d4 has 10, 8e446d4^ has 2."
+  "title": "'the eleven Phase-1 rows ... since commit 438f9b0' matches neither the baseline nor that commit",
+  "verify": "tools/test_check_truncated_lines.py:3-4 says 'eleven Phase-1 ... rows ... since commit 438f9b0'; counted with is_truncated: the fixture has 12 in phase 1, 438f9b0 has 10, 438f9b0^ has 2."
  },
  {
   "already_recorded": false,
@@ -15240,7 +15240,7 @@
   "other_location": "tools/test_roadmap_split.py:140-142",
   "severity": "low",
   "src": "slice 75",
-  "suggested_fix": "Name the commits that actually cut the rows (8e446d4 took phase 1 from 2 to 10; 5a74902 introduced the round-trip row) or drop the attribution and the budget-gate causal story.",
+  "suggested_fix": "Name the commits that actually cut the rows (438f9b0 took phase 1 from 2 to 10; aad7ac7 introduced the round-trip row) or drop the attribution and the budget-gate causal story.",
   "title": "The sixteen truncated rows are blamed on commit 56e1cd7, which changed none of them",
   "verify": "tools/test_roadmap_split.py:66 and :140 blame 56e1cd7; counting with the gate's own is_truncated over `git show <rev>:MASTER_EXECUTION_ROADMAP.md` gives 12 phase-1 / 16 total at both 56e1cd7^ and 56e1cd7, and the diff touches no checkbox row. A wrong attribution in a comment, so low."
  },
@@ -16540,7 +16540,7 @@
   "src": "slice 74",
   "suggested_fix": "Add one fixture per arm; the :295 case is a rename of delete_automation_after_native_confirmation in COMMANDS_RS_ASKING.",
   "title": "Three fail-closed arms of the capability gate are reachable by no test",
-  "verify": "All three mutants survive in the scratch clone (check_capabilities.py:147, :175, :295 -> `if False:`; 45 tests OK each) and none of the three messages is in a test file. The recorded 'six refusal arms' entry (:105, closed #314) is the same family but not these arms; the :295 arm did not exist at 962743a."
+  "verify": "All three mutants survive in the scratch clone (check_capabilities.py:147, :175, :295 -> `if False:`; 45 tests OK each) and none of the three messages is in a test file. The recorded 'six refusal arms' entry (:105, closed #314) is the same family but not these arms; the :295 arm did not exist at 27bff25."
  },
  {
   "already_recorded": false,
@@ -16596,7 +16596,7 @@
   "src": "slice 74",
   "suggested_fix": "Add the two cases to EveryValidationArm.",
   "title": "A malformed current_state.json and a missing status_tokens object are untested",
-  "verify": "check_coordination.py:376 and :673 both survive `if False:` with 91 tests OK. The recorded 'nineteen arms' entry listed old lines 350-768 that I mapped against 962743a; neither of these two arms (then :347 and :644) was in that list."
+  "verify": "check_coordination.py:376 and :673 both survive `if False:` with 91 tests OK. The recorded 'nineteen arms' entry listed old lines 350-768 that I mapped against 27bff25; neither of these two arms (then :347 and :644) was in that list."
  },
  {
   "already_recorded": false,

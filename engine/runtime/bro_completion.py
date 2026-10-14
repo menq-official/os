@@ -543,7 +543,7 @@ def _head_floor_dir(store: pathlib.Path) -> pathlib.Path:
        each of which was established by RUNNING it rather than by reading it:
 
        1. It measures a different number. The ledger counter is per INSTALL
-          (``evidence-head-sequence.json``) and, since bb26822, deliberately an install-wide
+          (``evidence-head-sequence.json``) and, since e12fe6d, deliberately an install-wide
           ceiling; this floor is per TASK, and every task's first anchor is 1. Offering two real
           signed heads -- task-1 seq 1 and task-2 seq 1 -- to the ledger refuses the second with
           ``EvidenceFork``. Routing completion there would make the SECOND task in any deployment

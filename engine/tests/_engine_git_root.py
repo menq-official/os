@@ -77,7 +77,7 @@ ENGINE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 #: `verify_repository_binding` compares the binding's remote against `.git/config`,
 #: and the binding is built FROM that config, so any URL is self-consistent -- but
 #: inheriting the real one keeps the fixture a faithful copy rather than a lookalike.
-FALLBACK_REMOTE = "https://github.com/menqstudio/OS.git"
+FALLBACK_REMOTE = "https://github.com/menq-official/os.git"
 
 
 def _git_available() -> bool:

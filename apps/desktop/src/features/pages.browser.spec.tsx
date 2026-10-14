@@ -215,7 +215,7 @@ describe('populated — every page renders real rows without crashing', () => {
       // real flake. `mount` waits for the FIRST invoke and flushes ONE microtask turn, so a page
       // that asks for several commands can have recorded a row-bearing one before its rows reach
       // the DOM. Sampling `invokeMock.mock.calls` and `container.textContent` once at that instant
-      // made this assertion depend on timing: it failed on `main` at `a03ffd9` (1 of 40 runs of
+      // made this assertion depend on timing: it failed on `main` at `f8593c1` (1 of 40 runs of
       // `computed-style`) with `wanted` full of task titles and the screen still without them, and
       // a rerun of the SAME commit came back green.
       //

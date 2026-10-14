@@ -43,15 +43,15 @@
   "merged_prs": [
     {
       "number": 33,
-      "reason": "Phase 0 repository-truth remediation; Owner-approved GREEN at 45f3793; merged b6c6712."
+      "reason": "Phase 0 repository-truth remediation; Owner-approved GREEN at 45f3793; merged 8676aee."
     },
     {
       "number": 30,
-      "reason": "Wave 3b-0 isolated-signer design GREEN; merged df3c0ac."
+      "reason": "Wave 3b-0 isolated-signer design GREEN; merged da13b9c."
     },
     {
       "number": 54,
-      "reason": "Release-workflow supply-chain hotfix; the setup-node pin named actions/setup-PYTHON's commit so no v* tag push ever produced an installer. Merged 2026-08-06 at a79c662."
+      "reason": "Release-workflow supply-chain hotfix; the setup-node pin named actions/setup-PYTHON's commit so no v* tag push ever produced an installer. Merged 2026-08-06 at 90668f4."
     },
     {
       "number": 53,
@@ -103,10 +103,10 @@
   },
   "independent_audit": {
     "round": 9,
-    "report": "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md",
-    "head": "5cf9b8cba9860807bb7e15ec3dec2e6a91f3dea8",
+    "report": "apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md",
+    "head": "5cf6d2e2541ad382b3f7e815e003beccc8c752f4",
     "tree": "9580b86deffb7be00cac18716f18ae33bc318a3a",
-    "pin_proof": "rev-parse HEAD == 5cf9b8c; rev-parse 5cf9b8c^{tree} == git write-tree on a clean worktree == 9580b86d. Proved before the first file was opened and re-verified after every mutation was restored.",
+    "pin_proof": "rev-parse HEAD == 5cf6d2e; rev-parse 5cf6d2e^{tree} == git write-tree on a clean worktree == 9580b86d. Proved before the first file was opened and re-verified after every mutation was restored.",
     "verdict": "RED",
     "p0": "none - all three production-gate refusals read at the source and closed for the fourth round running; AnswerProvenance::Governed is constructed only inside #[cfg(test)]; nothing in the tree sets $BROPS_BROKER_CONFIG.",
     "claims_attacked": 9,

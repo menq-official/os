@@ -188,7 +188,7 @@ export function Approvals() {
   // listener that can be wrong: React runs passive effects AFTER the commit, and under load it
   // defers them, so a keypress arriving in that window was read against the PREVIOUS closure --
   // an empty list -- and dropped with no retry and no message. That is what reddened `main` at
-  // 82ace2dc: `Approvals.test.tsx`'s `g` pressed 5.1 s after the row was on screen, and
+  // b4c5f886: `Approvals.test.tsx`'s `g` pressed 5.1 s after the row was on screen, and
   // `findByRole('dialog')` waited for a dialog no keypress had staged (T-040's class, the third
   // remedy its row named -- "a real fix in the component's read ordering", not a longer wait).
   //

@@ -1,6 +1,6 @@
 # OS — Zero-Trust Աուդիտի հանձնման փաստաթուղթ
 
-**Թիրախ՝** `menqstudio/OS` @ `origin/main` = `b91f235`
+**Թիրախ՝** `menqstudio/OS` @ `origin/main` = `595594f`
 **Ամսաթիվ՝** 2026-08-06
 **Ռեժիմ՝** READ-ONLY. Ռեպոյում ոչ մի ֆայլ չի փոխվել, ոչ commit, ոչ push.
 **Մեթոդ՝** 9 dimension × (տող-առ-տող ընթերցում → հակափաստարկային հերքման փորձ) = 18 agent, 2.75M token.
@@ -304,7 +304,7 @@ Any local uid on the box can `echo -n <bytes> > /opt/brops-live/store/$(sha256 o
 
 > **Builder-ի նշում, 2026-10-14 (cockpit read R3-0502) — վերնագրի «in the shipped deployment»-ը
 > հակասում ա նույն այս գրառման `F-18`-ին։** `F-18`-ի վճիռը նույն live kit-ը (`engine/ci/live/`)
-> անվանում ա «root-only, proof/CI harness, nothing shipped»։ `b91f235`-ում
+> անվանում ա «root-only, proof/CI harness, nothing shipped»։ `595594f`-ում
 > `apps/desktop/src-tauri/tauri.conf.json`-ի `bundle`-ը ոչ `resources` ուներ, ոչ `externalBin`,
 > ուրեմն installer-ը այս script-ը չէր կրում, ու `.github/workflows/`-ում `run_live_turn` բառը
 > զրո անգամ կար։ Վերնագրի «shipped deployment»-ը կարդալ որպես live kit-ի deployment, ոչ թե
@@ -646,7 +646,7 @@ uses: tauri-apps/tauri-action@v0
 **Հերքողի վերընթերցածը.** `.github/workflows/release.yml:51 (and 15-16, 38)`
 
 > **Builder-ի նշում, 2026-10-14 (cockpit read R3-0503) — «shipped auto-updates»-ը ու «every
-> deployed client»-ը նկարագրում են մի բան որ `b91f235`-ում չկար։** Նույն այս գրառման Part 2-ը
+> deployed client»-ը նկարագրում են մի բան որ `595594f`-ում չկար։** Նույն այս գրառման Part 2-ը
 > չափել ա՝ «Auto-update mechanism … Zero code. The dependency is not even declared»։ Նորից
 > նայված ա այդ commit-ում. `updater` բառը չկար ոչ `apps/desktop/src-tauri/Cargo.toml`-ում, ոչ
 > `apps/desktop/package.json`-ում, ոչ `apps/desktop/src-tauri/tauri.conf.json`-ում։ Ուրեմն այդ
@@ -809,7 +809,7 @@ if _read(root, "NEXT_CHAT.md") is None:
 **Հերքողի վերընթերցածը.** `tools/check_coordination.py:183,324,384,412 + 44-47 + 579`
 
 > **Builder-ի նշում, 2026-10-14 (cockpit read R3-0504) — «Դեֆեկտը» պարբերության
-> `_check_docs_reference_state (322)`-ը սխալ տող ա։** `b91f235`-ի `tools/check_coordination.py`-ում
+> `_check_docs_reference_state (322)`-ը սխալ տող ա։** `595594f`-ի `tools/check_coordination.py`-ում
 > `if _read(root, "NEXT_CHAT.md") is None:` guard-ը չորս տողում ա՝ 183, 324, 384, 412, ու ուրիշ
 > ոչ մի տեղ. `_check_docs_reference_state`-ինը 324-ն ա, ինչպես գրում են վճիռն ու վերընթերցման
 > ցանկը։ Աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
@@ -1848,7 +1848,7 @@ function isGuardDenied(message: string): boolean {
 **Հերքողի վերընթերցածը.** `.github/workflows/release.yml:38 (vs .github/workflows/ci.yml:98 and a11y.yml:29)`
 
 > **Builder-ի նշում, 2026-10-14 (cockpit read R3-0505) — «used five times in ci.yml (lines 98,
-> 111, 130, 154, 173)»-ը սխալ ա հաշված։** `b91f235`-ի `.github/workflows/ci.yml`-ում
+> 111, 130, 154, 173)»-ը սխալ ա հաշված։** `595594f`-ի `.github/workflows/ci.yml`-ում
 > `actions/setup-python@0b93645e…`-ը վեց տողում ա՝ 98, 111, 130, 154, 174, 191 — ինչպես գրում ա
 > Part 2-ի challenger-ի նշումը այս նույն գրառման մեջ։ 173-րդ տողում այն չկա։ Աուդիտորի տեքստը
 > վերևում թողնված ա անփոփոխ։
@@ -2226,7 +2226,7 @@ function isGuardDenied(message: string): boolean {
 
 > **Builder-ի նշում, 2026-10-14 (cockpit read R3-0507) — վերևի վերջին կետի
 > `tools/check_capabilities.py:45`-ը ու `tools/check_ai_surfaces.py:41`-ը մեկ տողով շեղված են։**
-> `b91f235`-ում մեջբերված `return set(re.findall(…))`-ը `check_capabilities.py`-ի 46-րդ տողն ա
+> `595594f`-ում մեջբերված `return set(re.findall(…))`-ը `check_capabilities.py`-ի 46-րդ տողն ա
 > (45-րդը `body = re.sub(…)`-ն ա), ու `COMMANDS_RS = "apps/desktop/src-tauri/src/commands.rs"`-ը
 > `check_ai_surfaces.py`-ի 42-րդն ա (41-րդը դատարկ տող ա) — ինչպես Part 1-ի գտածոներն են գրում։
 > Աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
@@ -2303,8 +2303,8 @@ function isGuardDenied(message: string): boolean {
 **Պնդում.** §J պահանջում է roadmap-ը և `PROJECT_STATE`-ը թարմացնել «նույն commit-ում»։ Չի կատարվում։
 
 **Ապացույց.** `git log` ըստ ֆայլի՝
-- `MASTER_EXECUTION_ROADMAP.md` = `2026-07-27` (`b6c6712`)
-- `PROJECT_STATE.md` / `TASKS.md` / `NEXT_CHAT.md` / `config/current_state.json` = `2026-08-02` (`b91f235`)
+- `MASTER_EXECUTION_ROADMAP.md` = `2026-07-27` (`8676aee`)
+- `PROJECT_STATE.md` / `TASKS.md` / `NEXT_CHAT.md` / `config/current_state.json` = `2026-08-02` (`595594f`)
 
 **Առաջարկվող լուծում.** 6 օր և 4+ PR ուշացում։ Կա՛մ թարմացնել roadmap-ը, կա՛մ §J-ն փոխել իրական աշխատանքի հոսքին։ Գործող օրենքը ավելի լավ է, քան անտեսվողը — բայց հիմա այն անտեսվում է լուռ, առանց CI-ի բողոքի (տես `F-` supply-chain գտածոները coordination gate-ի մասին)։
 
@@ -2357,14 +2357,14 @@ function isGuardDenied(message: string): boolean {
 **Պնդում.** Փաստաթղթերը ներկայացնում են PR #52 / `feat/govern-stream-run-step`-ը որպես ընթացող աշխատանք։ Բայց այն commit-ը, որտեղ այդ տեքստն է, հենց PR #52-ի squash-merge-ն է։
 
 **Ապացույց.**
-- `git log -1 b91f235` → `Govern AI surfaces slice 3: stream_run_step → governed wall (last back door closed) (#52)`
+- `git log -1 595594f` → `Govern AI surfaces slice 3: stream_run_step → governed wall (last back door closed) (#52)`
 - `PROJECT_STATE.md:3` → «The active workflow is now **PR #52 · branch feat/govern-stream-run-step**»
-- `config/current_state.json:5` → `baseline_main_head_at_sync: 1e8597c` — իսկ main-ի իրական գագաթը `b91f235` է
+- `config/current_state.json:5` → `baseline_main_head_at_sync: 4f36407` — իսկ main-ի իրական գագաթը `595594f` է
 
-**Առաջարկվող լուծում.** Ամեն կանոնական փաստաթուղթ պետք է թարմացվի main-ի իրական վիճակին՝ PR #52 merged, `baseline_main_head_at_sync: b91f235`, `active` դաշտը՝ հաջորդ աշխատանքը կամ դատարկ։ **Արմատական պատճառը՝** merge-ի պահին ոչ ոք չի թարմացնում փաստաթղթերը — ավելացնել post-merge համաժամեցում CI-ում, որ merge commit-ը ինքը ուղղի `baseline_main_head_at_sync`-ը կամ ձախողի։
+**Առաջարկվող լուծում.** Ամեն կանոնական փաստաթուղթ պետք է թարմացվի main-ի իրական վիճակին՝ PR #52 merged, `baseline_main_head_at_sync: 595594f`, `active` դաշտը՝ հաջորդ աշխատանքը կամ դատարկ։ **Արմատական պատճառը՝** merge-ի պահին ոչ ոք չի թարմացնում փաստաթղթերը — ավելացնել post-merge համաժամեցում CI-ում, որ merge commit-ը ինքը ուղղի `baseline_main_head_at_sync`-ը կամ ձախողի։
 
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ
-> - [ ] Գործարկել եմ `git log -1 b91f235` և տեսել եմ `(#52)`
+> - [ ] Գործարկել եմ `git log -1 595594f` և տեսել եմ `(#52)`
 > - [ ] Բացել եմ `PROJECT_STATE.md:3` և տեսել եմ որ նույն PR-ը «active» է
 > - [ ] Համաձայն եմ post-merge sync-ի առաջարկի հետ
 >

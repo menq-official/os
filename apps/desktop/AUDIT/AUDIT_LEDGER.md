@@ -8,8 +8,8 @@
 > status it cannot back — anything not individually re-verified is marked so, with the independent audit
 > as the live source of truth for current-code behaviour.
 
-**Authoritative current assessment:** [`2026-10-09-eleventh-audit-e3fc507.md`](./2026-10-09-eleventh-audit-e3fc507.md)
-— the **ELEVENTH** independent audit, of `main` @ `e3fc507`, range `75fca65..e3fc507`. **Verdict:
+**Authoritative current assessment:** [`2026-10-09-eleventh-audit-598400e.md`](./2026-10-09-eleventh-audit-598400e.md)
+— the **ELEVENTH** independent audit, of `main` @ `598400e`, range `f4ffc8d..598400e`. **Verdict:
 RED, and no P0**: four P1, five P2, one P3. All three production-gate refusals were read in the code
 and confirmed. The same auditor reviewed the `T-169` design and **rejected** it:
 [`OWNER_COMMAND_PATH_REVIEW.md`](../../../docs/design/OWNER_COMMAND_PATH_REVIEW.md).
@@ -21,16 +21,16 @@ and nothing in its code: `npm ci`, and the clone's `origin` URL (a local path th
 engine tests error). The run took about thirteen minutes, and the report's own last section names
 what it did not read.
 
-The tenth round, superseded: [`2026-09-19-tenth-audit-75fca65.md`](./2026-09-19-tenth-audit-75fca65.md) — `main` @ `75fca65`, RED, no P0. Its narrative and
+The tenth round, superseded: [`2026-09-19-tenth-audit-f4ffc8d.md`](./2026-09-19-tenth-audit-f4ffc8d.md) — `main` @ `f4ffc8d`, RED, no P0. Its narrative and
 `J-01`–`J-04` are in [`AUDIT_LEDGER_ARCHIVE.md`](./AUDIT_LEDGER_ARCHIVE.md) under *Round 10*; the
 ninth is there under *Round 9*.
 
 > ## THE ELEVENTH ROUND: TEN FILED, SEVEN ANSWERED BY THE BUILDER
 >
-> **A twelfth review is UNFINISHED and is not the assessment.** Commissioned 2026-10-09 at `ca6fc74`;
+> **A twelfth review is UNFINISHED and is not the assessment.** Commissioned 2026-10-09 at `fd8e937`;
 > the reviewer's quota ended at 110 of 172 files, with `L-01`–`L-43` (one P1, `L-17`) and no verdict.
 > It resumes 2026-10-16. Kept openable, outside this directory so it cannot become the current
-> assessment: [report](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-ca6fc74-UNFINISHED.md),
+> assessment: [report](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-fd8e937-UNFINISHED.md),
 > [files read](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-PROGRESS.md). The Builder's
 > answers — `L-01`–`L-20` reproduced and NOT fixed (engine security code); `L-21`, `L-22`, `L-23`, `L-24`, `L-27`, `L-29`, `L-30`, `L-32`, `L-33`, `L-35`, `L-37`, `L-38`, `L-40`, `L-42`, `L-28`, `L-31`, `L-34`, `L-39`,
 > `L-41`, `L-43` fixed ◑ — are in [builder answers](../../../docs/audit-in-progress/2026-10-09-twelfth-audit-BUILDER-ANSWERS.md).
@@ -41,7 +41,7 @@ ninth is there under *Round 9*.
 > Builder's own `#378`, which granted the window a command that runs a shell on Windows and called
 > it a read. **Nothing was fixed in the change that filed the report.**
 >
-> **What the Builder measured beside it (◑, not the auditor's).** In the same clone at `e3fc507`,
+> **What the Builder measured beside it (◑, not the auditor's).** In the same clone at `598400e`,
 > outside the auditor's sandbox: engine **2741 OK** (17 skipped), `cargo test --workspace
 > --no-fail-fast` **1432 passed, 0 failed**, frontend **1153 of 1153**. The auditor's own runs
 > could not finish clean — its sandbox refuses `AF_UNIX` bind — which is `K-10`, and its point
@@ -63,7 +63,7 @@ live on the only platform where the Owner had ever been shown a `production_veri
 
 ## The eleventh round's own findings
 
-Filed at `e3fc507`. Open unless the row says otherwise; the report has the reproduction and the fix for each.
+Filed at `598400e`. Open unless the row says otherwise; the report has the reproduction and the fix for each.
 
 | # | P | Finding | Status |
 |---|---|---|---|

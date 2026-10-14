@@ -44,7 +44,7 @@
     "WHY THE HEADS NAME A COMMIT ON `main` AND NOT THE BRANCH THE MEASUREMENT RAN ON. These five first",
     "said `9659281`, the branch commit the suites actually ran on. CI refused it: this repository",
     "SQUASH-merges and deletes the branch, so that commit exists in the Builder's clone and nowhere",
-    "else -- `git merge-base --is-ancestor 9659281 origin/main` is false. The squash commit `9cc4d2c`",
+    "else -- `git merge-base --is-ancestor 9659281 origin/main` is false. The squash commit `fb8d784`",
     "has a BYTE-IDENTICAL tree (99130a751fc1e6a0277184efb595708b7814aae8, checked both ways), so the",
     "measurement holds there and that head is durable. The check below now requires reachability from",
     "`main` rather than mere existence, because 'resolves in my clone' is exactly the asymmetry that",
@@ -53,8 +53,8 @@
     "THE HEADS NAME DIFFERENT COMMITS ON PURPOSE. `engine_tests` moved 2243 -> 2259 in #279, and that",
     "pull request could not declare it: a value measured on a branch cannot cite a landed head, because",
     "the head does not exist until it merges. So the three-environment comparison stays labelled with",
-    "the head it was actually measured at (9cc4d2c) and the new count carries its own. Restating the",
-    "ubuntu and windows figures at d09661c would be inventing two measurements nobody took."
+    "the head it was actually measured at (fb8d784) and the new count carries its own. Restating the",
+    "ubuntu and windows figures at e9933c6 would be inventing two measurements nobody took."
   ],
   "claims": {
     "gate_scripts": {
@@ -116,113 +116,113 @@
       "derive": null,
       "measured": {
         "date": "2026-10-08",
-        "head": "8d95b5e",
+        "head": "144ce41",
         "environments": {
-          "Debian 13 (trixie) native @ 8d95b5e + T-062 slice (NM-IPC-01 bound), system python": {
+          "Debian 13 (trixie) native @ 144ce41 + T-062 slice (NM-IPC-01 bound), system python": {
             "ran": 2741,
             "skipped": 17
           },
-          "Debian 13 (trixie) native @ 873b3ae + T-062 slice (three matrix rows bound), system python": {
+          "Debian 13 (trixie) native @ d24b718 + T-062 slice (three matrix rows bound), system python": {
             "ran": 2740,
             "skipped": 17
           },
-          "Debian 13 (trixie) native @ f1a941d + T-062 slice (six matrix rows bound), system python": {
+          "Debian 13 (trixie) native @ 3ad58d4 + T-062 slice (six matrix rows bound), system python": {
             "ran": 2737,
             "skipped": 17
           },
-          "Debian 13 (trixie) native @ e514f36 + T-165, system python (cryptography 43)": {
+          "Debian 13 (trixie) native @ 7d64710 + T-165, system python (cryptography 43)": {
             "ran": 2731,
             "skipped": 17
           },
-          "Debian 13 (trixie) native @ e514f36 + T-165, venv from both locks (cryptography 50.0.2)": {
+          "Debian 13 (trixie) native @ 7d64710 + T-165, venv from both locks (cryptography 50.0.2)": {
             "ran": 2731,
             "skipped": 13
           },
-          "Debian 13 (trixie) native @ eb3b791 + T-159 after audit round 1, system python (no parser oracle)": {
+          "Debian 13 (trixie) native @ 168e25a + T-159 after audit round 1, system python (no parser oracle)": {
             "ran": 2730,
             "skipped": 17
           },
-          "Debian 13 (trixie) native @ eb3b791 + T-159 after audit round 1, venv from both locks": {
+          "Debian 13 (trixie) native @ 168e25a + T-159 after audit round 1, venv from both locks": {
             "ran": 2730,
             "skipped": 13
           },
-          "Debian 13 (trixie) native @ 6743d7c + T-156, second round": {
+          "Debian 13 (trixie) native @ 5c98e29 + T-156, second round": {
             "ran": 2692,
             "skipped": 13
           },
-          "Debian 13 (trixie) native @ e33c7e9 + T-153": {
+          "Debian 13 (trixie) native @ 3a59a1c + T-153": {
             "ran": 2666,
             "skipped": 13
           },
-          "Debian 13 (trixie) native @ 6b5604c + T-145 wave 2": {
+          "Debian 13 (trixie) native @ 99fd816 + T-145 wave 2": {
             "ran": 2620,
             "skipped": 13
           },
-          "Debian 13 (trixie) native, non-root account @ 73e5ccb + T-145 wave 1": {
+          "Debian 13 (trixie) native, non-root account @ 1961bd7 + T-145 wave 1": {
             "ran": 2617,
             "skipped": 13
           },
-          "Debian 13 (trixie) native, non-root account @ 962743a + T-145": {
+          "Debian 13 (trixie) native, non-root account @ 27bff25 + T-145": {
             "ran": 2444,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ 4f274ee + T-141": {
+          "Debian 13 (trixie) native, non-root account @ 0c17950 + T-141": {
             "ran": 2437,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ db88c85 + T-140": {
+          "Debian 13 (trixie) native, non-root account @ 128b46d + T-140": {
             "ran": 2410,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ 81736b4 + T-138": {
+          "Debian 13 (trixie) native, non-root account @ bcd20b1 + T-138": {
             "ran": 2397,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ 377537b + T-136": {
+          "Debian 13 (trixie) native, non-root account @ 9fb7696 + T-136": {
             "ran": 2340,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ a705778 + T-135": {
+          "Debian 13 (trixie) native, non-root account @ adb30eb + T-135": {
             "ran": 2318,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ de6ed04 + T-130": {
+          "Debian 13 (trixie) native, non-root account @ 7c888de + T-130": {
             "ran": 2305,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ 620066e + T-126": {
+          "Debian 13 (trixie) native, non-root account @ 7b75760 + T-126": {
             "ran": 2336,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ 516c736 + T-124": {
+          "Debian 13 (trixie) native, non-root account @ 5e02558 + T-124": {
             "ran": 2326,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ a5e0367 + T-123": {
+          "Debian 13 (trixie) native, non-root account @ a7afb05 + T-123": {
             "ran": 2324,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ 2c2f24e + T-121": {
+          "Debian 13 (trixie) native, non-root account @ c605f8a + T-121": {
             "ran": 2323,
             "skipped": 14
           },
-          "Debian 13 (trixie) native, non-root account @ b80e572": {
+          "Debian 13 (trixie) native, non-root account @ feb8b98": {
             "ran": 2315,
             "skipped": 14
           },
-          "builder's Windows box @ ace8c1a": {
+          "builder's Windows box @ 848736b": {
             "ran": 2314,
             "skipped": 97
           },
-          "Debian 13 (trixie) WSL2, non-root account @ ace8c1a": {
+          "Debian 13 (trixie) WSL2, non-root account @ 848736b": {
             "ran": 2314,
             "skipped": 17
           },
-          "ubuntu-latest (CI) @ 9cc4d2c": {
+          "ubuntu-latest (CI) @ fb8d784": {
             "ran": 2243,
             "skipped": 14
           },
-          "windows-latest (CI) @ 9cc4d2c": {
+          "windows-latest (CI) @ fb8d784": {
             "ran": 2243,
             "skipped": 82
           }
@@ -259,7 +259,7 @@
       "derive": null,
       "measured": {
         "date": "2026-09-20",
-        "head": "9cc4d2c",
+        "head": "fb8d784",
         "environments": {
           "ubuntu-latest (CI)": {
             "ran": 228,
@@ -281,169 +281,169 @@
       "derive": null,
       "measured": {
         "date": "2026-10-14",
-        "head": "dde0a4c",
+        "head": "da62d7d",
         "environments": {
-          "Debian 13 (trixie) native @ dde0a4c + eight more groups of the cockpit read; the contrast measurer dims a background with its text": {
+          "Debian 13 (trixie) native @ da62d7d + eight more groups of the cockpit read; the contrast measurer dims a background with its text": {
             "ran": 1367,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ fcc5122 + eight more groups of the cockpit read; the renderer's mirrors are held to their source files": {
+          "Debian 13 (trixie) native @ 960c175 + eight more groups of the cockpit read; the renderer's mirrors are held to their source files": {
             "ran": 1361,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ fcc5122 + seven more groups of the cockpit read; the page sweeps wait for a row and three tests of test-local code are gone": {
+          "Debian 13 (trixie) native @ 960c175 + seven more groups of the cockpit read; the page sweeps wait for a row and three tests of test-local code are gone": {
             "ran": 1356,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 1eca307 + five more groups of the cockpit read; the delete and live-indicator guards read every depth": {
+          "Debian 13 (trixie) native @ 5f304db + five more groups of the cockpit read; the delete and live-indicator guards read every depth": {
             "ran": 1357,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 5e131b0 + four more groups of the cockpit read; Security's in-flight pill says Reading": {
+          "Debian 13 (trixie) native @ 594c34d + four more groups of the cockpit read; Security's in-flight pill says Reading": {
             "ran": 1335,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 8be96f8 + four more groups of the cockpit read; Knowledge and Memory say when a refused delete is a standing one": {
+          "Debian 13 (trixie) native @ a647129 + four more groups of the cockpit read; Knowledge and Memory say when a refused delete is a standing one": {
             "ran": 1328,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ c49f041 + four more groups of the cockpit read; Handoffs shows a measured zero after an ask that ran": {
+          "Debian 13 (trixie) native @ 9d151fd + four more groups of the cockpit read; Handoffs shows a measured zero after an ask that ran": {
             "ran": 1294,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 11425df + five more groups of the cockpit read; no control of a conversation row reaches delete_conversation": {
+          "Debian 13 (trixie) native @ 7fa6d1f + five more groups of the cockpit read; no control of a conversation row reaches delete_conversation": {
             "ran": 1286,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 0201e46 + four more groups of the cockpit read; the scheduler sweep walks only interval conduits": {
+          "Debian 13 (trixie) native @ 3afcc35 + four more groups of the cockpit read; the scheduler sweep walks only interval conduits": {
             "ran": 1281,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 42feb8f + four more groups of the cockpit read; Agents, Analytics and Approvals say where their data comes from": {
+          "Debian 13 (trixie) native @ ea881ae + four more groups of the cockpit read; Agents, Analytics and Approvals say where their data comes from": {
             "ran": 1270,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 85a73f3 + the broker executors group + Async and DataTable take their empty title from the caller or the dictionary": {
+          "Debian 13 (trixie) native @ 2b31a98 + the broker executors group + Async and DataTable take their empty title from the caller or the dictionary": {
             "ran": 1250,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ ec6e8d3 + one icon table, a gate that boots the mark it shows, and a flat series at mid-height": {
+          "Debian 13 (trixie) native @ 9aebcb5 + one icon table, a gate that boots the mark it shows, and a flat series at mid-height": {
             "ran": 1236,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 971ad4c + six low findings of the cockpit read in the Rust host; the self-test fixture carries the label the chain writes": {
+          "Debian 13 (trixie) native @ 651977e + six low findings of the cockpit read in the Rust host; the self-test fixture carries the label the chain writes": {
             "ran": 1230,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ b6f70b7 + the default selection never replaces one the user made": {
+          "Debian 13 (trixie) native @ 5021e9a + the default selection never replaces one the user made": {
             "ran": 1155,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 530e337 + a command the window is refused never left the desktop": {
+          "Debian 13 (trixie) native @ 1811e8e + a command the window is refused never left the desktop": {
             "ran": 1153,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 487793e + the chat log and the mention button have their own names": {
+          "Debian 13 (trixie) native @ 7b1be0a + the chat log and the mention button have their own names": {
             "ran": 1151,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ c1c5e0f + a failed exchange is not nobody decided": {
+          "Debian 13 (trixie) native @ 6ce57c6 + a failed exchange is not nobody decided": {
             "ran": 1149,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ b995c34 + no var() falls back on an undeclared token": {
+          "Debian 13 (trixie) native @ 9b2d7a7 + no var() falls back on an undeclared token": {
             "ran": 1145,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 81f4751 + four metrics named for what they count": {
+          "Debian 13 (trixie) native @ 79a52ff + four metrics named for what they count": {
             "ran": 1144,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ a1c0c28 + a high-risk row in the success tone, and six more": {
+          "Debian 13 (trixie) native @ 354d3ea + a high-risk row in the success tone, and six more": {
             "ran": 1135,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ e9ef07e + a mention after a non-ASCII name, and a room's stale errors": {
+          "Debian 13 (trixie) native @ 4e7b843 + a mention after a non-ASCII name, and a room's stale errors": {
             "ran": 1118,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ ae245b2 + a stored language that crashed every page, and four more": {
+          "Debian 13 (trixie) native @ de9ff2b + a stored language that crashed every page, and four more": {
             "ran": 1106,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 9b138d1 + six more on-screen statements held to the code": {
+          "Debian 13 (trixie) native @ d1ed4e2 + six more on-screen statements held to the code": {
             "ran": 1093,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 40244f0 + tests driven by what the backend sends": {
+          "Debian 13 (trixie) native @ 3ea5748 + tests driven by what the backend sends": {
             "ran": 1075,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 120f118 + no motion item carries two easing functions": {
+          "Debian 13 (trixie) native @ 3c3e7fd + no motion item carries two easing functions": {
             "ran": 1059,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ bc01a43 + the raw-ratio verdict and a failed evidence read described as one": {
+          "Debian 13 (trixie) native @ ea96ffc + the raw-ratio verdict and a failed evidence read described as one": {
             "ran": 1057,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 55863ea + copy that promised an approval path the build does not have": {
+          "Debian 13 (trixie) native @ 9a86f96 + copy that promised an approval path the build does not have": {
             "ran": 1051,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ d256558 + three statements on screen that were not true": {
+          "Debian 13 (trixie) native @ 8b23ae9 + three statements on screen that were not true": {
             "ran": 1041,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 7c36d8d + the activity page says when its read is a window": {
+          "Debian 13 (trixie) native @ d7923ab + the activity page says when its read is a window": {
             "ran": 1033,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ b0887cb + a departing thread cancels only its own turn": {
+          "Debian 13 (trixie) native @ c445867 + a departing thread cancels only its own turn": {
             "ran": 1030,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ f8bf910 + the rank slider answers a pointer": {
+          "Debian 13 (trixie) native @ e24bc33 + the rank slider answers a pointer": {
             "ran": 1028,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 427fafa + a governed-turn reply is correlated with its request": {
+          "Debian 13 (trixie) native @ b389399 + a governed-turn reply is correlated with its request": {
             "ran": 1027,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ b5af12f + the other half of R3-0023 (the deck's posts reach the thread)": {
+          "Debian 13 (trixie) native @ 1682424 + the other half of R3-0023 (the deck's posts reach the thread)": {
             "ran": 1021,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 88eefb5 + half a cockpit finding (the thread's posts reach the deck)": {
+          "Debian 13 (trixie) native @ ee16e34 + half a cockpit finding (the thread's posts reach the deck)": {
             "ran": 1020,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ b506907 + one cockpit finding (an unreadable colour is not a passing colour)": {
+          "Debian 13 (trixie) native @ 8654859 + one cockpit finding (an unreadable colour is not a passing colour)": {
             "ran": 1019,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ e40c1aa + two cockpit findings (stack class, settings blocked panel)": {
+          "Debian 13 (trixie) native @ 5aaab50 + two cockpit findings (stack class, settings blocked panel)": {
             "ran": 1014,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 2d1e4d2 + two cockpit findings (deck room list, research run token)": {
+          "Debian 13 (trixie) native @ adb79db + two cockpit findings (deck room list, research run token)": {
             "ran": 1009,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 7bb4f7e + three cockpit findings (trust self-test, message time, approvals pill)": {
+          "Debian 13 (trixie) native @ 195c232 + three cockpit findings (trust self-test, message time, approvals pill)": {
             "ran": 1007,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ e33c7e9 + T-153": {
+          "Debian 13 (trixie) native @ 3a59a1c + T-153": {
             "ran": 999,
             "skipped": 0
           },
-          "Debian 13 (trixie) native @ 6b5604c + T-145 wave 2": {
+          "Debian 13 (trixie) native @ 99fd816 + T-145 wave 2": {
             "ran": 984,
             "skipped": 0
           },
-          "Debian 13 (trixie) native, node 20 (jsdom) @ 81736b4 + T-138": {
+          "Debian 13 (trixie) native, node 20 (jsdom) @ bcd20b1 + T-138": {
             "ran": 801,
             "skipped": 0
           },
@@ -498,9 +498,9 @@
       "derive": null,
       "measured": {
         "date": "2026-10-02",
-        "head": "6b5604c",
+        "head": "99fd816",
         "environments": {
-          "Debian 13 (trixie) native @ 6b5604c + T-145 wave 2": {
+          "Debian 13 (trixie) native @ 99fd816 + T-145 wave 2": {
             "ran": 82,
             "skipped": 0
           },
@@ -520,7 +520,7 @@
       "derive": null,
       "measured": {
         "date": "2026-09-20",
-        "head": "9cc4d2c",
+        "head": "fb8d784",
         "environments": {
           "builder's Windows box": {
             "crates": 10

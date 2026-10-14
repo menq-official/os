@@ -1,4 +1,4 @@
-# Seventh independent audit — `main` @ `491f923`
+# Seventh independent audit — `main` @ `08a41d0`
 
 **Verdict: RED.** 15 findings (`G-01`…`G-15`), no P0, all three production-gate refusals verified
 closed.

@@ -1,4 +1,4 @@
-# Sixth independent audit — `main` @ `b16e572`
+# Sixth independent audit — `main` @ `84cef03`
 
 **Verdict: RED.**
 
@@ -17,7 +17,7 @@
 
 | | |
 |---|---|
-| Head | `b16e572f541aa66f0d69e72249444c237502ed9f` |
+| Head | `84cef031ce4d4e59681e543a3cc8c2ac100ca274` |
 | Tree | `098df1d55f802a61a53e235c9516ac7d1d5fad29` |
 | Findings | **14** — `A-01`…`A-14` (P1 1 · P2 7 · P3 6) |
 | P0 | **none** — all three production-gate refusals verified closed |
@@ -29,10 +29,10 @@
 ## Pin proof
 
 ```
-$ git rev-parse b16e572^{tree}
+$ git rev-parse 84cef03^{tree}
 098df1d55f802a61a53e235c9516ac7d1d5fad29     ← matches the stated tree
 $ git rev-parse HEAD
-b16e572f541aa66f0d69e72249444c237502ed9f
+84cef031ce4d4e59681e543a3cc8c2ac100ca274
 $ git status --porcelain   (empty at start of run)     $ git stash list   (empty)
 ```
 
@@ -61,7 +61,7 @@ at all.**
 
 ### P0 — the gate is shut
 
-| Refusal | State at `b16e572` |
+| Refusal | State at `84cef03` |
 |---|---|
 | `governed_verification_unconfigured()` | `commands.rs:1218-1221` — `Some(...)`, no branch. Four call sites (`:1445`, `:1920`, `:2127`, `:2987`). |
 | `connect_broker()` | `governed_turn.rs:230-253` — Linux `AF_UNIX`; every other host `Err(UnsupportedPlatform)` at `:251`. |
@@ -82,7 +82,7 @@ traced end to end (see `A-05`) and cannot reach a governed turn on a shipped ins
 
 Every one of those classes is referenced only in TSX. `grep -rn "\.palette" apps/desktop/src/`
 outside tests returns nothing. The rules existed — in `apps/desktop/src/components/layout.css`,
-deleted whole in `0c08dd8` (PR #47, "UI refreshes", 2026-07-28) and never replaced. `layout.css`
+deleted whole in `4583dea` (PR #47, "UI refreshes", 2026-07-28) and never replaced. `layout.css`
 still exists and is still imported at `Shell.tsx:2`. What was deleted:
 
 ```css
@@ -222,17 +222,17 @@ and the store should not flatten them."*
 
 `apps/desktop/AUDIT/` holds reports for the first, third and fourth rounds. **There is no
 fifth-audit file.** `AUDIT_LEDGER.md:11` still reads *"Authoritative current assessment:
-`2026-08-15-zero-trust-reaudit-0a9a1af.md` — the FOURTH independent audit"*, while the OWNER page
+`2026-08-15-zero-trust-reaudit-3844fef.md` — the FOURTH independent audit"*, while the OWNER page
 opens with the fifth audit's verdict, its 11 findings and 15 promotions to ✅. The ledger changed by
 exactly one line this round, and it was a line-number correction. There is no fifth-round findings
 table, no promotions table, and not one ✅ traceable to the fifth round — in the file whose legend
 defines ✅ as "independently confirmed" and which the OWNER page calls "the index".
 
 > **Builder's note, 2026-10-14 (cockpit read R3-0514) — "the first, third and fourth rounds" leaves
-> out the second, which was there.** `git ls-tree b16e572 apps/desktop/AUDIT/` lists five reports
+> out the second, which was there.** `git ls-tree 84cef03 apps/desktop/AUDIT/` lists five reports
 > and the ledger: `2026-08-06-independent-audit.md` (first), `2026-08-06-remediation-audit.md`
 > (second — the report the third names as its previous round), `2026-08-06-consolidated-index.md`,
-> `2026-08-14-zero-trust-audit-e0dd969.md` (third) and `2026-08-15-zero-trust-reaudit-0a9a1af.md`
+> `2026-08-14-zero-trust-audit-402888e.md` (third) and `2026-08-15-zero-trust-reaudit-3844fef.md`
 > (fourth). The finding itself — no fifth-audit file — holds: none of the five is the fifth. This
 > note was added after filing; the box at the top describes the report as filed on 2026-08-17. The
 > auditor's text above is left unchanged.
@@ -385,7 +385,7 @@ Named so they can be promoted ◑ → ✅:
    minimal stub `{number, merge_state, head}` produces 3 failures where it used to pass.
 9. **`settled_at_main_head`'s first-parent pin** (fifth-round `A-07`). Has real teeth — an arbitrary
    ancestor and the repo's first commit both go RED. And the live value is correct:
-   `settled_at_main_head = 35cc40b` = exactly `b16e572^1`.
+   `settled_at_main_head = ec1360a` = exactly `84cef03^1`.
 10. **The `Generic` placeholder cast** (fifth-round `A-08`), the `sync_active_pr` note surgery
     (`A-10`) and the Approvals modifier keys (`A-11`) — all three genuinely fixed, each with the
     fix's reasoning written where the defect was.
@@ -496,7 +496,7 @@ is the palette, because it is the case that proves the instrument was needed.**
 * The **engine (Python) suite** — out of scope and not run; 2001 OK / 43 skipped is carried forward
   unverified by me.
 * **`win-live` on Windows** with the named-pipe transport — not exercised this round (the crate is
-  unchanged since `5fe4740`).
+  unchanged since `d2f05dc`).
 * **`config/current_state.json` against live GitHub** — no `gh auth` in this session. Per the brief
   its disagreement with a pinned head is not a finding; note that `A-11`'s two silent fail-open paths
   are the ones a `gh`-less environment would take.
@@ -504,6 +504,6 @@ is the palette, because it is the case that proves the instrument was needed.**
   anywhere I looked; the claim may refer to a Python suite I did not run, so I report it as
   unverified rather than false.
 * **Whether `A-01` was ever visually noticed by the Owner.** I can date the CSS deletion exactly
-  (`0c08dd8`, 2026-07-28) and measure the consequence; I cannot tell whether anyone has opened ⌘K in
+  (`4583dea`, 2026-07-28) and measure the consequence; I cannot tell whether anyone has opened ⌘K in
   the built app since.
 * **`check_read_receipt.py` / `check_roadmap_order.py`** — left alone per the stated trap.

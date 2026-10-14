@@ -26,7 +26,7 @@ settles a claim, that claim does not belong on the front page.
 
 ---
 
-## 1. Corrected on 2026-08-30, at `main` @ `fe26a78`
+## 1. Corrected on 2026-08-30, at `main` @ `6ee586b`
 
 The Owner supplied a rewritten `README.md`. Every number in it was re-measured before it landed;
 these are the ones that did not survive, plus the ones the previous README carried and the rewrite
@@ -169,7 +169,7 @@ followed; a second waiver on the same night would have been the worse defect of 
 
 ---
 
-## 4. Corrected on 2026-09-19, at `main` @ `13027bb`
+## 4. Corrected on 2026-09-19, at `main` @ `751319d`
 
 The front page was redesigned — Armenian first, bilingual parity throughout, committed SVG
 artwork under `docs/brand/readme/`. Every number on it was re-measured in the worktree at this
@@ -204,19 +204,19 @@ with `git`.
 ### 4c. The canon disagreed with `git`, and `git` won
 
 `PROJECT_STATE.md` says, under **Standing risks**: *"**74 pull requests, 240 files and 46,402
-inserted lines** have merged since, none independently confirmed — measured `5cf9b8c..main`."*
+inserted lines** have merged since, none independently confirmed — measured `5cf6d2e..main`."*
 That sentence was true when it was written, and it is exactly the shape of claim this file exists
 for. Measured again at this head:
 
-    git log --format=%s 5cf9b8c..HEAD | grep -oE "\(#[0-9]+\)$" | sort -u | wc -l
+    git log --format=%s 5cf6d2e..HEAD | grep -oE "\(#[0-9]+\)$" | sort -u | wc -l
     # 75
 
-    git diff --shortstat 5cf9b8c..HEAD
+    git diff --shortstat 5cf6d2e..HEAD
     # 240 files changed, 46471 insertions(+), 13411 deletions(-)
 
-The gap is one commit. `PROJECT_STATE.md` was measured at `7703bde`; `13027bb` — PR #236, which
+The gap is one commit. `PROJECT_STATE.md` was measured at `3581a27`; `751319d` — PR #236, which
 landed after it — is the 75th pull request and 69 of the inserted lines. Re-measured at the
-parent, `git diff --shortstat 5cf9b8c..7703bde` prints exactly `46402`, so the canonical document
+parent, `git diff --shortstat 5cf6d2e..3581a27` prints exactly `46402`, so the canonical document
 is not wrong about the tree it measured. It is one merge behind, and a front page that copied it
 would have been wrong about the tree a reader is looking at. **The README prints 75 / 240 /
 46,471 and names the head it measured.**
@@ -228,12 +228,12 @@ a README redesign. It is named here so that session finds it instead of re-deriv
 ### 4d. One number the redesign could not settle
 
 `ci.yml` **jobs**. The brief for this redesign gave **23**. `yaml.safe_load` of
-`.github/workflows/ci.yml` at `13027bb` gives **21**, and `grep -cE '^  [a-z0-9-]+:$'` on the same
+`.github/workflows/ci.yml` at `751319d` gives **21**, and `grep -cE '^  [a-z0-9-]+:$'` on the same
 file agrees at 21 job keys. Two independent counts of one file say 21, so **21** is what the page
 prints, and it is described as *jobs in `ci.yml`* rather than as *checks*. The likeliest source of
 23 is a count of reported **contexts** rather than job definitions — `trust-provisioning` is a
 two-OS matrix and reports twice — but that reading was not established here, so the page does not
-state it. `git show 5cf9b8c:.github/workflows/ci.yml` parses to 18 jobs, which rules out a stale
+state it. `git show 5cf6d2e:.github/workflows/ci.yml` parses to 18 jobs, which rules out a stale
 reading of an older tree.
 
 ### 4e. Kept, because it survived the check
@@ -254,25 +254,25 @@ away believing this ships.
 
 ### 4f. `main` moved while the page was being written, and the page did not chase it
 
-The redesign started with `origin/main` at `13027bb`. By the time the gates were re-run, two more
-pull requests had landed and `origin/main` was `c197b97` — `#237` and `#238`, both `T-062`, which
+The redesign started with `origin/main` at `751319d`. By the time the gates were re-run, two more
+pull requests had landed and `origin/main` was `cdf82e0` — `#237` and `#238`, both `T-062`, which
 between them rewrote `config/negative-matrix.json` and added `engine/tests/test_governed_acceptance.py`.
 
-Three of the page's rows are therefore already behind the tip. Measured at `c197b97`, from this
+Three of the page's rows are therefore already behind the tip. Measured at `cdf82e0`, from this
 worktree, without checking it out:
 
-| Row | At `13027bb`, which the page prints | At `c197b97` | Command |
+| Row | At `751319d`, which the page prints | At `cdf82e0` | Command |
 | :--- | :--- | :--- | :--- |
-| Negative matrix | 122 implemented · 54 blocked · 66 unreviewed | **130** · 54 · **58** | `git show c197b97:config/negative-matrix.json`, counting `status` over the 242 cases |
-| Pull requests since `5cf9b8c` | 75 | **77** | `git log --format=%s 5cf9b8c..c197b97 \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` |
-| Inserted lines since `5cf9b8c` | 46,471 (240 files) | **46,766** (240 files) | `git diff --shortstat 5cf9b8c..c197b97` |
+| Negative matrix | 122 implemented · 54 blocked · 66 unreviewed | **130** · 54 · **58** | `git show cdf82e0:config/negative-matrix.json`, counting `status` over the 242 cases |
+| Pull requests since `5cf6d2e` | 75 | **77** | `git log --format=%s 5cf6d2e..cdf82e0 \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` |
+| Inserted lines since `5cf6d2e` | 46,471 (240 files) | **46,766** (240 files) | `git diff --shortstat 5cf6d2e..cdf82e0` |
 
-The engine suite count at `c197b97` was **not** measured: the new acceptance-test file is only in
+The engine suite count at `cdf82e0` was **not** measured: the new acceptance-test file is only in
 that tree, and running the suite would have meant checking out a head this branch is not based on.
 It is therefore not printed anywhere, here or on the page.
 
 **The page was not updated to the tip, on purpose.** Every number on it is measured at one named
-head, `13027bb`, and the page says which head in its metadata block and again above the table. A
+head, `751319d`, and the page says which head in its metadata block and again above the table. A
 page whose rows come from a single commit is internally consistent and a reader can re-run it; a
 page that mixes a matrix count from one head with a test count from another cannot be checked
 against anything. Whoever lands this should re-measure at the head it lands on — that is the
@@ -280,22 +280,22 @@ review trigger the page states — and add the row here rather than replacing th
 
 ### 4g. The head moved under the page before it merged, and §4f said to re-measure
 
-The six corrections above were measured at `13027bb`. Twenty-one pull requests merged while
-this page was being drawn, so at `c197b97` — the head it is opening against — four of its
+The six corrections above were measured at `751319d`. Twenty-one pull requests merged while
+this page was being drawn, so at `cdf82e0` — the head it is opening against — four of its
 figures were already stale and one had never been right at any head. Re-measured, with the
 command each row prints:
 
-| Claim | Said | Measured at `c197b97` | Command |
+| Claim | Said | Measured at `cdf82e0` | Command |
 | :--- | ---: | ---: | :--- |
 | Engine test suite | 2133 | **2141** | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
 | `implemented` in the matrix | 122 | **130** | `python -c "import collections,json; print(collections.Counter(c['status'] for c in json.load(open('config/negative-matrix.json',encoding='utf-8'))['cases'].values()))"` |
 | `unreviewed` in the matrix | 66 | **58** | the same command — it prints all three |
-| Pull requests since `5cf9b8c` | 75 | **77** | `git log --format=%s 5cf9b8c..HEAD \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` |
-| Inserted lines since `5cf9b8c` | 46,471 | **46,766** | `git diff --shortstat 5cf9b8c..HEAD` |
+| Pull requests since `5cf6d2e` | 75 | **77** | `git log --format=%s 5cf6d2e..HEAD \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` |
+| Inserted lines since `5cf6d2e` | 46,471 | **46,766** | `git diff --shortstat 5cf6d2e..HEAD` |
 | Declared controls, split | 59 — 45 check · 14 tool | 59 — **39 check · 20 tool** | `ls tools/check_*.py \| wc -l` · `ls engine/tools/*.py \| wc -l` |
 
 The last row is the only one that is not staleness. The total, 59, was right; the split was
-not, at `13027bb` or at any other head. `config/control-invocation.json` declares 39 entries
+not, at `751319d` or at any other head. `config/control-invocation.json` declares 39 entries
 under `tools/` and 20 under `engine/tools/`, and 39 + 20 is 59 — so a wrong split summed to a
 right total, which is exactly the shape a reader cannot catch. The row now carries the
 commands that print the split rather than asking to be believed — and a glob is a fair
@@ -306,7 +306,7 @@ and nothing on disk that is not declared. Equal counts would not have been enoug
 `blocked` (54), `total` (242), the bridge suite (210), the Rust crate count (10), the gate
 scripts (39), the workflow files (8), the `ci.yml` job count (21), the required contexts (34,
 +5 excluded), the specialist definitions (262), the extracted schemas (5) and both hook-event
-counts (9 under `engine/.claude/`, 6 under `.claude/`) were each re-measured at `c197b97` and
+counts (9 under `engine/.claude/`, 6 under `.claude/`) were each re-measured at `cdf82e0` and
 were unchanged. They are listed here because "I checked and it had not moved" and "I did not
 check" are different statements, and only one of them is written down by default.
 
@@ -349,14 +349,14 @@ section above is a figure that was false when written. §4g's control split was 
 
 | Landed at | What moved | Measured |
 | :--- | :--- | :--- |
-| `235acc1` | matrix `implemented` 130 → **132**, `unreviewed` 58 → **56** — `NM-CRASH-06` and `NM-TIME-12` bound | `python -c "import collections,json; print(collections.Counter(c['status'] for c in json.load(open('config/negative-matrix.json',encoding='utf-8'))['cases'].values()))"` |
-| `235acc1` | engine suite 2141 → **2143** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
-| `235acc1` | 77 → **79** pull requests, 240 → **248** files, 46,766 → **47,663** inserted lines since `5cf9b8c` | `git log --format=%s 5cf9b8c..HEAD \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` and `git diff --shortstat 5cf9b8c..HEAD` |
+| `f1ff8e5` | matrix `implemented` 130 → **132**, `unreviewed` 58 → **56** — `NM-CRASH-06` and `NM-TIME-12` bound | `python -c "import collections,json; print(collections.Counter(c['status'] for c in json.load(open('config/negative-matrix.json',encoding='utf-8'))['cases'].values()))"` |
+| `f1ff8e5` | engine suite 2141 → **2143** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
+| `f1ff8e5` | 77 → **79** pull requests, 240 → **248** files, 46,766 → **47,663** inserted lines since `5cf6d2e` | `git log --format=%s 5cf6d2e..HEAD \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` and `git diff --shortstat 5cf6d2e..HEAD` |
 
 **When to write the row, and it is not the same pull request.** These three rows first went in
-naming `45ea71e`, the base their branch was written on, and they landed at `235acc1`. The same
-mistake put *Measured at `main` @ `45ea71e`* at the top of a page printing 132 / 54 / 56 and 2143 —
-the values at `235acc1`. At `45ea71e` they were 130 / 54 / 58 and 2141, so the page named a head at
+naming `ffc380b`, the base their branch was written on, and they landed at `f1ff8e5`. The same
+mistake put *Measured at `main` @ `ffc380b`* at the top of a page printing 132 / 54 / 56 and 2143 —
+the values at `f1ff8e5`. At `ffc380b` they were 130 / 54 / 58 and 2141, so the page named a head at
 which two of its own rows were false, and they were the two a reader would most likely check.
 
 That is a rule, not a slip. **A change that moves a counted number cannot name a head where its own
@@ -367,23 +367,23 @@ said, and what it was not filled with. `Landed at` means landed.
 
 | Landed at | What moved | Measured |
 | :--- | :--- | :--- |
-| `235acc1` | the three rows above were re-headed from `45ea71e`, and the page's own *Measured at* with them; PRs since `5cf9b8c` 78 → **79**, inserted lines 47,550 → **47,663** | `git rev-parse --short HEAD` on `main`, and `git diff --shortstat 5cf9b8c..HEAD` |
-| `a57fd86` | matrix `implemented` 132 → **133**, `unreviewed` 56 → **55** — `NM-CRASH-01` bound | the `collections.Counter` one-liner above |
-| `a57fd86` | engine suite 2143 → **2144** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
-| `a57fd86` | 79 → **81** pull requests, 47,663 → **48,103** inserted lines since `5cf9b8c`; 248 files unchanged | `git diff --shortstat 5cf9b8c..HEAD` |
-| `6c59a67` | matrix `implemented` 133 → **144**, `unreviewed` 55 → **44** — `NM-CRASH-12/13/14`, `NM-TCB-01/03/08/21`, `NM-TERM-02`, `NM-SCOPE-06/08`, `NM-MAN-12` bound across three landings | the `collections.Counter` one-liner above |
-| `6c59a67` | engine suite 2144 → **2148** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
-| `6c59a67` | 81 → **85** pull requests, 248 → **249** files, 48,103 → **48,768** inserted lines since `5cf9b8c` | `git diff --shortstat 5cf9b8c..HEAD` |
-| `830fcec` | matrix `implemented` 144 → **150**, `unreviewed` 44 → **38** — `NM-SCOPE-04/06`, `NM-TERM-02/04/08`, `NM-MAN-12`, `NM-FS-05`, `NM-CONC-07`, `NM-XBIND-03` bound across four landings; **more than half the matrix is now bound** | the `collections.Counter` one-liner above |
-| `830fcec` | engine suite 2148 → **2152** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
-| `830fcec` | 85 → **89** pull requests, 249 → **257** files, 48,768 → **49,977** inserted lines since `5cf9b8c` | `git diff --shortstat 5cf9b8c..HEAD` |
-| `75fca65` | gate scripts 39 → **40**, declared controls 59 → **60** (40 check · 20 tool) — `tools/check_artwork_geometry.py`, the gate §9 said did not exist | `ls tools/check_*.py \| wc -l` and `ls engine/tools/*.py \| wc -l`, each set-equal to its half of `config/control-invocation.json` (60 entries) |
-| `75fca65` | 89 → **91** pull requests, 257 → **261** files, 49,977 → **50,787** inserted lines since `5cf9b8c` | `git diff --shortstat 5cf9b8c..HEAD` |
-| `a94513e` | **Phase 2 closed, 11/11** — the roadmap figure said *"PHASES 1–10 — ALL PARTLY BUILT"* and seven of eleven now have every box ticked; the sheet draws each phase's own count and its alt text was re-written with it | `grep -c '^- \[x\]' docs/roadmap/phase-*.md` against `grep -c '^- \[ \]'` |
-| `a94513e` | 91 → **96** pull requests, 261 → **281** files, 50,787 → **53,749** inserted lines since `5cf9b8c` | `git diff --shortstat 5cf9b8c..HEAD` |
-| `9cc4d2c` | engine suite 2205 → **2243**, and the SKIP COUNT taken out of four documents rather than re-guessed — one head skips **14 / 82 / 97** in three environments, so it is not a property of the code or even of the platform | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q`, run on the ubuntu runner, the windows runner and the Builder's box |
-| `9cc4d2c` | frontend 781 → **794** tests, 82 → **84** files. `CLAUDE.md` was further behind still, at 764 / 80, and its engine line at 2124 / 10 skipped | `cd apps/desktop && npm ci && npm test` |
-| `9cc4d2c` | the counted claims are **declared** now — `config/counted-claims.json`, ten of them | `python tools/check_doc_claims.py` |
+| `f1ff8e5` | the three rows above were re-headed from `ffc380b`, and the page's own *Measured at* with them; PRs since `5cf6d2e` 78 → **79**, inserted lines 47,550 → **47,663** | `git rev-parse --short HEAD` on `main`, and `git diff --shortstat 5cf6d2e..HEAD` |
+| `2d447d3` | matrix `implemented` 132 → **133**, `unreviewed` 56 → **55** — `NM-CRASH-01` bound | the `collections.Counter` one-liner above |
+| `2d447d3` | engine suite 2143 → **2144** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
+| `2d447d3` | 79 → **81** pull requests, 47,663 → **48,103** inserted lines since `5cf6d2e`; 248 files unchanged | `git diff --shortstat 5cf6d2e..HEAD` |
+| `8b9f81b` | matrix `implemented` 133 → **144**, `unreviewed` 55 → **44** — `NM-CRASH-12/13/14`, `NM-TCB-01/03/08/21`, `NM-TERM-02`, `NM-SCOPE-06/08`, `NM-MAN-12` bound across three landings | the `collections.Counter` one-liner above |
+| `8b9f81b` | engine suite 2144 → **2148** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
+| `8b9f81b` | 81 → **85** pull requests, 248 → **249** files, 48,103 → **48,768** inserted lines since `5cf6d2e` | `git diff --shortstat 5cf6d2e..HEAD` |
+| `bfd3bb6` | matrix `implemented` 144 → **150**, `unreviewed` 44 → **38** — `NM-SCOPE-04/06`, `NM-TERM-02/04/08`, `NM-MAN-12`, `NM-FS-05`, `NM-CONC-07`, `NM-XBIND-03` bound across four landings; **more than half the matrix is now bound** | the `collections.Counter` one-liner above |
+| `bfd3bb6` | engine suite 2148 → **2152** (97 skipped) | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q` |
+| `bfd3bb6` | 85 → **89** pull requests, 249 → **257** files, 48,768 → **49,977** inserted lines since `5cf6d2e` | `git diff --shortstat 5cf6d2e..HEAD` |
+| `f4ffc8d` | gate scripts 39 → **40**, declared controls 59 → **60** (40 check · 20 tool) — `tools/check_artwork_geometry.py`, the gate §9 said did not exist | `ls tools/check_*.py \| wc -l` and `ls engine/tools/*.py \| wc -l`, each set-equal to its half of `config/control-invocation.json` (60 entries) |
+| `f4ffc8d` | 89 → **91** pull requests, 257 → **261** files, 49,977 → **50,787** inserted lines since `5cf6d2e` | `git diff --shortstat 5cf6d2e..HEAD` |
+| `b7d4a05` | **Phase 2 closed, 11/11** — the roadmap figure said *"PHASES 1–10 — ALL PARTLY BUILT"* and seven of eleven now have every box ticked; the sheet draws each phase's own count and its alt text was re-written with it | `grep -c '^- \[x\]' docs/roadmap/phase-*.md` against `grep -c '^- \[ \]'` |
+| `b7d4a05` | 91 → **96** pull requests, 261 → **281** files, 50,787 → **53,749** inserted lines since `5cf6d2e` | `git diff --shortstat 5cf6d2e..HEAD` |
+| `fb8d784` | engine suite 2205 → **2243**, and the SKIP COUNT taken out of four documents rather than re-guessed — one head skips **14 / 82 / 97** in three environments, so it is not a property of the code or even of the platform | `BRO_ENV=ci python -m unittest discover -s engine/tests -t engine/tests -q`, run on the ubuntu runner, the windows runner and the Builder's box |
+| `fb8d784` | frontend 781 → **794** tests, 82 → **84** files. `CLAUDE.md` was further behind still, at 764 / 80, and its engine line at 2124 / 10 skipped | `cd apps/desktop && npm ci && npm test` |
+| `fb8d784` | the counted claims are **declared** now — `config/counted-claims.json`, ten of them | `python tools/check_doc_claims.py` |
 
 **Half of this table is now a gate, and the half that is not says why.** §4g named the gap and this
 section was the workaround: no gate read the counted claims, so a person had to re-measure. That
@@ -396,13 +396,13 @@ while carrying two stale numbers inside the sentence that asked.
 
 This row is also the rule above working as intended. The numbers moved across `#272`–`#276`; none of
 those pull requests could name a head at which its own figures held, so the front page was left alone
-and re-trued here, against `9cc4d2c` — the head that actually landed.
+and re-trued here, against `fb8d784` — the head that actually landed.
 
-**Three landings paid at once, which is what the rule is for.** #244, #245 and #246 each moved a counted number and each deliberately left the page alone. Re-truing after every one would have meant three pull requests whose only content was arithmetic; the rule says name the head the numbers hold at, and `6c59a67` is the head all three hold at. The artwork in §8 landed in the same commit because it belongs to the same page.
+**Three landings paid at once, which is what the rule is for.** #244, #245 and #246 each moved a counted number and each deliberately left the page alone. Re-truing after every one would have meant three pull requests whose only content was arithmetic; the rule says name the head the numbers hold at, and `8b9f81b` is the head all three hold at. The artwork in §8 landed in the same commit because it belongs to the same page.
 
 **The cadence rule, followed on purpose this time.** T-075 moved the matrix split and the engine
 count and deliberately left the page alone, because a change that moves a counted number cannot name
-a head where its own numbers hold. This change re-trues the page against `a57fd86` — the head T-075
+a head where its own numbers hold. This change re-trues the page against `2d447d3` — the head T-075
 actually landed at — and the three rows above are what that produced. The rule now has one clean
 pass behind it rather than only the mistake that wrote it.
 
@@ -430,7 +430,7 @@ needs the README to start, and it is 33 KB. So it was in no list, and therefore 
 two properties are now separate: `ALSO_CHECKED` in `tools/check_doc_claims.py` names documents
 whose checkable claims are checked and which no session reads. Adding one costs a session nothing.
 
-**Measured, at `235acc1`.** The gate's own verdict line, before and after:
+**Measured, at `f1ff8e5`.** The gate's own verdict line, before and after:
 
 ```
 before   GREEN: canonical claims check out; 145 paths, 42 shas, 107 tickets, 8 versions
@@ -447,7 +447,7 @@ nothing, so one claim of each kind was broken in the real `README.md` and the re
 | Mutation in `README.md` | Verdict |
 | :--- | :--- |
 | `./docs/brand/` → `./docs/no-such-directory/` | RED — "README.md: references `./docs/no-such-directory/`, which does not exist" |
-| `5cf9b8c` → a 40-hex string that resolves to nothing | RED — "README.md: names … which is not an object in this repository" |
+| `5cf6d2e` → a 40-hex string that resolves to nothing | RED — "README.md: names … which is not an object in this repository" |
 | `T-048` → a ticket id on no board | RED — "README.md: names …, which is in no task board, ledger or archive" |
 
 And the control, which matters more than the three: with `ALSO_CHECKED` emptied and the same
@@ -482,7 +482,7 @@ the page said so in a note:
 
 That was correct, and it stayed correct for as long as nobody did the install. `npm ci` then ran from
 the committed `package-lock.json` (221 packages, 33 seconds) and `npx playwright install chromium`
-fetched the browser, so all three suites were run at `a57fd86`:
+fetched the browser, so all three suites were run at `2d447d3`:
 
 | Suite | Measured | Command |
 | :--- | ---: | :--- |
@@ -526,7 +526,7 @@ false one worth recording rather than dismissing: it arrived beside true ones, i
 whole subject was not overstating things. The judging pass caught it, named it as the failure mode this
 repository is built around, and produced the missing pairs.
 
-**And then nothing was trusted anyway.** Every sheet that landed was checked here, at `6c59a67`, on nine
+**And then nothing was trusted anyway.** Every sheet that landed was checked here, at `8b9f81b`, on nine
 properties: it parses; its header carries `viewBox 0 0 1200 H` with a matching `height`; every colour
 literal is on the token table; the light and dark sheets differ **only** in colour literals and the one
 `<desc>` line; every light colour maps to exactly one dark colour by that table; no `id` is referenced
@@ -550,7 +550,7 @@ Whether they are worth looking at is a judgement, and it is the Owner's.
 because that head does not exist until it merges. So the page is re-trued in the pull request **after**,
 against the head that actually landed, and several landings can be paid at once. Four were owed here:
 `#247`, `#248`, `#249` and `#250` each moved a number and each deliberately deferred the page. They are
-paid in §5 against `830fcec` — matrix `implemented` 144 → **150** and `unreviewed` 44 → **38**, the
+paid in §5 against `bfd3bb6` — matrix `implemented` 144 → **150** and `unreviewed` 44 → **38**, the
 engine suite 2148 → **2152**, and 85 → **89** pull requests / 249 → **257** files / 48,768 → **49,977**
 inserted lines since the ninth audit's head.
 
@@ -755,7 +755,7 @@ of `contexts` with a written reason.
 
 ## 11. The front page carried a superseded standing verdict for three weeks
 
-Corrected on 2026-09-21, at `main` @ `ace8c1a`. Found by re-measuring instead of re-reading, on the
+Corrected on 2026-09-21, at `main` @ `848736b`. Found by re-measuring instead of re-reading, on the
 Owner's instruction to verify every number rather than believe it.
 
 The tenth independent audit landed on 2026-09-19 and `AUDIT_LEDGER.md` announced it. The banner that
@@ -766,10 +766,10 @@ at once, and the front page stated the older one.
 
 | Claim | Measured | Command |
 | :--- | :--- | :--- |
-| README table row: standing verdict **RED — ninth round**, `2026-08-19-ninth-audit-5cf9b8c.md` | the **TENTH** round, `2026-09-19-tenth-audit-75fca65.md` | `grep -n "TENTH" apps/desktop/AUDIT/AUDIT_LEDGER.md` → *"the **TENTH** independent audit, of `main` @ `75fca65`"*; `tools/sync_active_pr.py::audit_position_sentence()` prints the same |
-| README §"What is not confirmed" (both language blocks): ninth round, `main` @ `5cf9b8c`, **96** pull requests, **281** files, **53,749** inserted lines | the TENTH round, `main` @ `75fca65`, **31** PRs, **121** files, **10,599** insertions | `git log --format=%s 75fca65..HEAD \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` → `31`; `git diff --shortstat 75fca65..HEAD` → `121 files changed, 10599 insertions(+), 1156 deletions(-)` |
-| The same numbers were **also** stale against the head they cited | from `5cf9b8c` the count is **122**, not 96 | `git log --format=%s 5cf9b8c..origin/main \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` → `122`. So the sentence was wrong twice: the wrong head, and the wrong number for that head |
-| `PROJECT_STATE.md` Standing risks: ninth round, **76** pull requests, **240** files, **46,612** lines from `5cf9b8c` | the TENTH round and the numbers above | The two files disagreed with each other — 76 against 96 from the same head — which is what a number copied rather than measured looks like |
+| README table row: standing verdict **RED — ninth round**, `2026-08-19-ninth-audit-5cf6d2e.md` | the **TENTH** round, `2026-09-19-tenth-audit-f4ffc8d.md` | `grep -n "TENTH" apps/desktop/AUDIT/AUDIT_LEDGER.md` → *"the **TENTH** independent audit, of `main` @ `f4ffc8d`"*; `tools/sync_active_pr.py::audit_position_sentence()` prints the same |
+| README §"What is not confirmed" (both language blocks): ninth round, `main` @ `5cf6d2e`, **96** pull requests, **281** files, **53,749** inserted lines | the TENTH round, `main` @ `f4ffc8d`, **31** PRs, **121** files, **10,599** insertions | `git log --format=%s f4ffc8d..HEAD \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` → `31`; `git diff --shortstat f4ffc8d..HEAD` → `121 files changed, 10599 insertions(+), 1156 deletions(-)` |
+| The same numbers were **also** stale against the head they cited | from `5cf6d2e` the count is **122**, not 96 | `git log --format=%s 5cf6d2e..origin/main \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` → `122`. So the sentence was wrong twice: the wrong head, and the wrong number for that head |
+| `PROJECT_STATE.md` Standing risks: ninth round, **76** pull requests, **240** files, **46,612** lines from `5cf6d2e` | the TENTH round and the numbers above | The two files disagreed with each other — 76 against 96 from the same head — which is what a number copied rather than measured looks like |
 | `PROJECT_STATE.md` Suites: `tools/` self-tests **1222** | **1223** | `cd tools && python -m unittest discover -s . -p "test_*.py"` → `Ran 1223 tests` · `OK (skipped=1)` |
 | `engine_tests` **2299** | **2314** | `python -m unittest discover -s engine/tests -p "test_*.py"` → `Ran 2314 tests` · `OK (skipped=97)` on Windows, and `OK (skipped=17)` on Debian 13 (trixie) under WSL2 on a non-root account |
 
@@ -796,14 +796,14 @@ reported 2 of its 11 failing at 11,478 ms; alone it is `11 passed` in 6.93 s, an
 `Cockpit · frontend` context was green on `#284`. Both are duration-sensitive under load. Neither is
 recorded here as a pass — they are recorded as measurements whose conditions are stated.
 
-## 12. Two counts moved by `#286`, re-trued at the settle of `main` @ `b80e572`
+## 12. Two counts moved by `#286`, re-trued at the settle of `main` @ `feb8b98`
 
 | Claim | Measured | Command |
 | :--- | :--- | :--- |
-| `engine_tests` **2314** | **2315** | `BRO_ENV=ci python3 -m unittest discover -s engine/tests -t engine/tests -q` at `b80e572` → `Ran 2315 tests` · `OK (skipped=14)` on Debian 13 (trixie), native, non-root. The added test is `test_the_ladder_broker_manifest_config_is_the_document_the_driver_reads`. The Windows row in `PROJECT_STATE.md` is marked not re-measured rather than given a number nobody ran |
+| `engine_tests` **2314** | **2315** | `BRO_ENV=ci python3 -m unittest discover -s engine/tests -t engine/tests -q` at `feb8b98` → `Ran 2315 tests` · `OK (skipped=14)` on Debian 13 (trixie), native, non-root. The added test is `test_the_ladder_broker_manifest_config_is_the_document_the_driver_reads`. The Windows row in `PROJECT_STATE.md` is marked not re-measured rather than given a number nobody ran |
 | **34** required contexts (README, both verification sheets, `PROJECT_STATE.md`) | **35** | `gh api repos/menqstudio/OS/branches/main/protection/required_status_checks --jq '.contexts\|length'` → `35`, after the Owner's item 3 added `Trust anchor · no production root private in this tree` |
 
-## 13. Corrected on 2026-10-01, at `main` @ `73e5ccb` (T-145, the whole-repository read)
+## 13. Corrected on 2026-10-01, at `main` @ `1961bd7` (T-145, the whole-repository read)
 
 The read found the front page stating the same count twice with different values, and one figure
 that was about half of what its own printed command returns.
@@ -816,7 +816,7 @@ that was about half of what its own printed command returns.
 | Required contexts **34** in the table (the map said 35; §12 above had already measured 35) | **35** | `len(contexts)` in `config/required-checks.json`. NOT re-measured against live protection here: `gh api .../branches/main/protection` answered 404 for the account this session ran as |
 | Declared controls **62 — 48 check · 14 tool** | **63 — 49 check · 14 tool** by kind; **43 + 20** by path | `python3 tools/check_control_invocation.py` → `63 controls derived from the filesystem (49 checks, 14 tools)`; `ls tools/check_*.py \| wc -l` → 43, `ls engine/tools/*.py \| wc -l` → 20. The old row gave a by-kind split and described it as the by-path one |
 | Verification-sheet alt text: **2315** engine tests, **43** gate scripts | removed from the alt text | the sheet itself (`docs/brand/readme/verification-light.svg`) prints 2205 and 42, as of 2026-09-19; the alt text now says the sheet is dated and points at the table. **The sheet was not redrawn** |
-| **31** pull requests, **121** files, **10,599** inserted lines since the audited head, undated | **60 / 172 / 21,997**, dated | `git log --format=%s 75fca65..73e5ccb \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` → 60; `git diff --shortstat 75fca65..73e5ccb` → `172 files changed, 21997 insertions(+), 2109 deletions(-)`. Nothing recomputes this figure, so it is stale again after the next merge; the page now says so and dates it |
+| **31** pull requests, **121** files, **10,599** inserted lines since the audited head, undated | **60 / 172 / 21,997**, dated | `git log --format=%s f4ffc8d..1961bd7 \| grep -oE "\(#[0-9]+\)$" \| sort -u \| wc -l` → 60; `git diff --shortstat f4ffc8d..1961bd7` → `172 files changed, 21997 insertions(+), 2109 deletions(-)`. Nothing recomputes this figure, so it is stale again after the next merge; the page now says so and dates it |
 | "The governed chain is proven end to end" with no word about what executes | qualified | `engine/ci/live/run_live_turn.sh` and `run_ladder_turn.sh` install `proof_executor`, which hashes its inputs; `docs/design/DEBIAN_INSTALL_PROVISIONING.md` §10: "no model is called, and no real-execution executor exists in the tree" |
 
 ## 14. Front block added on 2026-10-08 (repository front page standard v1, MenQ-Standard CR-0011)

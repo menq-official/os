@@ -1,7 +1,7 @@
 # BroPS / OS — Operator Guide
 
 > **Scope.** This guide covers installing, provisioning, updating, backing up, and removing the
-> **BroPS desktop cockpit** (`apps/desktop/`) — the human-facing half of `menqstudio/OS`
+> **BroPS desktop cockpit** (`apps/desktop/`) — the human-facing half of `menq-official/os`
 > (Tauri 2 + Rust + SQLite + React 19).
 >
 > **Windows is the only platform on which the app provisions itself.** On Linux the application

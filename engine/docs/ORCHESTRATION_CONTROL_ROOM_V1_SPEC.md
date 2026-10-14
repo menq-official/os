@@ -3,8 +3,8 @@
 **Status:** Phase 1 canonical contracts merged to `main`  
 **Reviewed:** 2026-07-15  
 **Repository:** `menqstudio/Bro`  
-**Approved candidate HEAD:** `3c31255056b0bcedf4733be81a4b5a335a1eacd6`  
-**Merge commit:** `61bf9bc4a42b512926bf848b79a0cac063196993`
+**Approved candidate HEAD:** `4edb441838a79ae12779f21b6de9800c06a177be`  
+**Merge commit:** `9f847a29b2b37c33eb6a9a6c9fd468e4d8a045ad`
 
 ## 1. Purpose
 
@@ -40,7 +40,7 @@ Control Room remains read-first. V1 command contracts cover approve, deny, cance
 
 ## 5. Verification evidence
 
-- exact candidate HEAD: `3c31255056b0bcedf4733be81a4b5a335a1eacd6`
+- exact candidate HEAD: `4edb441838a79ae12779f21b6de9800c06a177be`
 - GitHub Actions run `29376410325`: Windows GREEN and Ubuntu GREEN
 - independent exact-head artifact audit in a temporary real Git worktree: foundation GREEN
 - unique full suite: 102/102 GREEN
@@ -50,11 +50,11 @@ Control Room remains read-first. V1 command contracts cover approve, deny, cance
 
 ## 6. Subsequent runtime merge
 
-Orchestration Runtime V1 foundation is merged in PR #6 at merge commit `2395570bc9571e6c721373751a6dbfa2b6a8f75b`. It implements durable task contracts, append-only hash-chained records, deterministic queue claims, cross-process serialization, expiring leases, checkpoints, budgets, cancellation, recovery, projections, and integrity checks.
+Orchestration Runtime V1 foundation is merged in PR #6 at merge commit `8b454d934c779f534d459c47976e3aaba424a70c`. It implements durable task contracts, append-only hash-chained records, deterministic queue claims, cross-process serialization, expiring leases, checkpoints, budgets, cancellation, recovery, projections, and integrity checks.
 
 ## 7. Subsequent API merge
 
-Control Room API V1 is merged in PR #8 at merge commit `f736bce585e0e911c36a73d0181c8eb4ef3aebef`. It exposes integrity-bound mission, task, queue, canonical agent, checkpoint, budget, approval, recovery/quarantine, and audit read models plus validation-only command intent.
+Control Room API V1 is merged in PR #8 at merge commit `3bbe41492ff819160742c325e7d158476856dc59`. It exposes integrity-bound mission, task, queue, canonical agent, checkpoint, budget, approval, recovery/quarantine, and audit read models plus validation-only command intent.
 
 ## 8. Next phase
 

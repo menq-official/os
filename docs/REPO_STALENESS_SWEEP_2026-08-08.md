@@ -1,7 +1,7 @@
 # Repository staleness sweep — 2026-08-08
 
 > **⚠ SUPERSEDED SNAPSHOT — do not read any line here as the current state.** This report describes
-> `main` @ `0efa99e` (PR #65). `main` is now further on, sixteen-odd merged PRs later, and this
+> `main` @ `3f50b55` (PR #65). `main` is now further on, sixteen-odd merged PRs later, and this
 > document's “still open” list has been overtaken in at least one place (see item 5). It is kept as
 > the record of what one sweep checked and how. **Current state:** [`NEXT_CHAT.md`](../NEXT_CHAT.md)
 > and [`config/current_state.json`](../config/current_state.json). **Current audit position:**
@@ -19,13 +19,13 @@ line below is either a command and its output, or a statement that names the fil
 came from. A verdict with nothing behind it is not evidence, and this repository has spent three
 audit rounds learning that the hard way.
 
-Baseline: `main` at `0efa99e` (PR #65 merged 2026-08-07T18:14:31Z).
+Baseline: `main` at `3f50b55` (PR #65 merged 2026-08-07T18:14:31Z).
 
 ---
 
 ## 1. Does the code actually pass? (the evidence base)
 
-Run at `0efa99e`, before any change in this sweep.
+Run at `3f50b55`, before any change in this sweep.
 
 | Suite | Command | Result |
 |---|---|---|
@@ -87,7 +87,7 @@ compared its blob against `main`:
 ```
 
 "Differs" here means *older*, not *unique* — every path exists on `main` with newer content.
-Confirmed by ancestry: `stash@{0}`'s base is `09b4803`, which **is** an ancestor of `main` (it is
+Confirmed by ancestry: `stash@{0}`'s base is `51a5519`, which **is** an ancestor of `main` (it is
 PR #64's merge), so its content is the mid-run snapshot of work that has since merged as PR #65.
 `stash@{1}`'s base `c9680f5` is **not** an ancestor of main; it belongs to the abandoned
 `pr31-rebuild` branch and holds the pre-redesign UI (its `Home.tsx` is 231 lines against main's
@@ -274,7 +274,7 @@ and what made each claim false:
 | File | Was | Now |
 |---|---|---|
 | `README.md` (2 weeks stale) | "`.claude/` — the enforcement wall (hooks)"; "every AI action flows through the engine's wall"; CI "three legs"; `contracts/` = "shared schemas both sides agree on"; a 4-step roadmap contradicting the 11-phase one | The wall is `engine/.claude/`, nine events; the root holds 262 agent definitions and one `Stop` guard. The gate note sits under the flow sentence, not in another file. `contracts/` is a README. 7 workflows, 28 checks, 15 gates. Roadmap points at the canonical one. New section on Bro and who may do what. |
-| `START_HERE.md` (2 weeks) | `main = df3c0ac`; PR #31 live, PR #32 WIP; a design addendum "PENDING re-audit" | Current baseline, says to resolve the live HEAD yourself, states the gate is closed, and adds the four things that actually cost time here |
+| `START_HERE.md` (2 weeks) | `main = da13b9c`; PR #31 live, PR #32 WIP; a design addendum "PENDING re-audit" | Current baseline, says to resolve the live HEAD yourself, states the gate is closed, and adds the four things that actually cost time here |
 | `QUEUE_MANIFEST.md` (2 weeks) | a `main` freeze for PR #31's audit, seven queued branches | Marked DISSOLVED, with each branch traced to where it went and PR #32's branch explicitly excluded from any delete list |
 | `MASTER_EXECUTION_ROADMAP.md` | phases 2–10 all "⏳ Blocked" on a dependency chain | Rewritten per phase against what exists, with "blocked" redefined as a named missing thing rather than an inferred chain |
 | `CLAUDE.md` §6 | five items in their pre-fix state, tracked on a branch that does not exist | Post-fix state, all five OPEN, three naming the Owner artifact they need |

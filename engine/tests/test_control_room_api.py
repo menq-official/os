@@ -23,7 +23,7 @@ from broctl import build_registry, generate_key, sign_payload
 from _operator_pin import use_operator_pin
 
 AGENT = "agt-p01-r01"
-BASE = "6bb29bd61b171757a6aaef016fbd46e8b970ada9"
+BASE = "9dc4fc95a609e4fbb327b5f90bc5e87301394bd8"
 
 
 def task_contract(task_id: str) -> dict:

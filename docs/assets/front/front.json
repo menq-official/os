@@ -42,7 +42,7 @@
     "Production gate SHUT; the standing independent verdict is RED (measured figures in the table below)"
    ],
    [
-    "Built with",
+    "Stack",
     "Tauri 2, Rust, React 19, TypeScript, Vite"
    ]
   ],
@@ -60,7 +60,7 @@
     "Արտադրական դարպասը ՓԱԿ է. գործող անկախ վճիռը RED է (չափված թվերը ներքևի աղյուսակում)"
    ],
    [
-    "Կառուցված է",
+    "Տեխնոլոգիաներ",
     "Tauri 2, Rust, React 19, TypeScript, Vite"
    ]
   ]

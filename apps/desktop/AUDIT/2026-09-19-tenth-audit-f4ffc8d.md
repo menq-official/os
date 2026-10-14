@@ -1,8 +1,8 @@
-# Tenth round — independent verification of the ninth round, at `main` @ `75fca65`
+# Tenth round — independent verification of the ninth round, at `main` @ `f4ffc8d`
 
-**Date** 2026-09-19 · **Head** `75fca65` · **Auditor role** delegated to Claude by the Owner, as
+**Date** 2026-09-19 · **Head** `f4ffc8d` · **Auditor role** delegated to Claude by the Owner, as
 recorded for the sixth round onward · **Scope** the ninth round's thirteen findings
-(`2026-08-19-ninth-audit-5cf9b8c.md`), the three carried forward from rounds 1–8, and anything the
+(`2026-08-19-ninth-audit-5cf6d2e.md`), the three carried forward from rounds 1–8, and anything the
 verification turned up on the way.
 
 ## Method, and what makes it independent
@@ -25,14 +25,14 @@ Three rules, applied throughout:
 
 ## The ninth round's thirteen
 
-| # | P | Ninth-round finding | Tenth-round verdict | Evidence, at `75fca65` |
+| # | P | Ninth-round finding | Tenth-round verdict | Evidence, at `f4ffc8d` |
 |---|---|---|---|---|
 | `I-01` | P2 | the credential register called a carrier "shape-constrained" | ✅ **CONFIRMED** | The fix computes the register from each leaf's real validator. The register is computed over `CALLER_CONTROLLED`, a hand-written list, so the attack was: add one caller-controlled leaf to the wire frame (`operator_hint`, carrying `contract_draft.task_id`) and see whether a hand-maintained population lets it through. **5 tests red by name**, including `every leaf is either shape-constrained or a DECLARED free-text field` and `what IS established: the frame is exactly its declared fields`. 19 green when restored. |
 | `I-02` | P2 | three register entries were never exercised, and deleting them was green | ✅ **CONFIRMED** | Probed by dropping `reference_skills` out of the **production** frame builder rather than by touching the fixture: **10 of 19 red**, including `I-02 mutant: deleting a declared entry is no longer green` and `both fixtures really do dispatch`. The inverse direction fires. |
 | `I-03` | P3 | one out-of-range byte escaped the decode window | ✅ **CONFIRMED, for its stated scope** | The published escape (`0x0a` appended, and interleaved between every character) is encoded in `agentsDispatch.nolease.test.ts:213-215` and the suites pass — 12 tests across the no-lease and no-secret sweeps. The fix claims the published proof-of-concept and nothing adjacent, and that is what it delivers: a printable separator would still hide a token from a substring search, which is `A-09` route 1 and is open **by declaration**, not by oversight. |
 | `I-04` | P2 | an accessibility verdict decided on a rounded number | ✅ **CONFIRMED** | `round(` inside a `passed=` expression: **0 occurrences**. A raw `ratio >= threshold` comparison: **1**. |
 | `I-05` | P3 | `unittest.main()` four lines above the class it should run | ✅ **CONFIRMED** | `unittest.main()` is at line **891 of 892**; no class is declared after it. |
-| `I-06` | P2 | the machine mirror's prose drifted from the head it holds | ✅ **CONFIRMED** | No sha is quoted in `purpose` **at all** now, and `settled_at_main_head` is `bb8a00a…`, live `main` at the time of reading. The drift class was removed rather than corrected, which is stronger. |
+| `I-06` | P2 | the machine mirror's prose drifted from the head it holds | ✅ **CONFIRMED** | No sha is quoted in `purpose` **at all** now, and `settled_at_main_head` is `854a0f9…`, live `main` at the time of reading. The drift class was removed rather than corrected, which is stronger. |
 | `I-07` | P2 | the roadmap status board disagreed with its own checkboxes on phases 8 and 9 | ✅ **CONFIRMED** | Checkboxes counted at this head: phase 8 = **7/9**, phase 9 = **7/9**, the corrected values. `tools/check_roadmap_order.py`: *"GREEN: roadmap phases 0..10 agree between Definition of Done and the status board; first open phase = 1"*. |
 | `I-08` | P3 | `required-checks.json` named the wrong PRs for `T-023` | ✅ **CONFIRMED** | The exclusion reason names `#125`, `#132`, `#155`, `#157`. `#148` appears only inside the sentence that records the old error. |
 | `I-09` | P3 | the ledger routed the eighth round's browser-suite finding to the wrong ticket | ✅ **CONFIRMED** | The §E row routes to `T-036`, and records that it pointed at `T-039`. |
@@ -45,7 +45,7 @@ Three rules, applied throughout:
 gate or a trust boundary was found to be overstated.
 
 > **Builder's note, 2026-10-14 (cockpit read R3-0515) — the `I-07` row above says P2; the ninth
-> report filed it as P3.** `2026-08-19-ninth-audit-5cf9b8c.md` states a severity for `I-07` in one
+> report filed it as P3.** `2026-08-19-ninth-audit-5cf6d2e.md` states a severity for `I-07` in one
 > place, its heading: "`I-07` (P3) — the roadmap status board disagrees with its own checkboxes on
 > exactly the two phases that matter". The `P` column of this table restates the ninth round's
 > severities, and that cell does not match its source. Which severity stands is not decided here;

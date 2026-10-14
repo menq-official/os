@@ -221,9 +221,9 @@ class MergeReady(GateCase):
                          "PROJECT_STATE.md was not read AT the head that will merge")
 
     def test_green_names_the_repository_it_was_asked_about(self):
-        code, out = gate(Fake(repo="menqstudio/OS"))
+        code, out = gate(Fake(repo="menq-official/os"))
         self.assertEqual(code, 0, out)
-        self.assertIn(f"gh pr merge 5 --squash --match-head-commit {HEAD} -R menqstudio/OS", out)
+        self.assertIn(f"gh pr merge 5 --squash --match-head-commit {HEAD} -R menq-official/os", out)
 
     # --- a. open, and a known head ---------------------------------------------------
 
@@ -831,7 +831,7 @@ class AuditRule(GateCase):
 #: Where the gate's own remedy says a per-change audit goes, with its `<what>` filled in.
 FILED = "apps/desktop/AUDIT/changes/pr-5-the-wall.md"
 #: A round's report, on file since before the change: what satisfied the rule until T-155.
-OLD_ROUND = "apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md"
+OLD_ROUND = "apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md"
 
 
 def no_background_git(root: pathlib.Path) -> None:
@@ -964,7 +964,7 @@ class AuditBinding(GateCase):
         self.base = self.branch.commit("main, before the change", {
             "PROJECT_STATE.md": state(D2), "README.md": "# a product\n",
             RUNTIME: "ALLOW = ('read',)\n",
-            OLD_ROUND: "# Tenth independent audit, of main @ 75fca65\n\nVerdict: RED.\n"})
+            OLD_ROUND: "# Tenth independent audit, of main @ f4ffc8d\n\nVerdict: RED.\n"})
         self.audited = self.branch.commit("the change the auditor read",
                                           {RUNTIME: "ALLOW = ()\n"})
 
@@ -1563,13 +1563,13 @@ class TheRealInputs(unittest.TestCase):
 
         check_merge_ready._run = spy
         try:
-            listed = check_merge_ready.Inputs(ROOT, "menqstudio/OS").changed_files(314)
+            listed = check_merge_ready.Inputs(ROOT, "menq-official/os").changed_files(314)
         finally:
             check_merge_ready._run = real
         self.assertEqual(listed, [{"filename": "a.py", "previous_filename": None}])
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0][:3], ["gh", "api", "--paginate"])
-        self.assertIn("repos/menqstudio/OS/pulls/314/files?per_page=100", seen[0])
+        self.assertIn("repos/menq-official/os/pulls/314/files?per_page=100", seen[0])
         check_merge_ready._run = spy
         try:
             check_merge_ready.Inputs(ROOT).changed_files(7)

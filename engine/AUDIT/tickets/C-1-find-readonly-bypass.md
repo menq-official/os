@@ -3,7 +3,7 @@
 - **Severity:** Critical
 - **Confidence:** High (2 auditors independently + source-verified)
 - **Files:** `runtime/bro_security.py:38-41` (`READ_ONLY_SHELL`), `runtime/bro_authorization.py:161-162` (`_shell_capabilities`), scope enforcement `runtime/bro_policy.py:264-268`
-- **Status:** ◑ remediated in code, **not independently re-audited** (verified against the tree at `0efa99e`, 2026-08-07; per-criterion evidence below). See the `◑` legend in [`../README.md`](../README.md) — this is not a closure mark.
+- **Status:** ◑ remediated in code, **not independently re-audited** (verified against the tree at `3f50b55`, 2026-08-07; per-criterion evidence below). See the `◑` legend in [`../README.md`](../README.md) — this is not a closure mark.
 
 ## Problem
 `find` is on the read-only allowlist, so `analyze_command` marks any `find` invocation `mutating=False` / `recognized_read_only=True` and `_shell_capabilities` maps it to `("READ_LOCAL",)`. But `find` executes and mutates:

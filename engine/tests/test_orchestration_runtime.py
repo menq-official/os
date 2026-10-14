@@ -143,7 +143,7 @@ def task_contract(task_id: str, agent_id: str = AGENT) -> dict:
             "full_name": "menqstudio/Bro",
             "branch": "orchestration-runtime-v1",
             "worktree": "C:/Bro/runtime-v1",
-            "base_commit": "b5d1a343a8777738d4113e3e28cf27527f04020a",
+            "base_commit": "58b55c6329249fa69d2ad93481840ff9403ede74",
             "tree_identity": "1" * 64,
         },
     }

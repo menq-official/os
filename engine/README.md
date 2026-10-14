@@ -2,7 +2,7 @@
 
 > A governed Agent Operating System for one always-available conductor, specialized agent packs, hard runtime laws, evidence-backed execution, analytics, learning, and owner-controlled release authority.
 
-> **Security remediation status (2026-07-19).** The independent adversarial audit of snapshot `60a94dc` (**RED: 2 Critical, 9 High, 4 Medium**) — a self-verifying trust root, a review-mode containment bypass, and more — has been **remediated**: blockers #1–#9 are merged (PRs #38–#50), followed by owner-environment hardening (PRs #51–#52). Each fix landed as an isolated PR with a regression test and **independent adversarial verification at its exact HEAD** — the auditor was never the sole verifier of a fix. A follow-up internal multi-agent review has since surfaced further correctness/hardening items, now being fixed the same way. Deployment additionally requires the owner-environment steps in [After the blockers](#after-the-blockers).
+> **Security remediation status (2026-07-19).** The independent adversarial audit of snapshot `1972816` (**RED: 2 Critical, 9 High, 4 Medium**) — a self-verifying trust root, a review-mode containment bypass, and more — has been **remediated**: blockers #1–#9 are merged (PRs #38–#50), followed by owner-environment hardening (PRs #51–#52). Each fix landed as an isolated PR with a regression test and **independent adversarial verification at its exact HEAD** — the auditor was never the sole verifier of a fix. A follow-up internal multi-agent review has since surfaced further correctness/hardening items, now being fixed the same way. Deployment additionally requires the owner-environment steps in [After the blockers](#after-the-blockers).
 
 ## What Bro is
 
@@ -26,7 +26,7 @@ Bro converts a request into a governed task contract, selects the correct pack o
 > **Where this file's numbers come from.** `engine/` is vendored from the standalone
 > [`menqstudio/Bro`](https://github.com/menqstudio/Bro) repository, and the PR numbers, merge commit
 > and audit dates below are **Bro's**, frozen at the point of vendoring. They are history, not the
-> state of `menqstudio/OS`. For the live state read the OS root's `NEXT_CHAT.md` /
+> state of `menq-official/os`. For the live state read the OS root's `NEXT_CHAT.md` /
 > `PROJECT_STATE.md`, and for what is still open against this engine read
 > [`../docs/PHASE_10_PRODUCTION_ITEMS.md`](../docs/PHASE_10_PRODUCTION_ITEMS.md) (residual items
 > O-1 … O-5, all OPEN) and [`../docs/SECURITY_MODEL.md`](../docs/SECURITY_MODEL.md).
@@ -38,7 +38,7 @@ Execution Control Plane V2, Orchestration/Control Room V1 contracts, Orchestrati
 > **`LIVE_PROVEN` caveat.** The label reflects validator-checked existence, not runtime wiring — but the wiring gaps the 2026-07-19 audit named are now closed (see the remediation section). A dedicated live-wiring assurance validator (`tools/bro_live_validate.py`, blocker 9b) runs each law's allow/deny cases through the wired interpreter and gates CI, so `ENFORCED` now means live-proven, not merely present.
 
 - latest merged PR: `#52`
-- main merge commit: `bc3b8533aa8f66ed5fa8693b23e0d16621cd4cc9`
+- main merge commit: `1bd826435a02d8ef988db6a76d6b6d85b9093713`
 - laws: 17 (L0–L16); the assurance gate reports 16 `ENFORCED` and one, **L13** (controlled learning and skill evolution), `NOT_ENFORCED` — its record is declared advisory since 2026-10-02 because its validator exists and is tested and no promotion flow calls it. Includes L15 (secret confidentiality) and L16 (auditable stop + incident ledger). *(This line said all 17 were live-proven.)*
 - live enforcement: workspace binding, path scope, and the protected control-plane digest are wired into `runtime/bro_control_plane.py`
 - issuance: Ed25519 authorities, an owner-signed trusted-key registry, and the `tools/broctl.py` minting/signing CLI; the external Supervisor issues leases in the one canonical execution-lease shape the runtime enforces (blocker 8b) and can produce a supervised builder's full authorization bundle (PR #52)

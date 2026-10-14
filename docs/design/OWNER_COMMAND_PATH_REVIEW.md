@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-09  
 **Proposal reviewed:** `origin/design/owner-command:docs/design/OWNER_COMMAND_PATH_DESIGN.md`  
-**Code base checked:** `e3fc507fc325506cd62333487ee25fe6a28fed54`  
+**Code base checked:** `598400e8fef7219d9ee6690888683e9eaafc8a3d`  
 **Overall verdict:** **REJECT before implementation**
 
 This is a design review, not an implementation review. No owner-command code described by the

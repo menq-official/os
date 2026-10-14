@@ -1,7 +1,7 @@
 """Tests for tools/check_truncated_lines.py — the roadmap row that stops mid-clause.
 
 The case of record is reconstructed verbatim: the eleven Phase-1 Definition-of-Done rows that
-have ended in the middle of a sentence since commit 8e446d4 (2026-08-10). If those do not trip
+have ended in the middle of a sentence since commit 438f9b0 (2026-08-10). If those do not trip
 this gate, it is decoration.
 """
 from __future__ import annotations

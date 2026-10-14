@@ -3,7 +3,7 @@
 - **Severity:** High (one auditor rated Critical; reconciled to High — see note)
 - **Confidence:** High (3 auditors + source-verified)
 - **Files:** `runtime/bro_workspace.py:114-148` (`load_workspace`); contrast `runtime/bro_control_plane.py:138-145` (signed `BRO_PROTECTED_AUTHORITY`)
-- **Status:** ◑ remediated in code, **not independently re-audited** (verified against the tree at `0efa99e`, 2026-08-07; per-criterion evidence below). See the `◑` legend in [`../README.md`](../README.md) — this is not a closure mark.
+- **Status:** ◑ remediated in code, **not independently re-audited** (verified against the tree at `3f50b55`, 2026-08-07; per-criterion evidence below). See the `◑` legend in [`../README.md`](../README.md) — this is not a closure mark.
 
 ## Problem
 `bro_signature.py:85` classifies `"workspace-binding": OPERATOR` (an Ed25519-signable artifact), but `load_workspace` reads it as raw JSON from an agent-reachable env var and verifies **no signature**:

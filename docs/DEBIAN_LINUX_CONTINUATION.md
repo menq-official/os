@@ -14,7 +14,7 @@
 
 ---
 
-You are continuing **menqstudio/OS**, Wave **3b-1B** (governed-AI trust chain), on a real **Debian Linux**
+You are continuing **menq-official/os**, Wave **3b-1B** (governed-AI trust chain), on a real **Debian Linux**
 box. This session does the **LINUX-ONLY** end-to-end that the Windows dev box could not run. Read the repo's
 `CLAUDE.md` first (canonical read manifest + startup hook + operating mode) and follow it.
 
@@ -40,7 +40,7 @@ box. This session does the **LINUX-ONLY** end-to-end that the Windows dev box co
 
 ## Setup (Debian)
 ```bash
-git clone https://github.com/menqstudio/OS.git && cd OS
+git clone https://github.com/menq-official/os.git && cd OS
 git fetch origin impl/wave-3b1b-core && git checkout impl/wave-3b1b-core
 # toolchains
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env"

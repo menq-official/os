@@ -1,4 +1,4 @@
-# NINTH independent audit — `main` @ `5cf9b8c`
+# NINTH independent audit — `main` @ `5cf6d2e`
 
 **Auditor:** Architect session, role-only. I did not write any of the code judged here, and the only
 files I have written in this tree are this report and the coordination documents the
@@ -15,9 +15,9 @@ proved rather than asserted, on a clean worktree, before the first file was open
 
 ```
 $ git rev-parse HEAD
-5cf9b8cba9860807bb7e15ec3dec2e6a91f3dea8
+5cf6d2e2541ad382b3f7e815e003beccc8c752f4
 
-$ git rev-parse 5cf9b8cba9860807bb7e15ec3dec2e6a91f3dea8^{tree}
+$ git rev-parse 5cf6d2e2541ad382b3f7e815e003beccc8c752f4^{tree}
 9580b86deffb7be00cac18716f18ae33bc318a3a
 
 $ git status --porcelain
@@ -27,8 +27,8 @@ $ git write-tree
 9580b86deffb7be00cac18716f18ae33bc318a3a
 
 $ git log -1 --format='%H %T %ci %s'
-5cf9b8cba9860807bb7e15ec3dec2e6a91f3dea8 9580b86deffb7be00cac18716f18ae33bc318a3a
-2026-08-19 18:33:08 +0400 Settle at main d0bddc4 — block A is closed (#162)
+5cf6d2e2541ad382b3f7e815e003beccc8c752f4 9580b86deffb7be00cac18716f18ae33bc318a3a
+2026-08-19 18:33:08 +0400 Settle at main ff54fa6 — block A is closed (#162)
 ```
 
 Head, `^{tree}` and `write-tree` all agree, and both trees equal the pinned
@@ -47,7 +47,7 @@ committed.
 **No P0. All three refusals are closed at this head.** Read at the source, not taken from the
 ledger:
 
-| Refusal | Where | State at `5cf9b8c` |
+| Refusal | Where | State at `5cf6d2e` |
 |---|---|---|
 | `governed_verification_unconfigured()` | `apps/desktop/src-tauri/src/commands.rs:1305-1308` | **Closed.** The body is `Some(GOVERNED_VERIFICATION_UNCONFIGURED)` with **no branch**. Fires before the model is called. |
 | `connect_broker()` | `apps/desktop/src-tauri/src/governed_turn.rs:230-253` | **Closed off Linux.** `#[cfg(not(target_os = "linux"))] { Err(BrokerAccessError::UnsupportedPlatform) }` at `:251`. |
@@ -142,7 +142,7 @@ read is worth more than one that pretends.
 | **T-035** — the proposed theme axis is vacuous and was deliberately not shipped | ✅ | Not shipped, measured: `pages.browser.spec.tsx:425` is `const STATES: State[] = ['pending','settled','unreachable']` — three states, no theme dimension. Vacuity confirmed structurally: `grep -c data-theme theme/aios.css` → **1**, and that single block (`:root[data-theme="light"]`, `:70`) declares **nothing but custom properties and `color-scheme`**, so no rule can match differently between themes. The five opacity tokens it names (`--aurora-op --mesh-op --grid-op --scan-op --grain-op`) are all inside it. |
 | **T-036** — default-state fixtures, vocabulary compile-enforced; populated deliberately not in STATES | ✅ | Compile-enforcement mutation-verified: restoring the exact wrong vocabulary the ticket describes (`lvl('L2')`, `approvalState('granted')`) produces **two `tsc` errors** — `TS2345 '"L2"' is not assignable to 'ApprovalLevel'` and `'"granted"' … 'ApprovalStatus'`. The four vocabulary claims check out against `domain/enums.ts`: `ApprovalLevel` is `A0\|A1\|A2\|A3`, `Priority` has no `medium`, `ApprovalStatus` no `granted`, `TaskStatus` no `in_progress`. `populated` is absent from `STATES`. The tier finding re-measured: `.v-approvals .tier-A3` exists (`aios.css:996`, `:1260`) and **no `.tier-A0`/`.tier-A1`/`.tier-A2` rule exists anywhere**, against markup that applies `` `tier-${a.level}` `` — three of four levels genuinely render untreated. Browser suite **323 passed**. New finding `I-11` attached. |
 | **T-023** — the refusal names the ACE; the cause is an INHERITED ACE; fixed in the harness | ◑ **NOT PROMOTED** | I agree with the brief: this rests on one green run of an intermittent job and must not be promoted. What I could check, I checked **by reading**: the ACE dump is real (`bro_custody.py:762` `inherited = bool(header.AceFlags & 0x10)`, `:768` emits `INHERITED` / `APPLIED DIRECTLY`), and the `ci.yml` harness fix is real (`:495-513` — `/inheritance:r` + `/grant:r` by SID, `$env:USERNAME` deliberately ungranted, and a re-read that throws if `Authenticated Users` or `Everyone` survive). What I **cannot** check: the cause and the fix both live on the GitHub runner's `_temp` ACL, which no local box reproduces, and the job is in `deliberately_excluded`, so CI will not gate it either. The Builder's own row says it stays open until the job runs clean across several PRs. It stays ◑. New finding `I-08` attached. |
-| **T-033** — 1 185 unreachable rules deleted, 33% → 8%, bundle 345 → 218 kB | ✅ | Every headline re-derived. `python tools/count_dead_classes.py` → **“136 of 1799 … (8%)”**, exact. `aios.css` selector blocks against `be525bf^`: **3 194 → 2 009**, delta **1 185**, exact. Bundle: the `dist/` on this box predated the deletion, so I **rebuilt** — `npm run build` (which is `tsc --noEmit && vite build`) exits 0 and emits `index-CIV_2Ktx.css` at **218 518 bytes = 218.52 kB**, exact. One number is off, in the understating direction: the deleted source measures **157 115 bytes (157.1 kB / 153.4 KiB)**, not the “147 KB” claimed. New finding `I-12` attached. |
+| **T-033** — 1 185 unreachable rules deleted, 33% → 8%, bundle 345 → 218 kB | ✅ | Every headline re-derived. `python tools/count_dead_classes.py` → **“136 of 1799 … (8%)”**, exact. `aios.css` selector blocks against `02bf032^`: **3 194 → 2 009**, delta **1 185**, exact. Bundle: the `dist/` on this box predated the deletion, so I **rebuilt** — `npm run build` (which is `tsc --noEmit && vite build`) exits 0 and emits `index-CIV_2Ktx.css` at **218 518 bytes = 218.52 kB**, exact. One number is off, in the understating direction: the deleted source measures **157 115 bytes (157.1 kB / 153.4 KiB)**, not the “147 KB” claimed. New finding `I-12` attached. |
 | **T-038** — the load-flake is localStorage leaking between files, not slowness | ✅ | **Cause reproduced deterministically.** Replacing the clear in `test/setup.ts` with a seed of `brops.lang='hy'` reproduces the reported signature exactly: `Approvals.test.tsx:101` fails on `getByText(/native confirmation the app window cannot forge/i)` while line 100's `findByRole('dialog')` resolves — plus `DENY routes through the real fail-safe reject command` at `:155`, the second test the ticket names. (I observe **three** failures, not two; the account undercounts by one, in the understating direction.) **And the brief's question is answered by measurement, not argument:** running the full suite with the `beforeEach` deleted fails **exactly one** test in 739 — the one written to pin it. Nothing else in the suite depends on storage being clean, so the fix hides no previously meaningful assertion. `LS.get` runs in a `useState` lazy initialiser (`app/store.tsx:96-97`), i.e. at mount, so the clear genuinely reaches it. Baseline: **739 passed / 79 files**. |
 
 **Score: 6 ✅ · 2 REOPENED · 1 held at ◑.**
@@ -285,10 +285,10 @@ it passes without running any of it.
 drift* because `tools/check_repo_state.py` verifies it against live GitHub. Two of its fields have
 drifted anyway:
 
-* `purpose`: *"STATE: settled. main is at settled_at_main_head **(b3010f6)**"* — while
-  `settled_at_main_head` in the same file is `d0bddc42c984e37407b0f6990c2051e8daee65c5`. The
+* `purpose`: *"STATE: settled. main is at settled_at_main_head **(458db6d)**"* — while
+  `settled_at_main_head` in the same file is `ff54fa6ef93895a180f145a25b1f1c15901ca7d3`. The
   parenthetical contradicts the field it cites, in the same sentence.
-* `sync.live_main_resolution`: *"live main is b3010f6 (PR #81 merged, 2026-08-09) … the only open
+* `sync.live_main_resolution`: *"live main is 458db6d (PR #81 merged, 2026-08-09) … the only open
   pull request is the self-carrier **#82**"* — the carrier is #162, and `sync.verification` in the
   same object says so.
 

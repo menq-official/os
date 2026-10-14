@@ -89,7 +89,7 @@ class RedactionTests(unittest.TestCase):
     def test_does_not_redact_sha256_or_git_hashes(self):
         # Precision: ubiquitous, legitimate hashes must survive (no over-redaction).
         digest = "a1b2c3d4" * 8  # 64-hex
-        head = "11d7697856a1720b2367074e7d9d515d080504aa"  # 40-hex
+        head = "ff4939d6f8868448a2111f8a596df03d28939c24"  # 40-hex
         text = f"tree_identity: {digest} commit {head}"
         self.assertEqual(redact(text), text)
         self.assertFalse(contains_secret(text))

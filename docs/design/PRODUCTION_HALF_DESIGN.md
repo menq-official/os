@@ -496,7 +496,7 @@ genuinely contains a path, which a desktop spawn never reaches. That defect must
 the network axis. The grant is a file inside the bundle, covered by the digest the Owner confirms
 (§0.4.1–2), and it must carry an expiry that §5 refuses to fire past (§0.4.3).
 
-### 3.0 What is actually there today (verified at `main` @ `fe26a78`)
+### 3.0 What is actually there today (verified at `main` @ `6ee586b`)
 
 **The tier model has no network axis, and it has no file/shell axis either.** `engine/agents/authority-policy.json` is 48 lines. Every axis it declares:
 
@@ -746,7 +746,7 @@ secret lives outside the bundle keyed by `(bundle_digest, slot_id)` — because 
 bundle would change the digest on every rebind and silently un-approve the customer's agent the
 moment they rotated a key.
 
-### 4.0 What exists today (verified at `main` @ `fe26a78`)
+### 4.0 What exists today (verified at `main` @ `6ee586b`)
 
 **The reference column is real and it resolves to nothing.** *(status: `implemented` for the column, `not_implemented` for the resolution.)*
 
@@ -1099,7 +1099,7 @@ rather than decided quietly, and until it is answered the safe default is that a
 > *"The governed automation dispatch. Firing an automation writes a row to the desktop store; it
 > does not cross the wall … Same sequencing as `T-021`"* — and `T-021`'s sequencing is *"a new input
 > to the engine's trust boundary is not added while the independent verdict is RED"*. The standing
-> verdict is RED (ninth round, `apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf9b8c.md`). **§5 may
+> verdict is RED (ninth round, `apps/desktop/AUDIT/2026-08-19-ninth-audit-5cf6d2e.md`). **§5 may
 > therefore be designed now and may not be implemented until that sequencing releases it.** *(Read
 > 2026-10-01: the LOCAL half of §5 was built anyway, in `T-058` — the `flow_runs` queue, the claim and
 > the dispatch of local steps. `T-022` is still `Blocked` on the board, and what it blocks is still

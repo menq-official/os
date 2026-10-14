@@ -49,7 +49,7 @@ def _append_once(ledger_path: str, index: int) -> None:
 #: grows like `n * H(n)` poll cycles, not `n`. For `n = 24`, `H(24) ~ 3.78`, so ~91 cycles — and
 #: a cycle on a loaded Windows runner was a create, a write, an fsync, a replace and an unlink. At
 #: ~100 ms per cycle that lands at ~9 s, just under the production bound, which is why this test
-#: passed on `main` for weeks and then failed on `7eb6bf0` with nine of twenty-four writers timing
+#: passed on `main` for weeks and then failed on `4fe7310` with nine of twenty-four writers timing
 #: out — on a tree byte-identical to the one that had just passed the same job on PR #181. The
 #: new lock drops the create and the unlink from the cycle and keeps the race, and it has not
 #: been timed on a Windows runner, so the raised bound stays.

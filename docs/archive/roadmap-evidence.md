@@ -68,9 +68,9 @@ Nothing is shortened here. Every line is as it was written.
 
 **One governed round-trip proven end-to-end. **Still open, and an independent auditor has now**
 
-      confirmed WHY.** The third audit (`apps/desktop/AUDIT/2026-08-14-zero-trust-audit-e0dd969.md`)
+      confirmed WHY.** The third audit (`apps/desktop/AUDIT/2026-08-14-zero-trust-audit-402888e.md`)
       read the three refusals rather than trusting the prose and found all three **closed** at
-      `e0dd969`: `governed_verification_unconfigured()` is `Some(...)` with no branch
+      `402888e`: `governed_verification_unconfigured()` is `Some(...)` with no branch
       (`commands.rs:1161-1164`), `connect_broker` is `#[cfg(target_os = "linux")]`
       (`governed_turn.rs:225-232`), and `build_governed_executor` returns `fail_closed()` unless
       `$BROPS_BROKER_CONFIG` is set and parses (`broker/src/main.rs:266-280`). **The gate is shut, on
@@ -178,7 +178,7 @@ Nothing is shortened here. Every line is as it was written.
       `OpenService`/`StagingService`/`EvidenceRequestService`/`OutputReadService` and the real §5
       `AcceptanceDriver`, reaching the **real §6.1 step-5 contained execution** — privileged recorder →
       setuid launcher → contained executor, six uids, `caps_all_zero`, `no_new_privs`. No stand-in.
-      Verbatim from run 31606043144 at `59dc394`:
+      Verbatim from run 31606043144 at `cfbb1e9`:
       `RESULT: ladder-round-trip ok=true reason=none attempt=58d4358… output_sha256=8e30d8db…`,
       `POSITIVE: GREEN — one submit frame became one §4.6 frame whose envelope verifies`, and
       `NEGATIVE: GREEN — refused with digest_mismatch, and the harness exited non-zero (1)`.
@@ -193,7 +193,7 @@ Nothing is shortened here. Every line is as it was written.
       unconditionally. This is the **adapter ↔ supervisor** round trip, proven; the product's own path
       is the open row above it.
 
-**Bridge CI leg added to the unified workflow (PR #3, merged `41cf4ff`) — job `bridge`, one of**
+**Bridge CI leg added to the unified workflow (PR #3, merged `8b0aa9a`) — job `bridge`, one of**
 
       `ci.yml`'s 19 jobs. *Same fact as the Bridge-CI row above.*
 
@@ -210,7 +210,7 @@ Nothing is shortened here. Every line is as it was written.
 
       Delta-streaming stays DESCOPED (a governed turn is buffered by construction: the desktop's
       authority is a signature over the whole output). What this row tracked was the pull, and it is
-      now driven end to end by `ladder-governed-turn`. Verbatim from run 31621209556 at `5090e53`:
+      now driven end to end by `ladder-governed-turn`. Verbatim from run 31621209556 at `80929da`:
       `pull=ok chunks=1 served_to_uid=5003 negatives=digest_mismatch,length_mismatch,`
       `refused:stream_binding_mismatch,refused:stream_unknown` and `PULL: GREEN`.
       The supervisor hop is `governed_output_read.py` + `governed_output_stream.py` + the

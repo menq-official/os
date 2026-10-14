@@ -1,6 +1,6 @@
 # Evidence: six errors, four sources, one mechanism — a single night, recorded
 
-**Date:** 2026-08-30 · **Repository:** `menqstudio/OS` · **Session:** one night, `main` `40be210` → `34c5fb5`
+**Date:** 2026-08-30 · **Repository:** `menqstudio/OS` · **Session:** one night, `main` `a2893d6` → `f63cd0e`
 
 Every line below is a measurement with the command that produced it. Nothing here is a
 recollection, and nothing is a promise about future behaviour.

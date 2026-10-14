@@ -8,7 +8,7 @@
 | **What it is** | A desktop for governed AI operations; version 0.1.0 |
 | **Who it serves** | Gev and MenQ Studio, running AI agents under explicit gates |
 | **State** | Production gate SHUT; the standing independent verdict is RED (measured figures in the table below) |
-| **Built with** | Tauri 2, Rust, React 19, TypeScript, Vite |
+| **Stack** | Tauri 2, Rust, React 19, TypeScript, Vite |
 
 <details><summary><b>Հայերեն</b></summary>
 
@@ -17,7 +17,7 @@
 | **Ինչ է** | Կառավարվող AI գործառնությունների desktop. տարբերակ 0.1.0 |
 | **Ում համար** | Գևի և MenQ Studio-ի համար՝ AI գործակալների աշխատանքը բացահայտ դարպասներով |
 | **Վիճակ** | Արտադրական դարպասը ՓԱԿ է. գործող անկախ վճիռը RED է (չափված թվերը ներքևի աղյուսակում) |
-| **Կառուցված է** | Tauri 2, Rust, React 19, TypeScript, Vite |
+| **Տեխնոլոգիաներ** | Tauri 2, Rust, React 19, TypeScript, Vite |
 
 </details>
 
@@ -48,17 +48,17 @@ The chain above is the design. The last hop, `production trusted_verified`, is *
 
 | Դաշտ · Field (English / Հայերեն) | Արժեք · Value |
 | :--- | :--- |
-| Title / Վերնագիր | `menqstudio/OS` — the front page · առաջին էջը |
+| Title / Վերնագիր | `menq-official/os` — the front page · առաջին էջը |
 | Status / Կարգավիճակ | Live · Կենդանի |
 | Version / Տարբերակ | `0.1.0` — `apps/desktop/package.json` and `apps/desktop/src-tauri/Cargo.toml` |
 | Owner / Պատասխանատու | Gev / MenQ (`menqstudio`) |
 | Document class / Փաստաթղթի դաս | Informative · Տեղեկատու — the normative documents are [`CLAUDE.md`](./CLAUDE.md), [`PROJECT_STATE.md`](./PROJECT_STATE.md), [`MASTER_EXECUTION_ROADMAP.md`](./MASTER_EXECUTION_ROADMAP.md) |
-| Canonical repository / Canonical repo | `github.com/menqstudio/OS`, default branch `main` |
+| Canonical repository / Canonical repo | `github.com/menq-official/os`, default branch `main` |
 | Canonical path / Canonical ուղի | `README.md` |
-| Measured at / Չափված ա | 2026-09-19, `main` @ `a94513e`, on a Windows box · Windows-ի վրա |
-| Standing independent verdict / Գործող անկախ վճիռ | **RED** — TENTH round · տասներորդ ռաունդ, [`apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md`](./apps/desktop/AUDIT/2026-09-19-tenth-audit-75fca65.md) |
+| Measured at / Չափված ա | 2026-09-19, `main` @ `b7d4a05`, on a Windows box · Windows-ի վրա |
+| Standing independent verdict / Գործող անկախ վճիռ | **RED** — TENTH round · տասներորդ ռաունդ, [`apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md`](./apps/desktop/AUDIT/2026-09-19-tenth-audit-f4ffc8d.md) |
 | Production gate / Արտադրական դարպաս | **SHUT · ՓԱԿ** |
-| Brand / Բրենդ | MenQ foundation tokens · MenQ-ի foundation token-ներ, `menqstudio/MenQ-Standard` decision `D-025`; artwork in [`docs/brand/`](./docs/brand/) |
+| Brand / Բրենդ | MenQ foundation tokens · MenQ-ի foundation token-ներ, `menq-official/standard` decision `D-025`; artwork in [`docs/brand/`](./docs/brand/) |
 | Review trigger / Վերանայման պայման | Any number on this page changes → re-measure, and append the correction to [`docs/README_CLAIM_HISTORY.md`](./docs/README_CLAIM_HISTORY.md)<br>Այս էջի որևէ թիվ փոխվում ա → նորից չափիր, ու ուղղումը ավելացրու նույն ֆայլին |
 
 ---
@@ -302,11 +302,11 @@ enforced from the app.
 </div>
 
 **HY:** Այստեղ տոկոս չկա։ Ամեն տող այն ա, ինչ ստուգումը տպում ա, ու ամեն մեկի կողքը իրեն
-տպող հրամանն ա։ Ամբողջ աղյուսակը **մեկ head-ի** չափում ա՝ `830fcec`; `main`-ը արագ ա շարժվում,
+տպող հրամանն ա։ Ամբողջ աղյուսակը **մեկ head-ի** չափում ա՝ `bfd3bb6`; `main`-ը արագ ա շարժվում,
 ուրեմն վազեցրու հրամանը, ոչ թե վստահիր թվին։
 
 **EN:** Nothing here is a percentage. Each row is what a check prints, and each carries the
-command that printed it. The whole table is measured at **one head**, `830fcec`; `main` moves
+command that printed it. The whole table is measured at **one head**, `bfd3bb6`; `main` moves
 fast, so run the command rather than trusting the number.
 
 | Մակերես · Surface | Չափված · Measured | Հրաման · Command |
@@ -318,7 +318,7 @@ fast, so run the command rather than trusting the number.
 | Declared controls | **66** — 52 check · 14 tool | `config/control-invocation.json`, derived by `tools/check_control_invocation.py`, which prints that split by KIND; by PATH the same 66 are `ls tools/check_*.py \| wc -l` (47) plus `ls engine/tools/*.py \| wc -l` (20), each set-equal to its half of that file |
 | Workflow files | **8** | `ls .github/workflows/*.yml \| wc -l` |
 | Jobs in `ci.yml` | **22** | the `jobs` KEY of `.github/workflows/ci.yml`, parsed as YAML — a 2-space-indent regex also catches `push:` under `on:` and answers 23 |
-| Required contexts on `main` | **35** · +5 deliberately excluded | `gh api repos/menqstudio/OS/branches/main/protection --jq '.required_status_checks.contexts\|length'`; the same list is `contexts` in `config/required-checks.json`, which `tools/check_repo_state.py` compares against live protection |
+| Required contexts on `main` | **35** · +5 deliberately excluded | `gh api repos/menq-official/os/branches/main/protection --jq '.required_status_checks.contexts\|length'`; the same list is `contexts` in `config/required-checks.json`, which `tools/check_repo_state.py` compares against live protection |
 | Specialist definitions | **262** | `ls .claude/agents/*.md \| wc -l` |
 | Cockpit frontend (jsdom) | **1367** թեստ · tests, 88 file | `cd apps/desktop && npm ci && npm test` |
 | Cockpit accessibility (axe) | **82** թեստ · tests | `cd apps/desktop && npm ci && npm run test:a11y` |
@@ -333,12 +333,12 @@ fast, so run the command rather than trusting the number.
 > `tools/check_doc_claims.py` — which recounts what it can count and refuses a stale number where it
 > cannot.
 
-> **HY:** Վերջին երեք տողը մինչև `a57fd86` չէր տպվում, ու պատճառը ազնիվ էր՝ չափված չէր։
+> **HY:** Վերջին երեք տողը մինչև `2d447d3` չէր տպվում, ու պատճառը ազնիվ էր՝ չափված չէր։
 > Հիմա չափված ա — `npm ci` վազեց committed `package-lock.json`-ից, ու երեք սյուիտն էլ վազեցին։
 > Դրա համար էլ դրանց հրամանը **ներառում ա տեղադրումը**․ հրաման, որ կարդացողը չի կարող վազեցնել,
 > հրաման չի։
 >
-> **EN:** The last three rows were absent until `a57fd86`, and the reason was honest: they were
+> **EN:** The last three rows were absent until `2d447d3`, and the reason was honest: they were
 > not measured. They are now — `npm ci` ran from the committed `package-lock.json` and all three
 > suites ran. That is why their command **includes the install**: a command a reader cannot run is
 > not a command, which is the same rule as printing no number you did not measure.
@@ -364,20 +364,20 @@ onto existing code.
 
 ### Ինչ դեռ հաստատված չի · What is not confirmed
 
-**HY:** Գործող անկախ վճիռը **RED** ա — տասնմեկերորդ ռաունդը, `main` @ `e3fc507`, P0 չկա, չորս P1։
+**HY:** Գործող անկախ վճիռը **RED** ա — տասնմեկերորդ ռաունդը, `main` @ `598400e`, P0 չկա, չորս P1։
 Այդ ծայրից հետո merge եղած ամեն ինչ **անկախ հաստատված չի**. թե ինչքան ա՝ տպում են ներքևի
 հրամանները։ Արձակի ամեն ✅ ստուգիր
 [`apps/desktop/AUDIT/AUDIT_LEDGER.md`](./apps/desktop/AUDIT/AUDIT_LEDGER.md)-ի դեմ, նախքան
 հավատալը։
 
-**EN:** The standing independent verdict is **RED** — the ELEVENTH round, `main` @ `e3fc507`,
+**EN:** The standing independent verdict is **RED** — the ELEVENTH round, `main` @ `598400e`,
 no P0, four P1. Nothing merged after that head is **independently
 confirmed**; the two commands below print how much that is today. Check any tick in prose against
 [`apps/desktop/AUDIT/AUDIT_LEDGER.md`](./apps/desktop/AUDIT/AUDIT_LEDGER.md) before believing
 it.
 
-    git log --format=%s e3fc507..HEAD | grep -oE "\(#[0-9]+\)$" | sort -u | wc -l
-    git diff --shortstat e3fc507..HEAD
+    git log --format=%s 598400e..HEAD | grep -oE "\(#[0-9]+\)$" | sort -u | wc -l
+    git diff --shortstat 598400e..HEAD
 
 **HY:** Այս ֆայլի ամեն թիվ գոնե մեկ անգամ սխալ ա եղել։ Ամեն մեկը ինչ էր գրում ու ո՞ր
 հրամանն ա ուղղել — գրանցված ա
@@ -508,7 +508,7 @@ repository record reports no licence.)*
 
 ## Բրենդը · Brand
 
-**HY:** Հիմքերը MenQ-ի foundation token-ներն են՝ `menqstudio/MenQ-Standard`, որոշում `D-025`։
+**HY:** Հիմքերը MenQ-ի foundation token-ներն են՝ `menq-official/standard`, որոշում `D-025`։
 Ութ token, ու **ոչ մի brand accent երանգ** — դա դիտավորյալ Phase-A հիմք ա։ Այս էջի հիմքերը
 `#ffffff` ու `#0b0d10` են, ռիթմը՝ 8px, անկյունը՝ 12px։ Կապույտ accent-ը MenQ-ի ստանդարտից
 չի գալիս — այն այս repo-ի սեփական product token-ն ա՝
@@ -520,7 +520,7 @@ repository record reports no licence.)*
 SVG-ները [`docs/brand/readme/`](./docs/brand/readme/)-ում են՝ լույս ու մուգ զույգերով, առանց
 script-ի, առանց հեռավոր հղման, առանց արտաքին տառատեսակի։
 
-**EN:** The grounds are MenQ's foundation tokens — `menqstudio/MenQ-Standard`, decision
+**EN:** The grounds are MenQ's foundation tokens — `menq-official/standard`, decision
 `D-025`. Eight tokens, and **no brand accent hue at all**: that is a deliberate Phase-A
 foundation. This page's grounds are `#ffffff` and `#0b0d10`, its rhythm 8px, its corner 12px.
 The blue accent does **not** come from MenQ's standard — it is this repository's own product

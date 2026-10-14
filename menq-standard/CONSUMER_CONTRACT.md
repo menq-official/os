@@ -16,7 +16,7 @@ workflow always gives one, a bare local run does not, and the output says which 
 ### MUST — checked
 
 1. **Keep a pin.** `.menq-standard.json` at the repository root: the standard's repository
-   (`menqstudio/MenQ-Standard`), the version, the full commit the kit was taken from, the kit
+   (`menq-official/standard`), the version, the full commit the kit was taken from, the kit
    directory, the session-read manifest path, the hash rule, the sha256 of every kit file, and the
    hash and commit of every rendered workflow. RED: `pin is missing`, `pin is malformed: …`.
 2. **Hold the whole kit, unchanged, and nothing else in its directory.** RED: `kit file is
@@ -96,7 +96,7 @@ Repository-ն հետևում է MenQ Standard-ին, երբ `check_conformance.py
 ### ՊԱՐՏԱԴԻՐ Է (MUST) — ստուգվում է
 
 1. **Պահել pin։** Repository-ի root-ում `.menq-standard.json`՝ ստանդարտի repository-ն
-   (`menqstudio/MenQ-Standard`), տարբերակը, այն ամբողջական commit-ը, որից վերցվել է kit-ը, kit-ի
+   (`menq-official/standard`), տարբերակը, այն ամբողջական commit-ը, որից վերցվել է kit-ը, kit-ի
    directory-ն, session-read manifest-ի ուղին, hash-ի կանոնը, kit-ի ամեն ֆայլի sha256-ը և ամեն
    render արված workflow-ի hash-ը ու commit-ը։ RED՝ `pin is missing`, `pin is malformed: …`։
 2. **Պահել ամբողջ kit-ը անփոփոխ, և նրա directory-ում ուրիշ ոչինչ։** RED՝ `kit file is missing: …`,

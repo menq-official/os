@@ -3,7 +3,7 @@
 - **Severity:** High
 - **Confidence:** High (2 auditors + **reproduced live — this bug wedged the audit session**)
 - **Files:** `runtime/bro_hook.py:26` (`emit`), `188-214` (`fail_closed` / `__main__`)
-- **Status:** ◑ remediated in code, **not independently re-audited** (verified against the tree at `0efa99e`, 2026-08-07; per-criterion evidence below). See the `◑` legend in [`../README.md`](../README.md) — this is not a closure mark.
+- **Status:** ◑ remediated in code, **not independently re-audited** (verified against the tree at `3f50b55`, 2026-08-07; per-criterion evidence below). See the `◑` legend in [`../README.md`](../README.md) — this is not a closure mark.
 
 ## Problem
 ```python

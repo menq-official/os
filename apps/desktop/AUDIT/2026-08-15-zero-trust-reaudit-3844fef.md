@@ -1,25 +1,25 @@
 # Independent zero-trust RE-AUDIT — menqstudio/OS
 
-**Target — pinned, and frozen:** `main` @ **`0a9a1afe7ed63e10cc38f0a608b2d45c7c9d74fc`** (PR #106 merged).
+**Target — pinned, and frozen:** `main` @ **`3844fef59919813d88bec56e2a68aa38ffc23571`** (PR #106 merged).
 
 **How it was pinned, because it had to be.** `main` moved twice while this audit was running —
-`e0dd969` → `0a9a1af` → `3b8acaf` — in a working tree another session is actively building in. An audit
+`402888e` → `3844fef` → `d1efc67` — in a working tree another session is actively building in. An audit
 whose target moves under it certifies nothing, so the tree was exported to a scratchpad
-(`git archive 0a9a1af`) and every read, test and attack below ran against **that snapshot, never the
+(`git archive 3844fef`) and every read, test and attack below ran against **that snapshot, never the
 shared working tree**. The snapshot is provably the audited commit:
 
 ```
-git rev-parse 0a9a1af^{tree}      = ca0b7de151ffc300b710ec80008575bd4bf46c2a
+git rev-parse 3844fef^{tree}      = ca0b7de151ffc300b710ec80008575bd4bf46c2a
 git write-tree (in the snapshot)  = ca0b7de151ffc300b710ec80008575bd4bf46c2a   ← identical
 ```
 
-`3b8acaf`, the commit that landed after the pin, touches only `NEXT_CHAT.md`, `PROJECT_STATE.md`,
+`d1efc67`, the commit that landed after the pin, touches only `NEXT_CHAT.md`, `PROJECT_STATE.md`,
 `TASKS.md`, `config/current_state.json` and `config/roadmap-order-exemptions.json` — **no code, no audit
-surface** — so pinning to `0a9a1af` costs this audit nothing.
+surface** — so pinning to `3844fef` costs this audit nothing.
 
-**Scope:** the five findings of the [third audit](./2026-08-14-zero-trust-audit-e0dd969.md) (`A-01`…`A-05`),
+**Scope:** the five findings of the [third audit](./2026-08-14-zero-trust-audit-402888e.md) (`A-01`…`A-05`),
 the fixes the Builder shipped for them in PRs #102–#105, and the ✅ promotions applied in PR #100.
-**Prior report re-checked:** `2026-08-14-zero-trust-audit-e0dd969.md` — this auditor's own. Fixes to one's
+**Prior report re-checked:** `2026-08-14-zero-trust-audit-402888e.md` — this auditor's own. Fixes to one's
 own findings are the easiest thing in the world to wave through, so each was attacked on the assumption it
 was wrong.
 
@@ -152,7 +152,7 @@ engine/ci/live/run_authority.py:57, :71-75.`
 ### `B-03` · Two rows were promoted to ✅ by the session that wrote them (P3, process)
 
 `A-03` and `A-04` are marked **✅ CLOSED** in `AUDIT_LEDGER.md` by the commit that made the corrections
-(`70ac893`), with the justification *"A documentation finding closes by correcting the document — there is
+(`8d67347`), with the justification *"A documentation finding closes by correcting the document — there is
 no code to re-verify."*
 
 Under this file's own legend, ✅ means *"an independent audit confirmed it"*, and `START_HERE.md` states the
@@ -194,7 +194,7 @@ MUTANT (the pin block deleted)    FAILED (failures=1)
    AssertionError: True is not false
 RESTORED                          Ran 19 tests   OK
    sha256(restored file) = 41ff6e4fcdcf0843748f1c22a521dffb15913cceb5c72c5fbb1f2bcb6c5f4802
-   sha256(git blob 0a9a1af) = 41ff6e4fcdcf0843748f1c22a521dffb15913cceb5c72c5fbb1f2bcb6c5f4802
+   sha256(git blob 3844fef) = 41ff6e4fcdcf0843748f1c22a521dffb15913cceb5c72c5fbb1f2bcb6c5f4802
 ```
 
 The test is not decorative: deleting the enforcement fails it, and the restore is byte-exact against the
@@ -292,11 +292,11 @@ not its absence, and they are open."* That is the distinction the promotion coul
 
 ## 5. What the auditor ran, personally
 
-All against the frozen snapshot of `0a9a1af` unless noted. Host: Windows 11, Python 3.12.10, cargo 1.96.1.
+All against the frozen snapshot of `3844fef` unless noted. Host: Windows 11, Python 3.12.10, cargo 1.96.1.
 
 | What | Result |
 |---|---|
-| snapshot integrity — `git write-tree` vs `0a9a1af^{tree}` | **identical** (`ca0b7de1…`) |
+| snapshot integrity — `git write-tree` vs `3844fef^{tree}` | **identical** (`ca0b7de1…`) |
 | engine suite `BRO_ENV=ci python -B -m unittest discover -s tests` (snapshot) | **2001 ran, 43 skipped, 1 failure — and the failure is mine, not the tree's** (below) |
 | `cargo test -p brops-win-live --lib` (working tree) | **102 passed, 0 failed** — matches the ledger |
 | `tests.test_challenge_authority_server` baseline / mutant / restored | **19 OK / 1 FAILED / 19 OK**, restore digest-verified |
@@ -309,7 +309,7 @@ mistaken for a defect in the tree.** On the export, `test_live_hook_deny.LiveHoo
 `test_wired_command_denies_out_of_scope` fails with *"The refusal must NAME the missing binding."* The
 export is a `git archive` that I then `git init`-ed to prove its tree hash — a repository with no remote and
 no commit — and that test reads the workspace binding. Run against the **real** working tree, with a test
-file that is byte-identical between `0a9a1af` and `HEAD` (`git diff` empty), it passes:
+file that is byte-identical between `3844fef` and `HEAD` (`git diff` empty), it passes:
 
 ```
 tests.test_live_hook_deny   Ran 2 tests   OK
@@ -338,7 +338,7 @@ repo gates, `brops-core --lib`, and the DDL parity gate.
   line by line, but I did not drive it.
 * **Scope was the five findings and the promotions.** The ~40 other surviving findings of the 2026-08-06
   round were not re-examined. This is a re-audit, not a fourth full round.
-* **`3b8acaf` was not audited** beyond confirming it touches no code.
+* **`d1efc67` was not audited** beyond confirming it touches no code.
 
 **Process note, unchanged:** creating a file here normally requires the Builder's canonical read receipt
 (`tools/check_prior_art.py --declare`). I did not perform that ritual and recorded no receipt I cannot back.

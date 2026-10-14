@@ -4,7 +4,7 @@
 > dated snapshot: *"3b-1B is design-lock RED … the addendum is now **rev 26** … not yet
 > Architect-GREEN, **no code**"*, dated **2026-07-25** and still saying it three weeks later. Every
 > clause had stopped being true: the candidate is **rev-30**, the implementation landed, and the
-> pull request this file names four times — **#31** — **merged** on 2026-07-27 as `9c1b901`. (This
+> pull request this file names four times — **#31** — **merged** on 2026-07-27 as `748c508`. (This
 > block said #31 "was superseded and closed" from 2026-08-14 to 2026-10-01; `gh pr view 31` reports
 > `MERGED`, and its squash commit is an ancestor of `main`. What was closed unmerged is #32 and #46.) A snapshot in a
 > file nothing checks is a snapshot that will be wrong again by the time it is read.
@@ -34,7 +34,7 @@
 After the 2nd code-audit RED (on the then-active PR #31), 3b-1 was split into **3b-1A** (isolated
 signing-boundary completion — ✅ Architect Code GREEN) + **3b-1B** (authoritative
 execution→receipt binding). *(This paragraph said "Both on PR #31". #31 merged on
-2026-07-27 (`9c1b901`) carrying 3b-1A and the rev-30 design; the consolidated 3b-1B implementation
+2026-07-27 (`748c508`) carrying 3b-1A and the rev-30 design; the consolidated 3b-1B implementation
 landed via PR #48 and the pull requests after it. The split itself is the durable fact — the carrier
 is not, and is in `config/current_state.json`.)*
 **3b-2 does not start** until 3b-1 is exact-head zero-trust GREEN and merged.

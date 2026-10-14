@@ -180,7 +180,7 @@ def main() -> int:
         raise SystemExit(f"RED: --head must be a 40-hex commit id, not {args.head!r}. Nothing "
                          "has been read or written.")
 
-    # The slug is RESOLVED, not a literal. It was `default="menqstudio/OS"` while the tip two
+    # The slug is RESOLVED, not a literal. It was `default="menq-official/os"` while the tip two
     # lines below is read from `git ls-remote origin` -- so in a fork the body would be read from
     # and written to one repository and the head compared with another's. That literal is the
     # eighth audit's `H-05`, fixed in check_repo_state.py and in sync_active_pr.py and left

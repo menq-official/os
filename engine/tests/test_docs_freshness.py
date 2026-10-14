@@ -24,7 +24,7 @@ class DocsFreshnessTests(unittest.TestCase):
             (ROOT / "config" / "documentation-manifest.json").read_text(encoding="utf-8")
         )
         data["merged_pr"] = 6
-        data["merge_commit"] = "2395570bc9571e6c721373751a6dbfa2b6a8f75b"
+        data["merge_commit"] = "8b454d934c779f534d459c47976e3aaba424a70c"
         data["status"] = "orchestration-runtime-v1-foundation-merged-control-room-api-v1-next"
         with self.assertRaises(DocsError):
             validate_manifest_metadata(data)

@@ -1,6 +1,6 @@
 # Remediation audit — menqstudio/OS
 
-**Target:** `main` @ `219c76312e0a5204c4e9a4f1b012581742e93191` (PRs #54, #53, #55, merged 2026-08-06)
+**Target:** `main` @ `c509705b4b0cb368a1ad752f53be6d109aedfad4` (PRs #54, #53, #55, merged 2026-08-06)
 **Brief:** `AUDIT_BRIEF_2026-08-06-remediation.md`, commissioned by Gev (Owner)
 **Prior audit re-checked:** `apps/desktop/AUDIT/2026-08-06-independent-audit.md`
 **Date:** 2026-08-06
@@ -607,7 +607,7 @@ STEP 4 — the isolated signer's check is circular. _derive_hashes reads `store/
 STEP 5 — the one artifact that could have bound it is inert. proof_executor.rs:52-59 computes a `reply_binding` over the fd 3/4/5 digests and embeds it in its report (proof_executor.rs:138-144). Repo-wide grep for `reply_binding` across .rs and .py returns ONLY those four lines in proof_executor.rs. No consumer exists.
 
 > **Builder's note, 2026-10-14 (cockpit read R3-0509) — "ONLY those four lines" in STEP 5 is five.**
-> In `219c763`, `git grep reply_binding -- '*.rs' '*.py'` returns five lines, all in
+> In `c509705`, `git grep reply_binding -- '*.rs' '*.py'` returns five lines, all in
 > `apps/desktop/src-tauri/proof/src/bin/proof_executor.rs`: 52, 59, 138, 141 and 144 — the count the
 > adversarial review of this finding and the R-03 re-read both give. The conclusion ("No consumer
 > exists") is not affected. The auditor's text above is left unchanged.
@@ -1145,7 +1145,7 @@ STEP 1: I subclassed the author's own fixture, engine/tests/test_deploy_prefligh
 **Adversarial review (P2).** Every step of the walkthrough reproduces in the file. I tried three refutations and all failed. (a) 'Maybe the supervisor recomputes the counters' — no: complete_run's ONLY validation of the three evidence ints is `Some(n) if n >= 0` (servers.rs:681-687), and there is no other entry point (attest_run's exact_keys at servers.rs:798 admits only op/run_id/execution_attempt_id, so nothing else can arrive). (b) 'Maybe the signer parses the containment document' — no: servers.rs:1020-1023 calls `derive("containment_evidence_handle", "containment_missing")`, which is store_read (servers.rs:67-77), a content-address existence check only; the bytes are dropped at servers.rs:1037 `let _ = (policy_bundle_sha256, containment_evidence_sha256)`. (c) 'Maybe the driver measures something' — no: win_live_turn.rs:185-193 lifts f.evidence_* verbatim from config.json, whose values win_provision.rs:112 and :206-208 write once as `sha256(b"brops-final-event-v1")` and 3/3/3. So all four evidence_* fields are deployment constants and the containment document is authored by the same process that produces the output (execution.rs:92-108), yet all five are signed into the 29-field attestation (servers.rs:844,848,856-858,868-870) and four are copied into the 23-key envelope (servers.rs:1068,1075-1077). AUDIT_LEDGER.md line 27 (F-02/F-18) marks this '✅ CLOSED (2026-08-06)' and describes a RECORDER-built hash-linked chain with '--evidence-out' and 'no config fallback left to fall back to' — that describes engine/Linux only, with no platform qualifier. DOWNGRADED P1→P2: this is not a forgery. The chain does produce, bind and sign the output; what is unsound is the SEMANTICS of 5 of 28 attested fields. It is confined to the lab kit (win_live_turn) and the demonstration seam (proof.rs:255-258 uses the same 3/3/3), platform_governed_execution_supported() stays false on Windows, and the shipped app cannot commit a trusted_verified row from either (repo.rs:1098 writes demonstration_verified_messages, and the badge projection at repo.rs:947-958 can only render 'trusted_verified' from a receipt_verification_attempts row this path never writes).
 
 > **Builder's note, 2026-10-14 (cockpit read R3-0510) — "29-field" and "28 attested fields" in this
-> finding are one object counted two ways.** In `219c763`,
+> finding are one object counted two ways.** In `c509705`,
 > `apps/desktop/src-tauri/win-live/src/servers.rs:888` reads
 > `const EVIDENCE_FIELDS_LEN: usize = 29; // 28 attest facts + decision`. The signed evidence object
 > has 29 fields; 28 of them are run facts and the 29th is `decision`. So "the 29-field attestation"
@@ -2472,7 +2472,7 @@ let _ = FlushFileBuffers(h);
 **Adversarial review (P3).** Confirmed, and the gap is wider than the finding states. My own grep over .github/workflows returns exactly four cargo test/check lines — ci.yml:49 (-p brops-core), :115 (cargo check), :117 (-p brops), :133 (-p brops-core windows_broker), :135 (-p brops-win-broker) — and zero matches for win-live|win_live|brops-win-live|CROSS_ACCOUNT. The quoted two steps are verbatim the entire run-command set of the `windows-broker` job (ci.yml:120-135), whose own comment at :127-132 states it does NOT flip platform_governed_execution_supported(). The extra fact the finding missed: Cargo.toml:47 puts brops-win-live under `[target.'cfg(windows)'.dependencies]`, so ci.yml:115's `cargo check` on ubuntu-latest does not even COMPILE the crate, and no -p selector on the windows job pulls it in either. So proof.rs's five in-process chain tests (proof.rs:342-409) — which lib.rs advertises as running on the Linux runner — are executed by no gate, and neither is win_live_proof.ps1; the whole F-01 remediation in servers.rs is regression-guarded by nothing on any runner. The cross-account claim likewise has no artifact: proof/ contains only win_live_proof.ps1, whose header line 1 says 'self-contained, same-account' and whose line 46 derives the SID from the current interactive identity, while CROSS_ACCOUNT_PROOF.md:24-32 and :50-58 present the RESULT lines as prose with no script or captured output. P3 as filed: this is an assurance gap, not an exploit.
 
 > **Builder's note, 2026-10-14 (cockpit read R3-0511) — "exactly four cargo test/check lines" is
-> followed by five.** In `219c763`, `.github/workflows/ci.yml` has four `cargo test` run lines (49,
+> followed by five.** In `c509705`, `.github/workflows/ci.yml` has four `cargo test` run lines (49,
 > 117, 133, 135 — the four the finding lists) and one `cargo check` run line (115): five in all. No
 > other workflow file there has either. The auditor's text above is left unchanged.
 
@@ -2753,7 +2753,7 @@ Reported here so no one re-litigates them. The adversarial review refuted each o
 What each group actually read, in its own words. Anything not covered is stated.
 
 > **Builder's note, 2026-10-14 (cockpit read R3-0512) — the groups below give different line counts
-> for the same snapshot file, one apart.** Counted in `219c763` (newline count, which is also what
+> for the same snapshot file, one apart.** Counted in `c509705` (newline count, which is also what
 > `wc -l` prints; every one of these files ends in a newline): `engine/ci/live/run_live_turn.sh` 294,
 > `engine/runtime/supervisor_ledger.sql` 177, `engine/ci/live/run_supervisor.py` 167,
 > `engine/ci/live/build_tcb_pin_manifest.py` 121, `apps/desktop/AUDIT/AUDIT_LEDGER.md` 70,

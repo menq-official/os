@@ -14,14 +14,14 @@ now call instead of running `useradd` themselves); slice D's engine anchor in `T
 and its packaging in `T-138`; slice C in `T-140` (the broker reads the floor-pinned anchor; the
 production label stays behind `INSTALL_MINTED_CUSTODY_ACCEPTED = false`). Open: B's deployment step
 (the 24 preflight rows) and the installer minting the broker root itself. Approval is of the design, not of any slice's code — every slice is ◑.
-Every claim below is marked ✅ read in code at `4b25650`, or ◑ inference / proposal.
+Every claim below is marked ✅ read in code at `5fd0ee3`, or ◑ inference / proposal.
 
 ## 1 · The decision this serves
 
 The Owner decided on 2026-08-09 (#78): *install it, and everything is already done; no keys to carry,
 nothing ever asked again, on any OS.* On Windows the install does it (`provision/`). On Debian nothing
 did when this was written, and the code said so in its own words (`provision/src/anchor.rs`, read at
-`4b25650`): *"no shipped tool creates it yet — the installer that mints an anchor as another uid is
+`5fd0ee3`): *"no shipped tool creates it yet — the installer that mints an anchor as another uid is
 not written, so this platform is NOT supported for a first launch today."* **That is the pre-`T-137`
 baseline and the quotation is no longer in the file.** Slice D built the installer:
 `preprovision_refusal` now reads *"The tool that creates it is `brops_install_anchor`, run ONCE, AS
@@ -235,7 +235,7 @@ Approval of this design, nothing else. No key, no ceremony, no step on any machi
 ## 10 · The real-turn gap — MEASURED 2026-10-01 (`T-143`), not designed
 
 CI now proves `brops-broker` completes a governed turn. Three read-only measurements asked how far
-that is from a turn a person runs from the desktop. Every line below was read at `c7eba6a` by an
+that is from a turn a person runs from the desktop. Every line below was read at `e35433f` by an
 agent that changed nothing; file:line evidence is in the pull request that added this section. ◑.
 
 **The kit must not be ported wholesale.** It stages one proven turn, and a real install is not that.

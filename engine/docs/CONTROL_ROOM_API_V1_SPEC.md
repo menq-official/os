@@ -3,8 +3,8 @@
 **Status:** merged to `main` in PR #8  
 **Reviewed:** 2026-07-15  
 **Repository:** `menqstudio/Bro`  
-**Approved candidate HEAD:** `f2c457a675248eb805c02889509a40d8a5e1c520`  
-**Merge commit:** `f736bce585e0e911c36a73d0181c8eb4ef3aebef`
+**Approved candidate HEAD:** `10ceba5d99043eaaeb3d82cc50e5eb891b644139`  
+**Merge commit:** `3bbe41492ff819160742c325e7d158476856dc59`
 
 ## Purpose
 
@@ -73,7 +73,7 @@ Validation returns `executed: false` and `mutation_authorized: false`. It cannot
 
 ## Verification evidence
 
-- exact candidate HEAD: `f2c457a675248eb805c02889509a40d8a5e1c520`
+- exact candidate HEAD: `10ceba5d99043eaaeb3d82cc50e5eb891b644139`
 - GitHub Actions run `29434543079`: Windows GREEN and Ubuntu GREEN
 - exact artifact digest: `sha256:3f5d944b6aceea4084b7a1836da3dff1e98e6562bbeedb4a9f9ad0edf1c00ae1`
 - independent exact-head real-worktree audit: foundation GREEN; documentation freshness GREEN

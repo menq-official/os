@@ -48,7 +48,7 @@ Do it FIRST, no exceptions — then you are ready and need no further explanatio
 > not a builder's confidence.
 >
 > **⚠ The standing independent-audit verdict is RED.** Eleven rounds have run; the current one is the
-> eleventh, [`2026-10-09-eleventh-audit-e3fc507.md`](./apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md)
+> eleventh, [`2026-10-09-eleventh-audit-598400e.md`](./apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md)
 > — RED, no P0, four P1. The second round left **45 surviving findings** (1 P0, 5 P1, 13 P2, 26 P3). Read the
 > ledger before believing any ✅ in these documents; ◑ there means *the Builder's unverified claim*.
 > This paragraph said "two independent audits have run ... never re-run" through eight further
@@ -108,7 +108,7 @@ builder's own unverified claim*. Never promote your own work to ✅.
 `python tools/generate_agent_definitions.py --check`. **45 `check_*.py` files exist; 42 are invoked
 by path in `.github/workflows/`** (the three that are not — `check_prior_art.py`,
 `check_merge_ready.py`, `check_push_ready.py` — are session-side by design: the hook runs the last
-two before a `gh pr merge` and a `git push`). *(Measured at `4b25650` on 2026-10-01 with `for f in tools/check_*.py; do grep -rqF
+two before a `gh pr merge` and a `git push`). *(Measured at `5fd0ee3` on 2026-10-01 with `for f in tools/check_*.py; do grep -rqF
 "$(basename $f)" .github/workflows/; done`. This paragraph said 19/18 and `ARCHITECTURE.md` said 18 —
 the ninth audit filed it as `I-10` — and then said 40/39 while the tree held 42/41, so the method is
 written down here rather than the number alone.)* Four of the 45 need arguments and print usage

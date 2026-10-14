@@ -355,7 +355,7 @@ jobs:
         with:
           # Full history, like the three ubuntu jobs that run these suites. Measured on this
           # job's FIRST run: without it `test_check_doc_claims` fails with seven lines of
-          # "names `5cf9b8c`, which is not an object in this repository" — the gate holds every
+          # "names `5cf6d2e`, which is not an object in this repository" — the gate holds every
           # short sha in the canon to being a real object, and a shallow checkout has none of
           # the history those shas live in. The gate was right; the checkout was wrong.
           fetch-depth: 0

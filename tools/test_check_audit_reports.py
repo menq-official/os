@@ -57,13 +57,13 @@ def build(reports: list[str], ledger_report: str, ledger_ordinal: str,
     return root
 
 
-SIXTH = "2026-08-17-sixth-audit-b16e572.md"
-FIFTH = "2026-08-16-fifth-audit-5fe4740.md"
-FOURTH = "2026-08-15-zero-trust-reaudit-0a9a1af.md"
+SIXTH = "2026-08-17-sixth-audit-84cef03.md"
+FIFTH = "2026-08-16-fifth-audit-d2f05dc.md"
+FOURTH = "2026-08-15-zero-trust-reaudit-3844fef.md"
 #: A fourth-round report filed under the naming rule check 3b reads (`-fourth-`). FOURTH above
 #: is the real file's name and does NOT carry its ordinal, which is why every fixture built on
 #: it also trips 3b -- and why three tests below used to pass for a reason other than their own.
-FOURTH_NAMED = "2026-08-15-fourth-audit-0a9a1af.md"
+FOURTH_NAMED = "2026-08-15-fourth-audit-3844fef.md"
 
 
 def failures_of(root: pathlib.Path) -> tuple[int, list[str], str]:
@@ -255,7 +255,7 @@ class TheListOfRounds(unittest.TestCase):
 
     NEXT = "eleventh"
     FAR = "sixteenth"
-    TENTH = "2026-09-19-tenth-audit-75fca65.md"
+    TENTH = "2026-09-19-tenth-audit-f4ffc8d.md"
 
     @staticmethod
     def filed(round_word: str, date: str = "2026-10-20") -> str:
@@ -313,7 +313,7 @@ class AnnouncedRoundTests(unittest.TestCase):
         self.assertEqual(f, 1)
 
     def test_an_announced_round_with_its_report_is_green(self):
-        seventh = "2026-08-18-seventh-audit-491f923.md"
+        seventh = "2026-08-18-seventh-audit-08a41d0.md"
         root = build([SIXTH, seventh], seventh, "seventh", seventh, "seventh")
         self.assertEqual(m.main(["--root", str(root)]), 0)
 

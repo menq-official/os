@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Fetch MenQ Standard (public, no token)
-        run: git clone --quiet https://github.com/menqstudio/MenQ-Standard.git "$RUNNER_TEMP/menq-standard"
+        run: git clone --quiet https://github.com/menq-official/standard.git "$RUNNER_TEMP/menq-standard"
       - name: Update the kit and open a pull request when the pin is behind
         env:
           GH_TOKEN: ${{ github.token }}

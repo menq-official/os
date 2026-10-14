@@ -3,8 +3,8 @@
 **Status:** Implemented, independently audited, and merged to `main`  
 **Repository:** `menqstudio/Bro`  
 **Merged PR:** `#2`  
-**Merged candidate:** `66788ee5876871d36038d9e19ce54f9fec864684`  
-**Merge commit:** `3250d4cc55edc2adf8e5247deab8060983de3b47`  
+**Merged candidate:** `e1cb94af407343428fcca2a46e57c32a0987ee52`  
+**Merge commit:** `ac6f985befc7395f27112ae875dd2b4081169e34`  
 **Owner:** Gev
 
 ## Purpose
@@ -53,8 +53,8 @@ No false claim that an irreversible external effect was restored.
 
 ## Audit evidence — 2026-07-14
 
-- Audited code candidate: `a8ab286a8f45e34214ec709f6f38e0843b06e791`.
-- Final merged candidate: `66788ee5876871d36038d9e19ce54f9fec864684`.
+- Audited code candidate: `b7b3b5053a153ade9d0e442a07de7da3eb86fcb1`.
+- Final merged candidate: `e1cb94af407343428fcca2a46e57c32a0987ee52`.
 - Final PR CI run `29365910692`: Windows GREEN and Ubuntu GREEN.
 - Independent artifact audit: foundation validator GREEN and 95/95 tests GREEN.
 - Documentation inventory: 59/59 active Markdown and `SKILL.md` files.

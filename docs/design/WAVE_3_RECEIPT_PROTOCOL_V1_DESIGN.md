@@ -8,15 +8,15 @@
 > Builds on merged T-010 + T-011.
 >
 > **Implementation status — corrected 2026-08-14, and deliberately no longer a snapshot.** This
-> design is **APPROVED + merged** (PR #23, `35a6ab5`), and **Wave 3a slices 1–3 are all merged**:
-> slice 1 `6c920d0` (PR #24), slice 2 `9b214e5` (PR #26, migration 0014), slice 3 `8a580028`
+> design is **APPROVED + merged** (PR #23, `14b403b`), and **Wave 3a slices 1–3 are all merged**:
+> slice 1 `2d592ff` (PR #24), slice 2 `e25832e` (PR #26, migration 0014), slice 3 `82dae6fb`
 > (PR #28).
 >
 > This block said, from **2026-07-22** until today, that *"**Slice 2** … is the next task, **not
 > started**"* — three weeks and two merges after it stopped being true, while its sibling on the
 > same canonical read manifest,
 > [`WAVE_3B_ISOLATED_SIGNER_DESIGN.md`](./WAVE_3B_ISOLATED_SIGNER_DESIGN.md), opened with *"Builds
-> on Wave 3a (slices 1–3, merged: `6c920d0`, `9b214e5`, `8a580028`)"*. Two documents a session is
+> on Wave 3a (slices 1–3, merged: `2d592ff`, `e25832e`, `82dae6fb`)"*. Two documents a session is
 > told to read in full, disagreeing about whether the same three slices exist.
 >
 > **Where Wave 3b actually stands is not restated here** — that is

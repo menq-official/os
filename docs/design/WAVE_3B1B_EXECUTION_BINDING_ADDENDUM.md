@@ -122,7 +122,7 @@
 > generalized to snapshot-declared gate names). **NOT Architect-GREEN; re-audit pending.**
 >
 > **Preparation-P0 closure (independent prep review, NOT the Architect verdict — closed in rev-26 on the
-> prior HEAD; PR #31 rebased onto the repaired `main` `b6c6712`):**
+> prior HEAD; PR #31 rebased onto the repaired `main` `8676aee`):**
 > **P0-a TCB code-integrity floor (§2.5, §4.3, §4.7):** the lease now pins `executor_executable_sha256`
 > as well as the launcher; the launcher re-hashes the executor image and `fexecve`s the exact verified
 > `fd`; **all** TCB binaries + config must be TCB-owned and non-writable by any runtime/login UID,
@@ -305,7 +305,7 @@
 > all — established by grepping every tracked file for a `"challenge_handle"` JSON field with a 64-hex
 > value (no hits) and every 64-hex literal in those directories (5 hits, all `supervisor_ledger.sql` or
 > `output_handle` digests). `apps/desktop/AUDIT/2026-08-06-remediation-audit.md:166` *describes* the old
-> formula in prose; it is a historical record of the code at `219c763` and is deliberately left as written.
+> formula in prose; it is a historical record of the code at `c509705` and is deliberately left as written.
 >
 > This correction is recorded rather than applied silently because this document is the normative source
 > (§0), and a silent edit to it is indistinguishable from the contradiction it fixes. The decision was the
@@ -4122,7 +4122,7 @@ The current normative design is §0–§9 above. This log is historical only.
   the `EXECUTION_STARTING→EXECUTING` trigger + the `challenge_replay`/`acceptance_conflict`/`lease_not_ready`
   producing gates pinned. Fresh independent red-team over the full §0–§9 + real repo: no BLOCKER;
   `check_coordination` + `check_capabilities` GREEN live. NOT Architect-GREEN; 3b-1B code not started.
-- **rev 26 preparation-P0 closure (this doc; rebased onto the repaired `main` `b6c6712` after Phase-0
+- **rev 26 preparation-P0 closure (this doc; rebased onto the repaired `main` `8676aee` after Phase-0
   PR #33 merged):** three preparation-review P0 (independent, NOT the Architect verdict) closed on this
   HEAD before the audit. **P0-a — TCB code-integrity floor (§2.5, §4.3, §4.7):** lease pins
   `executor_executable_sha256` alongside the launcher; the launcher re-hashes the executor and

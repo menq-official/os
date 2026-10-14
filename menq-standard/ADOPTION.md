@@ -1,6 +1,6 @@
 # Adopting MenQ Standard in a repository / MenQ Standard-ի ընդունումը repository-ում
 
-**Status / Կարգավիճակ:** In force under `D-029`; `menqstudio/OS` followed the Adopt steps on GitHub on 2026-10-10, the update steps have not run anywhere / Ուժի մեջ է `D-029`-ով. `menqstudio/OS`-ը Adopt քայլերը GitHub-ում կատարել է 2026-10-10-ին, update քայլերը ոչ մի տեղ չեն գործարկվել  
+**Status / Կարգավիճակ:** In force under `D-029`; `menq-official/os` followed the Adopt steps on GitHub on 2026-10-10, the update steps have not run anywhere / Ուժի մեջ է `D-029`-ով. `menq-official/os`-ը Adopt քայլերը GitHub-ում կատարել է 2026-10-10-ին, update քայլերը ոչ մի տեղ չեն գործարկվել  
 **Document class / Փաստաթղթի դաս:** Informative  
 **Owner / Պատասխանատու:** MenQ Owner  
 **Canonical path / Canonical ուղի:** `consumer/ADOPTION.md`
@@ -23,7 +23,7 @@ Python 3; nothing is installed.
 In the run, `STANDARD_URL` held the path of a local clone; the GitHub URL was not fetched.
 
 ```bash
-STANDARD_URL=https://github.com/menqstudio/MenQ-Standard.git
+STANDARD_URL=https://github.com/menq-official/standard.git
 git clone "$STANDARD_URL" ../MenQ-Standard
 ```
 
