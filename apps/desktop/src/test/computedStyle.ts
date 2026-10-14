@@ -180,9 +180,6 @@ export function invisibleContent(root: ParentNode = document.body): Invisible[] 
 export const MOTION_CLASSES: Record<string, string> = {
   reveal: 'reveal',
   rise: 'reveal',
-  'u-float': 'float',
-  'u-breathe': 'breathe',
-  'u-pulse': 'pulse',
   'u-spin': 'spin',
   // The route wrapper. Its declaration was invalid for as long as it existed, and no class in this
   // table promised its keyframes, so no sweep could notice it had never run.
