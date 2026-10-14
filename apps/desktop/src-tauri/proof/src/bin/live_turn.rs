@@ -1,7 +1,9 @@
 //! Wave 3b — the LIVE production governed-turn driver (LINUX-RUN).
 //!
 //! This is the entry point that assembles ONE real governed turn end-to-end and prints a single
-//! `RESULT: <trust_state> production_verified=<bool> bound=<bool>` line (or a closed `blocked` reason). It
+//! `RESULT: <trust_state> production_verified=<bool> bound=<bool> root_anchor=<provenance>` line (or a
+//! closed `RESULT: blocked reason=<reason> production_verified=false bound=false`, which carries no
+//! `root_anchor` field). It
 //! wires [`brops_broker::chain_executor::linux::LinuxGovernedTurnChain`] — the DIRECT chain: the real
 //! AF_UNIX challenge-authority / supervisor / isolated-signer hops + the real privileged recorder →
 //! setuid launcher → executor spawn — over the deployment's `/opt/brops-live` provisioning.
@@ -490,7 +492,8 @@ mod linux {
 
         let result = run_governed_turn(&conn, &request, &UuidIds, &executor, now);
 
-        // ---- (E) report: production trust is resolved ONLY after a real committed acceptance ----
+        // ---- (E) report: the custody verdict the broker committed, printed ONLY after a real committed
+        //      acceptance. It was resolved inside the turn (`ChainExecutor::with_custody` above). ----
         if result.status != "committed" {
             let reason = result.reason.map(|r| format!("{r:?}")).unwrap_or_else(|| "unknown".into());
             return blocked(&format!("chain:{reason}"));
@@ -520,7 +523,9 @@ mod linux {
         // AFTER the core had already returned `TrustState::Production` — so the core type still said
         // "production" for a demonstration-rooted manifest, and every other consumer of that type had
         // to remember to re-apply the same string check. Now the anchor evidence goes IN and the
-        // custody verdict comes OUT: a non-external anchor cannot produce a `Production` value at all.
+        // custody verdict comes OUT: an anchor whose provenance does not support a production claim
+        // cannot produce a `Production` value at all. That is every provenance but `external` today,
+        // `install_minted` included while `INSTALL_MINTED_CUSTODY_ACCEPTED` is `false`.
         let ts = custody.resolve();
         let production_verified = ts.is_production_verified();
         // The report and the durable row must be the SAME verdict. `message.trust_state` is the

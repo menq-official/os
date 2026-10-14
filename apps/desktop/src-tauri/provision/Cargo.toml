@@ -3,7 +3,7 @@ name = "brops-provision"
 version = "0.1.0"
 publish = false
 edition = "2021"
-description = "First-launch trust provisioning: mints the operator-signed trusted-key registry, the out-of-registry operator-root pin, and the operator-signed artifacts the engine's governance chain requires, on the installing user's own machine."
+description = "Trust provisioning: mints the operator-signed trusted-key registry, the out-of-registry operator-root pin, and the operator-signed artifacts the engine's governance chain requires, on the machine the product is installed on. On Windows the application does it at first launch; on POSIX the application refuses to create the anchor and the root-run installer this crate ships (brops_install_anchor) does it at install time."
 
 [lib]
 path = "src/lib.rs"
@@ -21,10 +21,11 @@ serde_json = "1"
 sha2 = "0.10"
 
 # The audit-anchor second principal (`audit_signer`) is a Windows security-descriptor
-# feature. Windows-only on purpose: on POSIX the signer is already a separate uid and this
-# crate's existing `secure_owner_only_file` path is unchanged, so a Linux build must not pay
-# for the bindings. Every DECISION in `audit_signer` is pure and compiles/tests everywhere;
-# only the syscalls live behind this dependency.
+# feature. Windows-only on purpose: on POSIX the design is a separate uid for the signer, which
+# nothing in this crate or the `.deb` creates (an operator does, by hand, per
+# docs/DEBIAN_DEPLOYMENT.md), and this crate's existing `secure_owner_only_file` path is
+# unchanged, so a Linux build must not pay for the bindings. Every DECISION in `audit_signer`
+# is pure and compiles/tests everywhere; only the syscalls live behind this dependency.
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
     "Win32_Foundation",
@@ -47,10 +48,13 @@ tempfile = "3"
 # pin-rewrite route that destruction does NOT close.
 ed25519-dalek = "2"
 
-# Used by ONE test: `win_live_constants_have_not_drifted`, which pins every access mask and
-# world SID in `audit_signer` against the real `brops_win_live::pipe_acl`. A dev-dependency
-# rather than a dependency, because the constants are restated (this crate builds on Linux,
-# where `brops-win-live` is not in the graph) and the only thing needed is proof that the two
-# copies agree.
+# Used by ONE test: `win_live_constants_have_not_drifted`, which compares the access masks and
+# SIDs it names in `audit_signer` with the real `brops_win_live` ones (`pipe_acl`,
+# `provision_custody`, `tcb_floor`). It is not every constant: `FILE_WRITE_EA`,
+# `FILE_GENERIC_WRITE`, `READ_ACCESS_BITS` and `GENERIC_BITS` are not in it, and the world SIDs
+# are checked one way only — every one `pipe_acl` knows must be refused here; this crate lists
+# two more. A dev-dependency rather than a dependency, because the constants are restated (this
+# crate builds on Linux, where `brops-win-live` is not in the graph) and the only thing needed
+# is proof that the compared copies agree.
 [target.'cfg(windows)'.dev-dependencies]
 brops-win-live = { path = "../win-live" }

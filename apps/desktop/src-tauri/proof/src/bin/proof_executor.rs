@@ -38,8 +38,9 @@
 //! done here because what the live kit actually observes has never been looked at by anything: it
 //! would make a CI job fail or pass on values nobody has measured.
 //!
-//! It holds no key, opens no socket, and touches nothing but the four inherited descriptors. On a non-Linux
-//! host it exits non-zero (the inherited-fd model does not exist there).
+//! It holds no key and opens no socket. Besides the four inherited descriptors it reads its own
+//! `/proc/self/status` and lists and reads the links of `/proc/self/fd`, to build the report above; it
+//! opens nothing else. On a non-Linux host it exits non-zero (the inherited-fd model does not exist there).
 
 #[cfg(not(target_os = "linux"))]
 fn main() {

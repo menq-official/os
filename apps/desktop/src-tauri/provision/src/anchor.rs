@@ -10,6 +10,11 @@
 //! * `PROVISIONING.json` — the manifest recording the sha256 of every other provisioned file,
 //!   so a rewritten registry, key or artifact is detected.
 //!
+//! Those three are not everything the anchor holds. `write_anchor_files` also puts the
+//! operator-signed trusted-key registry in it, at `<anchor>/registry/config/trusted-keys.json`
+//! (see [`prove_unwritable`]), and `CUSTODY.txt` beside them. The registry is signed under the
+//! pin, which is why the property below names the three and not it.
+//!
 //! While those lived in `<app_data>/trust/`, destroying the operator-root PRIVATE half bought
 //! nothing against the account that runs the app: it generates a root of its own, writes it
 //! over the pin, re-signs the registry under it, raises the floor it also owns, patches the
@@ -334,7 +339,8 @@ provisioning refuses rather than pretend otherwise.";
 ///
 /// Every string in here is an OS answer — the error a real syscall returned — not a summary of
 /// an intention. [`crate::Provisioned`] carries one so a deployment can log what its anchor's
-/// custody actually is, and `CUSTODY.txt` beside the anchor prints it.
+/// custody actually is. `CUSTODY.txt` beside the anchor does NOT print it: [`custody_text`]
+/// states the mechanism and deliberately stores no proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustodyProof {
     pub dir: PathBuf,
@@ -785,9 +791,10 @@ pub const OWNER_RIGHTS_MASK: u32 = crate::audit_signer::FILE_GENERIC_READ | FILE
 /// regardless — an ACE denying them would be theatre, and the same reasoning
 /// `audit_signer::key_dacl_plan` states. `OWNER RIGHTS` is the ACE that matters.
 ///
-/// Only `aces` is read by `winimpl::apply_dacl`; `app_sid` and `signer_sid` are the plan's
-/// provenance fields and are filled with the real values rather than placeholders so the
-/// struct does not state something untrue about who it is a plan for.
+/// Only `aces` is read by `winimpl::apply_dacl`. The other three fields are there because
+/// `DaclPlan` has them, and only `app_sid` describes this seal. `signer_sid` is the audit
+/// signer's service SID, which has no part in the anchor's DACL, and `owner_sid` names
+/// `BUILTIN\Administrators` although [`seal`] passes no owner to `apply_dacl` and stamps none.
 #[cfg(windows)]
 pub fn sealed_dacl_plan(app_sid: &str) -> crate::audit_signer::DaclPlan {
     use crate::audit_signer::{Ace, DaclPlan, FILE_ALL_ACCESS, SID_ADMINISTRATORS, SID_LOCAL_SYSTEM};

@@ -7,12 +7,19 @@
 //! driver comes to evaluate a weaker floor than the other with nobody saying so.
 //!
 //! Deliberately a SEPARATE entry point run by root before any service starts, rather than a step
-//! inside the turn. The pinned set includes artifacts the serving principals must not be able to
-//! read — the setuid launcher is mode 4750 so only the recorder group may execute it, and the sudo
-//! allowlist lives in a root-only directory. A broker that could measure those could also read them,
-//! so asking it to would mean loosening the very containment the floor exists to confirm. Root can
-//! see the whole TCB; it is the only principal that can honestly evaluate it, and it does so once,
-//! at deployment time, before anything is started.
+//! inside the turn. The pinned set includes artifacts closed to the serving principals — the setuid
+//! launcher is mode 4750 so only the recorder group may execute it, and the sudo allowlist lives in
+//! a root-only directory. Root can see the whole TCB without any grant, and the proof drivers'
+//! floor is evaluated by root, once, at deployment time, before anything is started.
+//!
+//! **Root is not the only principal that evaluates the floor.** This header used to say a broker
+//! that could measure those artifacts could also read them, so asking it to would loosen the
+//! containment, and that root "is the only principal that can honestly evaluate it". The product
+//! broker does evaluate the same floor in its own process, as the broker principal
+//! (`broker/src/main.rs`, `tcb_probe::verify_broker_tcb`), and the ladder kit grants it what that
+//! takes: `setfacl` READ on the sudoers vector and the launcher and SEARCH on `/etc/sudoers.d`
+//! (`engine/ci/live/run_ladder_turn.sh`, "THE PRODUCT BROKER MEASURES AS ITSELF, NOT AS ROOT").
+//! That script names the grant as a posture decision for the Owner.
 //!
 //! The floor itself is `brops_broker::tcb_probe::verify_deployment_tcb`. Nothing here re-implements
 //! any part of it; this only reads which manifest and which principals from the kit's config.

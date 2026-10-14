@@ -217,7 +217,7 @@ pub mod guard {
 
     fn sha256_hex_field(v: &serde_json::Value, k: &str) -> Result<String, String> {
         let h = text(v, k)?;
-        if h.len() != 64 || !h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if !is_store_handle(&h) {
             return Err(format!("recorder policy: `{k}` must be a 64-char lowercase sha256 hex"));
         }
         Ok(h)
@@ -933,7 +933,8 @@ mod linux {
         };
 
         // Fail closed: an EXECVE_FAIL report (the launcher refused) is NOT governed output. Never write it as
-        // the turn's output — leave --out empty so the broker's `std::fs::read` sees no bytes and blocks.
+        // the turn's output — the `--out` file is removed below and this process exits non-zero, and the
+        // non-zero exit is what the broker refuses on (`status.success()`), before it reads the file.
         let is_execve_fail = report.starts_with(b"EXECVE_FAIL");
         let produced = exit_code == 0 && !is_execve_fail && !report.is_empty();
         if let Some(p) = out_path {
@@ -944,7 +945,7 @@ mod linux {
                     return err(&e);
                 }
             } else {
-                // Truncate/remove any stale file so the broker cannot mistake old bytes for this run.
+                // Remove any stale file so the broker cannot mistake old bytes for this run.
                 let _ = std::fs::remove_file(&p);
             }
         }
@@ -1204,8 +1205,8 @@ mod linux {
 // This binary had ZERO tests, which is why an argv-steered `execve` survived several audit rounds. Each
 // test below goes RED if the check it names is deleted — they assert refusals, not that a parser parses.
 // The syscall wiring that CALLS these decisions is exercised on a real Linux runner by the three
-// `NEGATIVE:` cases at the end of `engine/ci/live/run_live_turn.sh`, which is the only place a setuid
-// launcher, real service uids and a sudoers rule exist.
+// `NEGATIVE (P0-A)`, `(P0-B)` and `(P0-C)` cases of `engine/ci/live/run_live_turn.sh`, which is the
+// only place a setuid launcher, real service uids and a sudoers rule exist.
 // -------------------------------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
