@@ -37,6 +37,11 @@
 //!                          loopback + port 11434 + no path unless opted in)
 //!   BROPS_ALLOW_REMOTE_OLLAMA          – opt-in: non-loopback Ollama host (https only)
 //!   BROPS_ALLOW_OLLAMA_NONDEFAULT_PORT – opt-in: Ollama port other than 11434
+//!   BROPS_GOVERNANCE_STATE_DIR     – the engine state directory the governance mirror reads;
+//!                                    unset or not a directory ⇒ every mirror read and every
+//!                                    approval request is refused before anything is spawned
+//!   BROPS_APPROVAL_REQUEST_LOG_DIR – the log the engine appends an approval request to; unset
+//!                                    or not a directory ⇒ the approval request is refused
 
 use crate::engine_trust;
 use serde::{Deserialize, Serialize};
@@ -1748,7 +1753,10 @@ impl Drop for TrustSurfaceGuard {
 }
 
 /// Directory the rejected content of a settled turn is kept in, inside the private AI sandbox
-/// (0600 on unix) — never inside the repository, where it would itself become a change.
+/// — never inside the repository, where it would itself become a change. On unix the sandbox
+/// directory is 0700 ([`finalize_sandbox`]); this directory and the copies kept in it are made
+/// with plain `create_dir_all` / `std::fs::write`, so their own modes are the umask's and it is
+/// the sandbox above them that keeps other users out.
 ///
 /// A NAME, not a directory: it is created by the first file kept in it (each writer makes its
 /// own parent). Creating it here left one empty directory behind for every turn that changed
@@ -1848,8 +1856,8 @@ fn bro_agent_definitions_json() -> String {
             .join(",");
         format!(
             "\"{name}\":{{\"description\":{desc},\"tools\":[{tools_json}],\"prompt\":{prompt}}}",
-            desc = json_str(&tier_description(blurb)),
-            prompt = json_str(&tier_prompt(name, blurb))
+            desc = json_quoted(&tier_description(blurb)),
+            prompt = json_quoted(&tier_prompt(name, blurb))
         )
     };
     format!(
@@ -1989,33 +1997,14 @@ const OBSERVED_CLI_BUILTIN_AGENTS: [&str; 6] = [
     "statusline-setup",
 ];
 
-/// Minimal JSON string encoder — enough for the tier definitions, which are ASCII prose. Avoids
-/// pulling serde into an argv-building path for three constants.
-fn json_str(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len() + 2);
-    out.push('"');
-    for c in raw.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 /// The `--tools` (+ permission-mode / disallow) argv fragment.
 ///
 /// With `BROPS_PROJECT_DIR` set, Bro gets the file tools, Bash, AND `Task` — the tool that spawns
 /// specialist agents. That last one is the point of him. `engine/agents/registry.json` declares 52
-/// packs and 311 roles, and `CLAUDE.md` says Bro "delegates long or specialist execution
-/// immediately" and "never becomes a pack lead, worker, or verifier" — a contract that was
+/// packs and 311 roles, and his own prompt ([`bro_agent_system_suffix`]) tells him to delegate
+/// the doing and never become a pack lead or a verifier himself — a contract that was
 /// unenforceable while the only thing he could do was type. He was a name on a message.
+/// (This sentence quoted two phrases as `CLAUDE.md`'s; that file contains neither.)
 ///
 /// The owner asked for this deliberately and knows what it means: Bro can start agents that write
 /// files and run commands in this repository without a per-step approval.
@@ -2164,8 +2153,10 @@ pub enum AgentOrigin {
     /// list IS the grant, and Bro choosing the tier IS the capability decision.
     Tier,
     /// Resolved to a `.claude/agents/<name>.md` pack role. Its `tools:` line is the authority the
-    /// role was derived with — it bounded nothing on this route (`--setting-sources ""`), and the
-    /// tier it was spawned under is what actually applied.
+    /// role was derived with — it bounded nothing on this route (`--setting-sources ""`). No tier
+    /// applied either: [`agent_origin`] returns this only for a name that is NOT one of
+    /// [`BRO_TIERS`], and the prompt tells Bro such a name cannot be spawned from here. What the
+    /// CLI does when handed one has not been measured.
     PackRole,
     /// A name on [`OBSERVED_CLI_BUILTIN_AGENTS`]: the CLI offered it, this app did not define it,
     /// and no tier Bro chose applies to it. We do not know what it can do — we know we did not
@@ -2201,16 +2192,6 @@ impl AgentOrigin {
             AgentOrigin::Unrecognized => "unrecognized",
         }
     }
-
-    /// Did anything this app chose bound the specialist's capability?
-    ///
-    /// TRUE for a tier and nothing else. A pack role is included in the false side deliberately:
-    /// its file records an authority, but the tier it was spawned under is what applied, and this
-    /// flag is about what BOUNDED the run, not about what was written down somewhere.
-    #[allow(dead_code)]
-    pub fn bounded_by_a_tier_this_app_chose(self) -> bool {
-        matches!(self, AgentOrigin::Tier)
-    }
 }
 
 /// A `Task` spawn seen on the CLI's `{"type":"assistant"}` line.
@@ -2243,8 +2224,11 @@ pub struct DelegationSpawn {
 pub struct DelegationSettled {
     /// `tool_use_id` — matches the spawn's `id`.
     pub id: String,
-    /// `"ok"` / `"error"` only when `is_error` was actually present; `"unknown"` otherwise. An
-    /// absent flag is not a success report, and this must never round up to `"ok"`.
+    /// `"ok"` / `"error"` from the block's `is_error` when it is present. When it is absent —
+    /// which is how a delegation's own return arrives — from the line's top-level
+    /// `tool_use_result.status`: `completed` is `"ok"`, `failed` or `error` is `"error"`.
+    /// `"unknown"` for everything else. No answer is not a success report: an absent or
+    /// unrecognised status never rounds up to `"ok"`.
     pub outcome: &'static str,
     pub summary: Option<String>,
 }
@@ -2390,8 +2374,11 @@ fn clean_path_token(raw: &str) -> &str {
 
 /// Does this token look like a path a task contract could carry?
 ///
-/// Mirrors `engine/schemas/task-contract.schema.json`: repo-relative or absolute, forward slashes
-/// only, no `..`, no backslash. Deliberately strict about everything else -- a bracket, a quote,
+/// Follows `engine/schemas/task-contract.schema.json` in outline and is not a mirror of it:
+/// repo-relative or absolute, forward slashes only, no `..`, no backslash — but this admits `*`
+/// (so `*.md` reads as a path), which both of the schema's path patterns refuse, and refuses a
+/// space and any non-ASCII character, which they admit inside a segment.
+/// Deliberately strict about everything else -- a bracket, a quote,
 /// sentence punctuation or a bare capitalised word is prose, and prose is not a grant. Being
 /// permissive here paints a confident grant over a sentence.
 fn is_grant_path(token: &str) -> bool {
@@ -2432,8 +2419,10 @@ fn is_grant_path(token: &str) -> bool {
 ///
 /// Bro is instructed (see [`bro_agent_system_suffix`]) to state both as concrete paths in every
 /// task. This is a deliberately narrow reader of that convention: a line whose first token is the
-/// label, and space/comma-separated paths after it — the task-contract grammar has no whitespace
-/// in a path, so splitting on it cannot cut one in half. Prose that does not match is simply not
+/// label, and space/comma-separated paths after it. The task-contract grammar does admit a space
+/// inside a path segment (only a segment's first and last character may not be whitespace), and
+/// this reader does not: a path with a space in it is cut there and each piece is judged on its
+/// own. Prose that does not match is simply not
 /// a grant here; the full prompt travels alongside and is what the surface shows.
 ///
 /// What this can never do is make the scope enforced. It is text Bro wrote, read back by us.
@@ -2617,8 +2606,6 @@ pub fn delegation_settlements(line: &serde_json::Value) -> Vec<DelegationSettled
         else {
             continue;
         };
-        // `is_error` present ⇒ the CLI reported the outcome and we repeat it. Absent ⇒ we were
-        // told nothing, and "we were told nothing" is `unknown`, never `ok`.
         // `is_error` present => the CLI reported the outcome and we repeat it. Absent => fall
         // back to the line's status, and only for values whose meaning is unambiguous. Anything
         // else -- absent, unrecognised, or a status we have not observed -- is `unknown`, never
@@ -2980,6 +2967,9 @@ pub fn transcript_turn(author: &str, body: &str) -> String {
 /// `serde_json::to_string` it also escapes U+2028 / U+2029, which are line terminators to
 /// the Unicode algorithm (and to JavaScript) and which `serde_json` emits literally. The
 /// invariant callers rely on: the result contains no character that can start a new line.
+///
+/// The one JSON string encoder in this file: it also writes the tier texts into the `--agents`
+/// argument ([`bro_agent_definitions_json`]), which a second, narrower encoder used to do.
 pub fn json_quoted(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
@@ -3207,8 +3197,11 @@ pub fn prepare_governed_turn(
 }
 
 /// Build a `bridge.task-request` JSON for one governed AI turn. Carries no lease,
-/// key, or environment (the sidecar/engine own those); the system prompt +
-/// conversation travel as `rationale`, JSON-escaped so content can't forge structure.
+/// key, or environment (the sidecar/engine own those). The system prompt and the
+/// conversation travel as the structured `system` and `history` fields, which are the
+/// input the executor and the signer work from; `rationale` repeats them as one
+/// human-readable string and has no authority. Everything is built with `serde_json`,
+/// so content can't forge structure.
 fn governed_request(prepared: &PreparedGovernedTurn) -> String {
     let ctx = &prepared.context;
     // `system` + structured `history` are the EXECUTION / SIGNING authority (audit R2
@@ -3314,10 +3307,12 @@ fn interpret_bridge_result(doc: &serde_json::Value) -> Result<GovernedReply, Str
 }
 
 /// Governed-engine provider: shell out to the bridge sidecar, which runs the turn
-/// behind the engine wall and returns a `bridge.result`. Mirrors the `claude_cli`
-/// subprocess discipline (stdin payload, bounded reads, one absolute deadline,
-/// kill-on-drop) and is fail-closed + VERIFIED-receipt-mandatory via
-/// [`interpret_bridge_result`].
+/// behind the engine wall and returns a `bridge.result`. Shares the `claude_cli`
+/// subprocess discipline in three of its four parts (stdin payload, bounded reads, one
+/// absolute deadline) and not in the fourth: the round trip runs in `spawn_blocking`
+/// ([`governed_sidecar_call`]), which cannot be cancelled, so dropping this future does not
+/// kill the child — it is reaped when the round trip ends. Fail-closed +
+/// VERIFIED-receipt-mandatory via [`interpret_bridge_result`].
 async fn governed_engine(
     python: &str,
     sidecar: &str,
@@ -3331,7 +3326,8 @@ async fn governed_engine(
 /// Phase-2 governance mirror (read-only): run a READ-ONLY query against the governed
 /// engine sidecar and return its raw JSON reply for the caller to validate against the
 /// engine schemas. Mirrors [`governed_engine`]'s subprocess discipline exactly (same
-/// sidecar, stdin payload, bounded reads, one deadline, kill-on-drop) but makes NO trust
+/// sidecar, stdin payload, bounded reads, one deadline, and the same absence of a kill when
+/// the caller's future is dropped — see [`governed_sidecar_call`]) but makes NO trust
 /// decision and holds NO key/lease — it only forwards the read. Any failure to reach or
 /// parse the sidecar is an `Err` the caller maps to a typed `Unreachable`/`Blocked`; the
 /// governed engine not being configured is likewise a fail-closed `Err` (never a silent
@@ -3986,13 +3982,11 @@ mod tests {
         }
         for tier in ["reader", "runner", "builder"] {
             assert_eq!(agent_origin(tier), AgentOrigin::Tier);
-            assert!(agent_origin(tier).bounded_by_a_tier_this_app_chose());
         }
         for builtin in OBSERVED_CLI_BUILTIN_AGENTS {
             assert!(agents.contains(&builtin), "{builtin} must be on the observed init frame");
+            // The whole point: not `Tier`, so nothing this app chose bounds it.
             assert_eq!(agent_origin(builtin), AgentOrigin::CliBuiltin);
-            // The whole point: nothing this app chose bounds it.
-            assert!(!agent_origin(builtin).bounded_by_a_tier_this_app_chose());
             // And its capability stays UNKNOWN. A built-in must never borrow a tool list — not
             // from a tier, and not from a `.claude/agents/<name>.md` that shares its filename.
             assert_eq!(delegation_tools(builtin), None, "{builtin} capability is not ours to state");
@@ -4025,8 +4019,7 @@ mod tests {
         assert_eq!(s.tools_source, None, "and must not imply that we did");
 
         // The fact we DID establish, and the one the owner is owed.
-        assert_eq!(s.origin, AgentOrigin::CliBuiltin);
-        assert!(!s.origin.bounded_by_a_tier_this_app_chose(), "no tier Bro chose applies to it");
+        assert_eq!(s.origin, AgentOrigin::CliBuiltin, "no tier Bro chose applies to it");
         assert_eq!(s.origin.as_str(), "cli_builtin");
 
         // A tier spawned in the same turn is the other side of the same field.
@@ -4034,7 +4027,6 @@ mod tests {
         let t = &delegation_spawns(&tier_line)[0];
         assert_eq!(t.subagent_type, "reader");
         assert_eq!(t.origin, AgentOrigin::Tier);
-        assert!(t.origin.bounded_by_a_tier_this_app_chose());
         assert_eq!(t.tools_source, Some(ToolsSource::AgentDefinition));
     }
 
@@ -5768,6 +5760,35 @@ mod tests {
         // metered ungoverned provider — it fails closed.
         let env = ProviderEnv { anthropic_key: Some("sk-test".into()), ..base_env() };
         assert!(resolve_provider(&env).is_err());
+    }
+
+    /// The production half of this file. A text check, and it says so.
+    fn production_source() -> &'static str {
+        let source = include_str!("ai.rs");
+        let production = source.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+        assert_ne!(production.len(), source.len(), "the test module marker moved");
+        production
+    }
+
+    /// Cockpit read R3-0718. Two hand-written JSON string encoders stood in this file; the one
+    /// that built the `--agents` argument was the narrower of the two.
+    #[test]
+    fn this_file_has_one_json_string_encoder() {
+        assert!(!production_source().contains("fn json_str("), "the second encoder is back");
+    }
+
+    /// What the `--agents` argument carries for each tier is the standard JSON spelling of its
+    /// text — the bytes `serde_json` would write — whichever encoder produced it.
+    #[test]
+    fn the_inline_agent_definitions_carry_standard_json_strings() {
+        let argument = bro_agent_definitions_json();
+        for (name, blurb, _tools) in BRO_TIERS {
+            for text in [tier_description(blurb), tier_prompt(name, blurb)] {
+                let standard = serde_json::to_string(&text).unwrap();
+                assert_eq!(json_quoted(&text), standard);
+                assert!(argument.contains(&standard), "{name}: the argument does not carry {standard}");
+            }
+        }
     }
 }
 
