@@ -13,7 +13,7 @@
       "command": "stream_reply",
       "governance": "ungoverned_tracked",
       "calls": ["governed_turn", "generate_stream"],
-      "tracking": "T-017 / Wave 3b-1B (rev-26, PR #31 PENDING Architect design audit). Governed path via ai::governed_turn is primary; the ai::generate_stream fallthrough is the ungoverned provider path (Wave 1 made it opt-in via BROPS_ALLOW_UNGOVERNED, fail-closed by default). Reclassify to 'governed' only after the generic fallthrough is removed/gated when Wave 3b lands zero-trust.",
+      "tracking": "T-017 / Wave 3b-1B (PR #31 merged as 9c1b901, carrying design rev-30; where the wave stands now is config/current_state.json, not this string). Governed path via ai::governed_turn is primary; the ai::generate_stream fallthrough is the ungoverned provider path (Wave 1 made it opt-in via BROPS_ALLOW_UNGOVERNED, fail-closed by default). Reclassify to 'governed' only after the generic fallthrough is removed/gated when Wave 3b lands zero-trust.",
       "note": "Main governed-chat seam. NoTrustedManifest fail-closed means production still Blocks; no trusted_verified yet."
     },
     {
@@ -27,7 +27,7 @@
       "command": "stream_ask",
       "governance": "ungoverned_tracked",
       "calls": ["governed_turn", "generate_stream"],
-      "tracking": "T-017 / Phase 2 — now routes through ai::governed_turn (primary: buffered + desktop-verified, one-time challenge, verified via receipt_store::verify_and_record_held_answer — the conversation-less HELD accept, no message posted; fail-closed). The verified answer is stashed under a one-time result_id for a later save (save_ask_to_chat, T-013). The ai::generate_stream fallthrough is the dev-only ungoverned path (BROPS_ALLOW_UNGOVERNED). Reclassify to 'governed' only after the fallthrough is removed/gated.",
+      "tracking": "T-017 / Phase 2 — now routes through ai::governed_turn (primary: buffered + desktop-verified, one-time challenge, verified via receipt_store::verify_and_record_held_answer — the conversation-less HELD accept, no message posted; fail-closed). The verified answer is stashed under a one-time result_id for a later save (save_ask_to_chat, T-013; save_ask_to_knowledge claims the same one-time id). The ai::generate_stream fallthrough is the dev-only ungoverned path (BROPS_ALLOW_UNGOVERNED). Reclassify to 'governed' only after the fallthrough is removed/gated.",
       "note": "Governed like stream_reply. NoTrustedManifest fail-closed means production Blocks (no held answer leaks); no trusted_verified yet."
     },
     {
