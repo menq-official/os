@@ -2,7 +2,7 @@
 - **Scope:** Project creation, project workspace tabs, task board/list lifecycle, the eight task views, create-task-from-message, assign-to-agent, the review→done evidence gate, project close, and the per-flow states every screen must handle. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [WORKSPACES.md](WORKSPACES.md), [NAVIGATION.md](NAVIGATION.md), [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md), [DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02 and 2026-10-08.)*
 
 # Project & Task Flows
 
@@ -63,6 +63,8 @@ Every project exposes the ten tabs from NAVIGATION.md. Each tab lists what it sh
 
 Per-tab states apply uniformly: **loading** (per-tab skeleton, tab shell stays interactive); **empty** (purpose-specific first-run prompt, e.g. Tasks → "No tasks yet — create one or let Bro propose"); **error** (tab-local error with retry, siblings unaffected); **offline** (last synced snapshot with a staleness badge, writes queued); **permission-denied** (tab hidden or shown read-only per role); **blocked / awaiting-approval** (surfaced as banners on Overview and inline on the owning object).
 
+> **Not reconciled (2026-10-14):** `permission-denied` here lets a tab be **hidden**, and §5 below lets a view be hidden, while §8 of this document says "a denied action is never hidden" and [STATES.md](STATES.md) §6 gives a whole surface a visible "You don't have access" state. STATES.md's opening paragraph says it wins where a screen conflicts with it; by that rule both sentences would read "shown, with the access-restricted state". They are left as written until that is confirmed. The code does not settle it: there are no roles — no migration creates a users, roles or members table — a project page has two tabs, Overview and Tasks (`src/features/Projects.tsx`), and the one denial that is rendered is a failed list command shown as an error panel prefixed "Not permitted" (`Async` in `src/components/ui.tsx`).
+
 ## 4. Task lifecycle (board & list UX)
 
 Tasks render two ways over the same data:
@@ -70,6 +72,8 @@ Tasks render two ways over the same data:
 - **List** — same tasks as sortable/filterable rows (by owner, priority, deadline, dependency, agent vs human).
 
 **Task card fields:** title, owner avatar (human or agent badge), status chip, priority (Low/Med/High/Urgent), deadline (with overdue styling), dependency count, evidence indicator, blocker flag, agent-run indicator.
+
+*(Read against the code 2026-10-14.)* "Low/Med/High/Urgent" above is the specification's vocabulary. The shipped priority values are `low`, `normal`, `high` and `critical` — `Priority` in `src/domain/enums.ts` and `PRIORITIES` in `src-tauri/core/src/domain.rs`, the same four — shown as Low, Normal, High and Critical (`src/domain/statusLabels.ts`). The store refuses any other value on create and on update (`is_valid(…, PRIORITIES)` in `src-tauri/core/src/repo.rs`), so no task can hold "Med" or "Urgent", and a new task defaults to `normal`.
 
 **State model** (canonical, matches [USER_FLOWS.md](USER_FLOWS.md) §3 Project Execution — AI_RUNTIME has no section of that name):
 
@@ -110,7 +114,11 @@ The eight global views from NAVIGATION.md are **saved filters over all tasks**, 
 
 Movement is a side effect of field changes, always driven by an event, never a hidden migration. Example: an agent-owned task that finishes and posts evidence moves out of **Assigned to agents**, into **Waiting approval** (if a reviewer approval is required) or **Review**, then to **Completed** on done.
 
+> **Not reconciled (2026-10-14):** this example does not follow the table above it. By the table a task leaves **Assigned to agents** only when it is reassigned to a human or reaches done/cancelled, and a task in review is still agent-owned and non-terminal, so it would stay there; and **Review** is not one of the eight views — it is a task state (§4). Either the example is wrong, or the table is missing a leave condition and a ninth view. Which has not been decided. The code does not settle it: none of the eight views is built. The Tasks page groups tasks into four lanes by status, with `review` in the same lane as `active` (`LANES` in `src/features/Tasks.tsx`).
+
 Per-flow states per view: **loading** (row skeletons); **empty** (view-specific reassurance, e.g. Inbox → "You're all caught up"); **error** (retry banner, cached rows if any); **offline** (last snapshot + staleness badge); **permission-denied** (view hidden if the user may see no matching tasks); **blocked / awaiting-approval** (Blocked and Waiting-approval views are themselves the surfacing of those states).
+
+> **Not reconciled (2026-10-14):** "view hidden" here is the same conflict as the hidden tab in §3 — see the marker there.
 
 ## 6. Create task from message & assign to agent
 
@@ -169,6 +177,8 @@ Every flow above must render the following seven states honestly — seven of th
 - **permission-denied** — read-only, or visible but disabled per role (STATES.md §6: a denied action is never hidden), with a request-access path; never a silent failure.
 - **blocked** — visible reason and, where possible, an unblock owner and path.
 - **awaiting-approval** — the pending action, its scope, impact, and expiry are shown; execution is held until the approval resolves.
+
+> **Not reconciled (2026-10-14):** "every flow above must render the following seven" does not hold for §2. The per-flow states of project creation are six — loading, empty, error, offline, permission-denied, awaiting-approval — with no **blocked**; §3–§7 each list all seven. Either §2 is missing a blocked state or the sentence means "each where it applies", the wording [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md) and [INFORMATION_ARCHITECTURE.md](INFORMATION_ARCHITECTURE.md) §1.3 use for the canonical set. Which has not been decided. The code does not settle it: the creation flow of §2 is not built — a project is created from a name, a description and a priority (`createProject` in `src/features/Projects.tsx`), with no template, objective form or proposal card.
 
 ---
 
@@ -231,6 +241,8 @@ Events՝ `project.proposed` → `project.created`. յուրաքանչյուր ս
 
 Tab-երի վիճակները կիրառվում են միատեսակ՝ **loading** (tab-ի skeleton, tab shell-ը մնում է interactive). **empty** (first-run prompt, օր. Tasks → «Դեռ task չկա — ստեղծիր կամ թող Bro-ն առաջարկի»). **error** (tab-local error՝ retry-ով, հարևանները չեն ազդվում). **offline** (վերջին sync snapshot՝ staleness badge-ով, գրառումները հերթ). **permission-denied** (tab-ը թաքցվում է կամ read-only ըստ role-ի). **blocked / awaiting-approval** (banner Overview-ի վրա և inline՝ տվյալ object-ի վրա)։
 
+> **Չհամաձայնեցված (2026-10-14)․** այստեղի `permission-denied`-ը թույլ ա տալիս tab-ը **թաքցնել**, ու ներքևի §5-ը՝ view-ն թաքցնել, մինչդեռ այս փաստաթղթի §8-ն ասում ա «մերժված գործողությունը երբեք չի թաքցվում», ու [STATES.md](STATES.md) §6-ը ամբողջ surface-ին տալիս ա տեսանելի «You don't have access» վիճակ։ STATES.md-ի բացող պարբերությունն ասում ա, որ ինքն ա հաղթում, երբ էկրանը հակասում ա իրեն. այդ կանոնով երկու նախադասությունն էլ կկարդացվեին «ցուցադրվում ա՝ access-restricted վիճակով»։ Դրանք թողնված են ինչպես գրված են, մինչև դա հաստատվի։ Կոդը չի լուծում՝ role-եր չկան (ոչ մի migration users, roles կամ members աղյուսակ չի ստեղծում), project-ի էջը երկու tab ունի՝ Overview ու Tasks (`src/features/Projects.tsx`), ու միակ մերժումը, որ render ա լինում, ձախողված list command-ն ա՝ ցույց տրված որպես error panel «Not permitted» նախածանցով (`Async`՝ `src/components/ui.tsx`-ում)։
+
 ## 4. Task-ի կյանքի ցիկլ (board և list UX)
 
 Task-երը նույն տվյալի վրա երկու տեսքով՝
@@ -238,6 +250,8 @@ Task-երը նույն տվյալի վրա երկու տեսքով՝
 - **List** — նույն task-երը որպես sort/filter տողեր (owner, priority, deadline, dependency, agent vs human)։
 
 **Task card-ի դաշտերը՝** վերնագիր, owner avatar (մարդ կամ agent badge), status chip, priority (Low/Med/High/Urgent), deadline (overdue styling-ով), dependency count, evidence indicator, blocker flag, agent-run indicator։
+
+*(Կոդի դեմ կարդացված 2026-10-14։)* Վերևի «Low/Med/High/Urgent»-ը սպեցիֆիկացիայի բառապաշարն ա։ Shipped priority-ի արժեքներն են `low`, `normal`, `high` ու `critical`՝ `Priority`-ն `src/domain/enums.ts`-ում ու `PRIORITIES`-ը `src-tauri/core/src/domain.rs`-ում, նույն չորսը, որ ցուցադրվում են որպես Low, Normal, High ու Critical (`src/domain/statusLabels.ts`)։ Պահեստը ուրիշ ցանկացած արժեք մերժում ա ստեղծելիս ու թարմացնելիս (`is_valid(…, PRIORITIES)`՝ `src-tauri/core/src/repo.rs`-ում), ուրեմն ոչ մի task չի կարող «Med» կամ «Urgent» ունենալ, ու նոր task-ի default-ը `normal`-ն ա։
 
 **Վիճակների մոդել** (կանոնական, համընկնում է [USER_FLOWS.md](USER_FLOWS.md) §3 Project Execution-ին — AI_RUNTIME-ում այդ անունով բաժին չկա)՝
 
@@ -276,7 +290,11 @@ NAVIGATION.md-ի ութ գլոբալ view-երը **բոլոր task-երի վրա
 
 Շարժը դաշտի փոփոխության կողմնակի հետևանք է, միշտ event-ով, երբեք թաքնված migration։ Օրինակ՝ agent-owned task, որ ավարտվում և evidence է հրապարակում, դուրս է գալիս **Assigned to agents**-ից, մտնում **Waiting approval** (եթե reviewer approval է պետք) կամ **Review**, ապա done-ի դեպքում՝ **Completed**։
 
+> **Չհամաձայնեցված (2026-10-14)․** այս օրինակը չի հետևում իր վերևի աղյուսակին։ Աղյուսակով task-ը **Assigned to agents**-ից դուրս ա գալիս միայն երբ վերանշանակվում ա մարդու կամ հասնում ա done/cancelled, իսկ review-ում գտնվող task-ը դեռ agent-owned ու ոչ-terminal ա, ուրեմն կմնար այնտեղ. ու **Review**-ը ութ view-ից մեկը չի՝ այն task-ի վիճակ ա (§4)։ Կամ օրինակն ա սխալ, կամ աղյուսակին պակասում ա դուրս գալու պայման ու իններորդ view։ Թե որը՝ որոշված չի։ Կոդը չի լուծում՝ ութ view-ից ոչ մեկը կառուցված չի։ Tasks էջը task-երը խմբավորում ա չորս lane-ի ըստ status-ի, `review`-ն `active`-ի հետ նույն lane-ում (`LANES`՝ `src/features/Tasks.tsx`-ում)։
+
 Վիճակներ ըստ view-ի՝ **loading** (row skeleton). **empty** (view-specific հանգստացում, օր. Inbox → «Ամեն ինչ մաքուր է»). **error** (retry banner, cached տողեր). **offline** (վերջին snapshot + staleness). **permission-denied** (view-ը թաքցվում է, եթե user-ը match task չի տեսնում). **blocked / awaiting-approval** (Blocked և Waiting-approval view-երն իրենք այդ վիճակների բացահայտումն են)։
+
+> **Չհամաձայնեցված (2026-10-14)․** այստեղի «view-ը թաքցվում է»-ն նույն հակասությունն ա, ինչ §3-ի թաքցվող tab-ը՝ տես այնտեղի նշումը։
 
 ## 6. Task ստեղծել հաղորդագրությունից և նշանակել agent-ի
 
@@ -335,3 +353,5 @@ Done-ն անհնար է առանց այս gate-ի։ Bro-ն task-ը ավարտվ�
 - **permission-denied** — read-only, կամ տեսանելի բայց անջատված ըստ role-ի (STATES.md §6՝ մերժված գործողությունը երբեք չի թաքցվում), request-access ուղիով. երբեք լուռ ձախողում։
 - **blocked** — տեսանելի պատճառ և, հնարավոր դեպքում, unblock owner ու ուղի։
 - **awaiting-approval** — pending գործողությունը, նրա scope-ը, impact-ը և expiry-ն ցուցադրվում են. կատարումը պահվում է, մինչ approval-ի լուծումը։
+
+> **Չհամաձայնեցված (2026-10-14)․** «վերևի ամեն հոսք պետք է ցուցադրի հետևյալ յոթը»-ն §2-ի համար ճիշտ չի։ Նախագծի ստեղծման հոսքի վիճակները վեցն են՝ loading, empty, error, offline, permission-denied, awaiting-approval, առանց **blocked**-ի. §3–§7-ից ամեն մեկը թվարկում ա յոթն էլ։ Կամ §2-ին պակասում ա blocked վիճակ, կամ նախադասությունը նշանակում ա «ամեն մեկը որտեղ կիրառելի ա»՝ էն ձևակերպումը, որ [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md)-ն ու [INFORMATION_ARCHITECTURE.md](INFORMATION_ARCHITECTURE.md) §1.3-ը օգտագործում են կանոնական հավաքածուի համար։ Թե որը՝ որոշված չի։ Կոդը չի լուծում՝ §2-ի ստեղծման հոսքը կառուցված չի. project-ը ստեղծվում ա անունից, նկարագրությունից ու priority-ից (`createProject`՝ `src/features/Projects.tsx`-ում), առանց template-ի, objective-ի ֆորմի կամ proposal card-ի։

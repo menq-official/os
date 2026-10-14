@@ -2,7 +2,7 @@
 - **Scope:** Command-to-outcome, group collaboration, project execution, approval, memory/knowledge, and the global flow rule. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [NAVIGATION.md](NAVIGATION.md), [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [WORKSPACES.md](WORKSPACES.md), [GROUP_CHAT.md](GROUP_CHAT.md), [SEARCH_AND_COMMAND_PALETTE.md](SEARCH_AND_COMMAND_PALETTE.md), [../architecture/ARCHITECTURE.md](../architecture/ARCHITECTURE.md), [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS User Flows / Օգտագործողի հոսքեր
 
@@ -49,6 +49,9 @@ Status: Draft canonical
 2. Bro classifies it as transient context, memory candidate, knowledge candidate, or decision evidence.
 3. Persistent storage requires provenance and scope.
 4. User can inspect, correct, archive, or delete persistent records.
+   > **Not reconciled (2026-10-14):** the "Rules" of the Memory engine in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md) give a memory four operations — corrected, superseded, expired, deleted. This step gives a persistent record (memory or knowledge) three, and one of them, archive, is a memory or knowledge operation in no other document under `docs/product/` or `docs/architecture/`. Whether archive is a fifth operation, this step's word for supersede and expire, or a slip has not been decided. The code does not settle it: neither store has an update, an archive, a supersede or an expiry (`src/services/desktop.ts` — memory has list, create, pin and delete; knowledge has list, search, create and delete), and both deletes refuse every call (`forbidden_hard_delete` in `src-tauri/src/commands.rs`). Today a record can be created and read, and a memory pinned.
+   >
+   > **Չհամաձայնեցված (2026-10-14)․** [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի Memory engine-ի «Rules»-ը հիշողությանը չորս գործողություն ա տալիս՝ corrected, superseded, expired, deleted։ Այս քայլը մշտական գրառմանը (memory կամ knowledge) տալիս ա երեքը, ու դրանցից մեկը՝ archive-ը, `docs/product/`-ի ու `docs/architecture/`-ի ոչ մի ուրիշ փաստաթղթում memory-ի կամ knowledge-ի գործողություն չի։ Archive-ը հինգերո՞րդ գործողություն ա, այս քայլի բա՞ռն ա supersede-ի ու expire-ի համար, թե՞ վրիպակ՝ որոշված չի։ Կոդը չի լուծում՝ երկու պահեստից ոչ մեկը update, archive, supersede կամ expiry չունի (`src/services/desktop.ts`՝ memory-ն ունի list, create, pin ու delete, knowledge-ը՝ list, search, create ու delete), ու երկու delete-ն էլ մերժում են ամեն կանչ (`forbidden_hard_delete`՝ `src-tauri/src/commands.rs`-ում)։ Այսօր գրառումը կարելի ա ստեղծել ու կարդալ, իսկ memory-ն՝ նաև pin անել։
 
 ## Global Rule / Համընդհանուր կանոն
 

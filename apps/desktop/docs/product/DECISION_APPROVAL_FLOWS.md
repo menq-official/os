@@ -2,7 +2,7 @@
 - **Scope:** The Decision lifecycle UX, the Approval queue and approval-gate UX (levels A0–A3), and the Agent profile / delegation / live-run UX, including per-flow loading, empty, error, offline, expired, and blocked states. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md), [../DECISIONS.md](../DECISIONS.md), [PROJECT_TASK_FLOWS.md](PROJECT_TASK_FLOWS.md), [CHAT_FLOWS.md](CHAT_FLOWS.md), [USER_FLOWS.md](USER_FLOWS.md), [GROUP_CHAT.md](GROUP_CHAT.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02 and 2026-10-08.)*
 
 # BroPS Decision, Approval & Agent Flows
 
@@ -79,7 +79,7 @@ Each row shows a status (`pending → written → verified`); nothing is claimed
 ## 2. Approval flow UX
 
 ### 2.1 Approval queue / drawer
-A global **Approval drawer** (reachable from anywhere; badge count on the app shell) lists pending approvals newest-first. Each queue item renders, verbatim from the AI_RUNTIME **Approval object** binding:
+A global **Approval drawer** (reachable from anywhere; badge count on the app shell) lists pending approvals newest-first. Each queue item renders the seven fields below. Five of them — action, target, scope, consequences and expiry — are things the AI_RUNTIME **Approval object** binds; **Reversibility** and **Requester** are this flow's own additions and are not in that list. Of the two other things that object binds, the candidate version or hash is in the context line under the list, and the approving identity is not on a queue item at all — 2.3 binds it at Approve. *(Until 2026-10-14 this sentence said the fields were rendered "verbatim from the AI_RUNTIME Approval object binding".)*
 - **Exact action** — the operation to be performed, in plain language.
 - **Target** — the exact object/file/endpoint affected.
 - **Scope** — the exact boundary the approval binds to.
@@ -88,6 +88,8 @@ A global **Approval drawer** (reachable from anywhere; badge count on the app sh
 - **Expiry** — when this approval request goes stale. **Not stored today:** the `approvals` table has no expiry column, and its status trigger (`core/schema/0019_approval_escalated_status.sql`) admits only `pending`, `approved`, `rejected`, `consumed` and `escalated`.
 - **Requester** — the agent or command requesting, plus its correlation ID.
 Additional shown context: risk class, the approval **level** (A0–A3), and, where applicable, the candidate **version or hash** the approval binds to.
+
+> **Not reconciled (2026-10-14):** the line above gives a queue item a level in the range A0–A3, while 2.2 below says an A0 action "never enters the queue" and an A1 action "executes automatically" and surfaces as a post-hoc notice. A0 is excluded by 2.2's own words. Whether an A1 action is ever a queue item is the question [CHAT_FLOWS.md](CHAT_FLOWS.md) §5.4 already records as undecided, and this line is a third place that depends on it. The code does not settle it: `approvals.level` is unconstrained text (`level TEXT NOT NULL`, migration `0001`), the run-step gate in `src-tauri/src/commands.rs` creates its row with `A2`, escalation sets `A3` (`repo::approvals::escalate`), the first-run seed inserts a pending `A1` row (`repo::seed`), and the Approvals page prints whatever level the row carries (`src/features/Approvals.tsx`).
 
 ### 2.2 The four approval levels
 - **A0 — no approval.** Read-only, harmless analysis. Never enters the queue; shown only in the activity log. UX: no gate, just a record.
@@ -250,7 +252,7 @@ Runtime-ի **որոշման վիճակները** վարում են կենդան�
 ## 2. Հաստատման հոսքի UX
 
 ### 2.1 Հաստատման հերթ / drawer
-Գլոբալ **Approval drawer** (հասանելի ամենուրից. badge count app shell-ի վրա) թվարկում է սպասող հաստատումները՝ նորից հին։ Յուրաքանչյուր հերթի տարր ցուցադրում է AI_RUNTIME **Approval object** binding-ը բառացի.
+Գլոբալ **Approval drawer** (հասանելի ամենուրից. badge count app shell-ի վրա) թվարկում է սպասող հաստատումները՝ նորից հին։ Յուրաքանչյուր հերթի տարր ցուցադրում է ներքևի յոթ դաշտը։ Դրանցից հինգը՝ action, target, scope, consequences ու expiry, AI_RUNTIME-ի **Approval object**-ի կապածներից են. **Reversibility**-ն ու **Requester**-ը այս հոսքի սեփական հավելումներն են ու այդ ցանկում չկան։ Այդ object-ի կապած մյուս երկուսից թեկնածու version-ը կամ hash-ը ցանկի տակի համատեքստի տողում ա, իսկ հաստատող identity-ն հերթի տարրի վրա ընդհանրապես չկա՝ 2.3-ը այն կապում ա Approve-ի պահին։ *(Մինչև 2026-10-14 այս նախադասությունն ասում էր, որ դաշտերը ցուցադրվում են AI_RUNTIME-ի Approval object binding-ից «բառացի»։)*
 - **Exact action / Ճշգրիտ գործողություն** — կատարվելիք գործողությունը՝ պարզ լեզվով։
 - **Target / Թիրախ** — ազդվող ճշգրիտ object/file/endpoint-ը։
 - **Scope / Շրջանակ** — ճշգրիտ սահմանը, որին կապվում է հաստատումը։
@@ -259,6 +261,8 @@ Runtime-ի **որոշման վիճակները** վարում են կենդան�
 - **Expiry / Ժամկետ** — երբ է այս հարցումը հնանում։
 - **Requester / Հայցող** — հայցող ագենտը կամ command-ը՝ իր correlation ID-ով։
 Լրացուցիչ ցուցադրվող համատեքստ՝ risk class, հաստատման **մակարդակ** (A0–A3), և, ըստ կիրառելիության, թեկնածու **version կամ hash**, որին կապվում է հաստատումը։
+
+> **Չհամաձայնեցված (2026-10-14)․** վերևի տողը հերթի տարրին տալիս ա A0–A3 միջակայքի մակարդակ, մինչդեռ ներքևի 2.2-ն ասում ա, որ A0 գործողությունը «երբեք չի մտնում հերթ», իսկ A1-ը «կատարվում է ավտոմատ» ու երևում ա որպես post-hoc notice։ A0-ն բացառված ա հենց 2.2-ի բառերով։ A1 գործողությունը երբևէ հերթի տարր դառնո՞ւմ ա՝ դա էն հարցն ա, որ [CHAT_FLOWS.md](CHAT_FLOWS.md) §5.4-ն արդեն գրանցել ա որպես չորոշված, ու այս տողը դրանից կախված երրորդ տեղն ա։ Կոդը չի լուծում՝ `approvals.level`-ը անսահմանափակ տեքստ ա (`level TEXT NOT NULL`, migration `0001`), run-step gate-ը `src-tauri/src/commands.rs`-ում իր տողը ստեղծում ա `A2`-ով, escalation-ը դնում ա `A3` (`repo::approvals::escalate`), first-run seed-ը մտցնում ա pending `A1` տող (`repo::seed`), իսկ Approvals էջը տպում ա էն մակարդակը, որ տողն ունի (`src/features/Approvals.tsx`)։
 
 ### 2.2 Հաստատման չորս մակարդակները
 - **A0 — առանց հաստատման։** Read-only, անվնաս վերլուծություն։ Երբեք չի մտնում հերթ. ցուցադրվում է միայն activity log-ում։ UX՝ gate չկա, միայն գրառում։

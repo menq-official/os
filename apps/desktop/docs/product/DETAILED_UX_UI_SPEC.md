@@ -14,6 +14,8 @@ The canonical set is the ten states in [STATES.md](STATES.md). This line's own l
 
 ## Workspace contracts
 
+*(Read against the code 2026-10-14.)* The thirteen contracts below cover fourteen of the twenty-three routes in `RouteId` (`src/app/nav.ts`), each of which has a page in `src/app/routes.tsx` — "Chat and Group Chat" is one contract for two routes. Nine routes have no contract in this document: **Decisions, Bridge, Research, Library, Approvals, Activity, Notifications, Integrations and Security**. All twenty-three have a section in [WORKSPACES.md](WORKSPACES.md). [WORKSPACE_FLOWS.md](WORKSPACE_FLOWS.md) specifies seven of the nine — every one but Approvals and Bridge — and Approvals is specified in [DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md) §2. Bridge has its WORKSPACES.md section and no flow document, which WORKSPACE_FLOWS.md's coverage note states.
+
 ### Home
 Components: daily briefing, active projects, urgent tasks, pending approvals, recent runs, agent status, quick command.
 Responsive: cards collapse from multi-column to one column; command remains primary.
@@ -41,7 +43,9 @@ Components: agent gallery, capability filters, status, model/provider, permissio
 Components: source list, collections, search, ingestion state, chunk preview, citations, indexing errors and retention controls.
 
 ### Memory
-Components: proposed memories, accepted memories, source, confidence, scope, retention, edit/supersede/delete controls.
+Components: proposed memories, accepted memories, source, confidence, scope, retention, and controls for the four operations the "Rules" of the Memory engine in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md) allow on a memory — correct, supersede, expire and delete. *(Until 2026-10-14 this line said "edit/supersede/delete controls", three of the four.)*
+
+*(Read against the code 2026-10-14.)* None of the four operations works on the Memory page. `src/services/desktop.ts` has four memory calls — `listMemory`, `createMemory`, `setMemoryPinned`, `deleteMemory` — and no update: the page's edit form shows the entry read-only with Save disabled (`EditEntryForm` in `src/features/Memory.tsx`). `delete_memory` refuses every call (`forbidden_hard_delete` in `src-tauri/src/commands.rs`; the capability set carries `deny-delete-memory`). `memory_entries` has seven columns (`id`, `scope`, `kind`, `content`, `pinned`, `created_at`, `updated_at` — migration `0004`), so there is nothing to hold a superseding entry, an expiry, a source or a confidence. What a user can do with a memory today is create it, read it, and pin or unpin it.
 
 ### Files
 Components: browser, recent files, project links, preview, checksum, import/export and protected delete.

@@ -2,7 +2,7 @@
 - **Scope:** Phase 1 UX. The ten canonical states (loading, empty, populated, error, offline, permission-denied, blocked, awaiting-approval, destructive-confirmation, success) plus the rules and mappings that govern them. Trilingual product surface (HY/EN/RU) in Dark and Light.
 - **Owner:** Gev.
 - **Related:** [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md), [INFORMATION_ARCHITECTURE.md](INFORMATION_ARCHITECTURE.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS Canonical UI State Patterns / Ինտերֆեյսի վիճակների կանոնական օրինաչափություններ
 

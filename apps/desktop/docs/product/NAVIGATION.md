@@ -2,7 +2,7 @@
 - **Scope:** Primary navigation groups, Home, Chat, project workspace, and task views. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [INFORMATION_ARCHITECTURE.md](INFORMATION_ARCHITECTURE.md), [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [WORKSPACES.md](WORKSPACES.md), [GROUP_CHAT.md](GROUP_CHAT.md), [SEARCH_AND_COMMAND_PALETTE.md](SEARCH_AND_COMMAND_PALETTE.md), [USER_FLOWS.md](USER_FLOWS.md), [STATES.md](STATES.md), [../architecture/ARCHITECTURE.md](../architecture/ARCHITECTURE.md), [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS Navigation
 
@@ -52,11 +52,10 @@ Home is the operational overview: priorities, active agents, approvals, blockers
 ## Chat
 
 Chat contains:
-- Direct Chat: Gev + Bro
-- Group Chat: Gev + multiple agents
-- Team Rooms: persistent collaboration spaces
-- Project Rooms: chat bound to one project
+- the room types defined under "Room types" in [GROUP_CHAT.md](GROUP_CHAT.md)
 - Threads, mentions, files, decisions, tasks, summaries, and approvals
+
+*(Until 2026-10-14 this list restated four of GROUP_CHAT.md's five room types as its own bullets — Direct Chat, Group Chat, Team Rooms, Project Rooms — and left out the Review room. Read against the code the same day: a stored conversation's kind is one of `direct`, `group` and `ask` (`CONVERSATION_KINDS` in `src-tauri/core/src/domain.rs`), so there is no team, project or review room in the store.)*
 
 ## Project workspace
 

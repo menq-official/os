@@ -2,7 +2,7 @@
 - **Scope:** Desktop-first app shell and structural UX. Trilingual product runtime (HY/EN/RU). Visual, motion, and theming rules are owned by [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md); this document must never contradict it. Screen-level state and content are owned by the individual screen specs.
 - **Owner:** Gev.
 - **Related:** [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md), [NAVIGATION.md](NAVIGATION.md), [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [../architecture/ARCHITECTURE.md](../architecture/ARCHITECTURE.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS Information Architecture
 
@@ -27,6 +27,8 @@ The shell is a fixed grid of six regions. All screens render inside `MainWorkspa
 │ StatusBar (fixed, 28px) + overlay surfaces (toasts, palette, Ask Bro) │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+*(Read against the code 2026-10-14.)* The six regions above, and §1.1–§1.6 below, are the specification; the shipped shell has two. `src/components/Shell.tsx` renders a side rail (`<aside class="side">`) beside the routed stage (`<main class="stage">`), in a two-column grid of `236px 1fr` (`.app` in `src/theme/aios.css`). There is no TopBar, no RightDrawer and no StatusBar: no component and no CSS class of those names exists under `src/`, and the `Drawer` primitive in `src/components/ui.tsx` is mounted by no page. Of what §1.2 puts in the TopBar, three controls exist and they are in the rail's footer — the palette button, the theme toggle and the language select — and the pending-approval and unread-notification counts are badges on those two nav items. There is no global search input, no breadcrumb and no bell. The rail has one width and no icon-only state, pin zone or avatar; at 860px and narrower it leaves the grid and opens as an overlay from a toggle button (`@media (max-width:860px)` in `aios.css`). The shell has no Ask Bro overlay or composer. Toasts sit bottom-right (`.toaster` in `src/components/ui.css`), where §1.6 says top-right.
 
 ### 1.1 LeftNav — left navigation (collapsible)
 
@@ -112,6 +114,8 @@ Collapse behavior:
 
 Every workspace, object, and drawer state is a first-class, shareable URL. This is mandatory: reload and share must restore the same view.
 
+*(Read against the code 2026-10-14.)* This section is the specification; the shipped router carries one thing in the URL, the route id, as the hash (`#tasks`). `routeFromHash` in `src/app/store.tsx` reads it once, when the window opens, and honours it only if it is one of the twenty-three ids — otherwise it takes the last view from local storage, otherwise `home`. A navigation writes the hash with `history.replaceState`, so it creates no history entry and back/forward has nothing to restore. Nothing under `src/` calls `pushState` or listens for `hashchange` or `popstate`, so a hash edited by hand after load changes nothing until a reload. No object id, sub-view, drawer, filter or query is in the URL: the object the palette opens is held in memory (`openEntity` sets `focus` in the store) and a reload returns to the bare page.
+
 ### 4.1 Route shape
 
 ```
@@ -156,6 +160,8 @@ Full keyboard navigation is mandatory (DESIGN_SYSTEM accessibility). All shortcu
 | `Ctrl/Cmd+B` | Toggle theme Dark/Light |
 | `?` | Open keyboard-shortcut help overlay |
 
+*(Read against the code 2026-10-14.)* Of the eleven shortcuts above, one is bound: `Ctrl/Cmd+K` (`src/components/CommandPalette.tsx`), the only modifier binding outside a page. The other ten are the specification. `/` is bound by three pages, each to its own field — Files (its filter), Memory (its search), Automations (its filter chips) — and there is no global search for it to focus. `g` is taken on the Approvals page, where `g` / `d` / `e` stage grant, deny and escalate for the selected row — so on that page `g` alone already acts, which the `g` chord in this table makes no allowance for. The remaining page-local keys: `n` on Memory and Automations (new), `e` on Memory (edit), and `Ctrl/Cmd+S` / `Ctrl/Cmd+Enter` in the Knowledge editor (save).
+
 ### 5.2 Command palette (`Ctrl/Cmd+K`)
 
 - Unified entry: navigation ("go to…"), object search, and actions/commands. A leading `>` forces **command/Ask Bro** mode; `#` scopes to objects; plain text is fuzzy navigation + search.
@@ -167,6 +173,7 @@ Full keyboard navigation is mandatory (DESIGN_SYSTEM accessibility). All shortcu
 - Tab order: **skip-to-content link → TopBar (search, palette, language, theme, notifications, approvals) → LeftNav → MainWorkspace → RightDrawer → StatusBar.** A "skip to main workspace" link is the first focusable element.
 - Focus is trapped inside the topmost modal or overlay palette while open; drawers do not trap focus but are fully tabbable.
 - **Escape law:** `Esc` dismisses the topmost layer only, in z-order — toast/palette → Ask Bro overlay → modal → drawer — one layer per press. When no overlay is open, `Esc` clears the active search/selection; it never navigates away.
+  > **Not reconciled (2026-10-14):** the order in this law is not the z-order it says it follows. It dismisses the palette before a modal and Ask Bro before a modal; the §6 table puts the modal at band 50, above the palette (40) and Ask Bro (30), and §6 also says opening a modal closes the palette. By the table the order would be toast → modal → palette → Ask Bro → drawer. Which of the two is the design has not been decided. The code does not settle it: there is no Ask Bro overlay and no drawer to put in an order. A page dialog closes on `Esc` only when it is the topmost dialog (`useModalDialog` in `src/components/ui.tsx`), and the palette, the narrow-width nav overlay and the context menu each close on any `Esc` from their own window listener (`CommandPalette.tsx`, `Shell.tsx`) — every one that is open, not one per press.
 - **Back** (browser/`Alt+←`) changes the route only and respects the section 2 persistence rules and unsaved-edit guard.
 
 ## 6. Layering and z-order
@@ -242,7 +249,7 @@ This mapping covers the 22 screens this document inventoried. The shipped sideba
 - **Շրջանակ:** Desktop-first app shell և կառուցվածքային UX։ Trilingual runtime (HY/EN/RU)։ Visual, motion և theming կանոնները պատկանում են [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md)-ին. այս փաստաթուղթը երբեք չի հակասում դրան։
 - **Սեփականատեր:** Gev.
 - **Առնչվող:** [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md), [NAVIGATION.md](NAVIGATION.md), [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [../architecture/ARCHITECTURE.md](../architecture/ARCHITECTURE.md)։
-- **Վերջին թարմացում:** 2026-07-19։
+- **Վերջին թարմացում:** 2026-10-14։ *(Այս տողն ասում էր 2026-07-19, մինչդեռ ֆայլը փոխվել էր 2026-10-02-ին։)*
 
 Կարգավիճակ՝ Draft canonical.
 
@@ -251,6 +258,8 @@ BroPS-ն օգտագործողին ներկայացնում է տասներեք b
 ## 1. App shell-ի տարածքները
 
 Shell-ը վեց տարածքից բաղկացած ֆիքսված grid է։ Բոլոր էկրանները ցուցադրվում են `MainWorkspace`-ի ներսում. shell-ի մնացած ոչինչ էկրանին չի պատկանում։
+
+*(Կոդի դեմ կարդացված 2026-10-14։)* Վերևի վեց տարածքը ու ներքևի §1.1–§1.6-ը սպեցիֆիկացիան են. shipped shell-ը երկուսն ունի։ `src/components/Shell.tsx`-ը render ա անում side rail (`<aside class="side">`) ու դրա կողքին routed stage (`<main class="stage">`)՝ `236px 1fr` երկսյուն grid-ով (`.app`՝ `src/theme/aios.css`-ում)։ TopBar, RightDrawer ու StatusBar չկան՝ `src/`-ի տակ այդ անուններով ոչ component կա, ոչ CSS class, իսկ `src/components/ui.tsx`-ի `Drawer` primitive-ը ոչ մի էջ չի mount անում։ §1.2-ի TopBar-ի բովանդակությունից երեք control կա, ու դրանք rail-ի footer-ում են՝ palette-ի կոճակը, theme-ի փոխարկիչը ու լեզվի select-ը, իսկ սպասող approval-ների ու չկարդացված notification-ների քանակները այդ երկու nav item-ի վրայի badge-եր են։ Global search-ի input, breadcrumb ու bell չկան։ Rail-ը մեկ լայնություն ունի, առանց icon-only վիճակի, pin գոտու ու avatar-ի. 860px-ում ու ավելի նեղ այն դուրս ա գալիս grid-ից ու բացվում ա որպես overlay՝ toggle կոճակից (`@media (max-width:860px)`՝ `aios.css`-ում)։ Shell-ը Ask Bro overlay կամ composer չունի։ Toast-երը ներքև-աջ են (`.toaster`՝ `src/components/ui.css`-ում), մինչդեռ §1.6-ն ասում ա վերև-աջ։
 
 ### 1.1 LeftNav — ձախ նավիգացիա (ծալովի)
 
@@ -317,11 +326,13 @@ Desktop-first (DESIGN_SYSTEM)։ Breakpoint-երը կառավարում են shel
 | `sm` | 768–1023px | Rail, hover/focus-ով ժամանակավոր overlay | Overlay, մինչև 90vw |
 | `xs` | < 768px | Hamburger overlay | Overlay full-width |
 
-Collapse վարքագիծ՝ LeftNav-ը `md`-ից ցածր ավտոմատ դառնում է rail, բայց օգտատիրոջ ձեռքով ընտրությունը գերակայում է. `md`-ից ցածր RightDrawer-ը docked-ից անցնում է overlay (scrim, `Esc`-ով dismiss)։ Shell-ը երբեք չի տալիս հորիզոնական scroll. աղյուսակները, board-ները և timeline-ները scroll են անում իրենց container-ի ներսում։
+Collapse վարքագիծ՝ LeftNav-ը `md`-ում ու ավելի նեղ ավտոմատ դառնում է rail, բայց օգտատիրոջ ձեռքով ընտրությունը գերակայում է. `md`-ում ու ավելի նեղ RightDrawer-ը docked-ից անցնում է overlay (scrim, `Esc`-ով dismiss)։ *(Մինչև 2026-10-14 այս պարբերությունն երկու տեղում ասում էր «`md`-ից ցածր», մինչդեռ վերևի աղյուսակի `md` տողն ինքը Rail (auto) / Overlay ա, ու անգլերեն կեսն ասում ա «at `md` and narrower»։)* Shell-ը երբեք չի տալիս հորիզոնական scroll. աղյուսակները, board-ները և timeline-ները scroll են անում իրենց container-ի ներսում։
 
 ## 4. Deep-linking և routing մոդել
 
 Յուրաքանչյուր workspace, object և drawer վիճակ առաջնային, կիսվող URL է. reload-ը և share-ը պետք է վերականգնեն նույն view-ն։
+
+*(Կոդի դեմ կարդացված 2026-10-14։)* Այս բաժինը սպեցիֆիկացիան ա. shipped router-ը URL-ում մեկ բան ա կրում՝ route id-ն, որպես hash (`#tasks`)։ `src/app/store.tsx`-ի `routeFromHash`-ը այն կարդում ա մեկ անգամ՝ պատուհանը բացվելիս, ու ընդունում ա միայն եթե քսաներեք id-ից մեկն ա. այլապես վերցնում ա local storage-ի վերջին view-ն, այլապես `home`-ը։ Նավիգացիան hash-ը գրում ա `history.replaceState`-ով, ուրեմն history entry չի ստեղծում, ու back/forward-ը վերականգնելու բան չունի։ `src/`-ի տակ ոչինչ `pushState` չի կանչում ու `hashchange` կամ `popstate` չի լսում, ուրեմն բեռնվելուց հետո ձեռքով փոխած hash-ը ոչինչ չի փոխում մինչև reload։ URL-ում ոչ object id կա, ոչ sub-view, ոչ drawer, ոչ ֆիլտր, ոչ query՝ palette-ի բացած object-ը պահվում ա հիշողության մեջ (`openEntity`-ն store-ում դնում ա `focus`), ու reload-ը վերադարձնում ա մերկ էջին։
 
 ### 4.1 Route-ի ձևը
 
@@ -365,6 +376,8 @@ Collapse վարքագիծ՝ LeftNav-ը `md`-ից ցածր ավտոմատ դառ�
 | `Ctrl/Cmd+B` | Փոխարկել theme Dark/Light |
 | `?` | Shortcut help overlay |
 
+*(Կոդի դեմ կարդացված 2026-10-14։)* Վերևի տասնմեկ shortcut-ից մեկն ա կապված՝ `Ctrl/Cmd+K`-ն (`src/components/CommandPalette.tsx`), որը էջից դուրս միակ modifier binding-ն ա։ Մնացած տասը սպեցիֆիկացիան են։ `/`-ը կապում են երեք էջ, ամեն մեկն իր դաշտին՝ Files-ը (իր ֆիլտրին), Memory-ն (իր որոնմանը), Automations-ը (իր ֆիլտրի chip-երին), ու global search չկա, որ այն ֆոկուսավորի։ `g`-ն զբաղված ա Approvals էջում, որտեղ `g` / `d` / `e`-ն ընտրված տողի համար stage են անում grant, deny ու escalate՝ ուրեմն այդ էջում `g`-ն մենակ արդեն գործում ա, ինչը այս աղյուսակի `g` chord-ը հաշվի չի առնում։ Մնացած page-local ստեղները՝ `n` Memory-ում ու Automations-ում (նոր), `e` Memory-ում (խմբագրել), ու `Ctrl/Cmd+S` / `Ctrl/Cmd+Enter` Knowledge-ի editor-ում (պահել)։
+
 ### 5.2 Command palette (`Ctrl/Cmd+K`)
 
 - Միասնական մուտք՝ navigation, object search և action/command։ Առաջատար `>`-ը ստիպում է **command/Ask Bro** mode, `#`-ը scope անում է object-երին, պարզ տեքստը fuzzy navigation + search է։
@@ -375,6 +388,7 @@ Collapse վարքագիծ՝ LeftNav-ը `md`-ից ցածր ավտոմատ դառ�
 - Tab հերթականություն՝ **skip-to-content → TopBar (search, palette, language, theme, notifications, approvals) → LeftNav → MainWorkspace → RightDrawer → StatusBar**։ Առաջին focus-ելի տարրը «skip to main workspace» link-ն է։
 - Ֆոկուսը թակարդված է վերին modal-ի կամ palette overlay-ի ներսում. drawer-ները թակարդ չեն, բայց լիովին tabbable են։
 - **Escape կանոն**՝ `Esc`-ը dismiss է անում միայն ամենավերին շերտը z-order-ով (toast/palette → Ask Bro → modal → drawer)՝ մեկ սեղմումին մեկ շերտ։ Overlay չլինելիս `Esc`-ը մաքրում է ակտիվ search/ընտրությունը. երբեք չի navigate անում։
+  > **Չհամաձայնեցված (2026-10-14)․** այս կանոնի հերթականությունը էն z-order-ը չի, որին ասում ա թե հետևում ա։ Այն palette-ը փակում ա modal-ից առաջ, ու Ask Bro-ն՝ modal-ից առաջ. §6-ի աղյուսակը modal-ը դնում ա 50 band-ում՝ palette-ից (40) ու Ask Bro-ից (30) վերև, ու §6-ը նաև ասում ա, որ modal-ը բացվելիս փակում ա palette-ը։ Աղյուսակով հերթականությունը կլիներ toast → modal → palette → Ask Bro → drawer։ Երկուսից որն ա design-ը՝ որոշված չի։ Կոդը չի լուծում՝ Ask Bro overlay ու drawer չկան, որ հերթի դրվեն։ Էջի dialog-ը `Esc`-ով փակվում ա միայն երբ ամենավերին dialog-ն ա (`useModalDialog`՝ `src/components/ui.tsx`-ում), իսկ palette-ը, նեղ լայնության nav overlay-ն ու context menu-ն ամեն `Esc`-ի վրա փակվում են ամեն մեկն իր window listener-ից (`CommandPalette.tsx`, `Shell.tsx`)՝ բոլորը, որ բաց են, ոչ թե մեկ սեղմումին մեկը։
 - **Back** (`Alt+←`)՝ փոխում է միայն route-ը՝ հարգելով բաժին 2-ի պահպանման կանոնները և չպահված խմբագրման guard-ը։
 
 ## 6. Շերտավորում և z-order
