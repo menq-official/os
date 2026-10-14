@@ -150,6 +150,10 @@ Agents may be grouped into persistent teams such as Product, Architecture, Engin
 ### Initial specialist set / Սկզբնական մասնագետների հավաքածու
 Lens, Lezu, Forge, Tensor, Reviz, Mason, Pixel, Grid, Probe, Ops, Vault, Flow, Archi, Sigma, Steward, Pocket, Shield, Sentry, Hawk, Relay, Compass, Strat, Closer.
 
+*(Read against the code 2026-10-14.)* These twenty-three are the specified set, not the agents a database holds. The only code that creates agent rows is the first-run seed (`repo::seed` in `src-tauri/core/src/repo.rs`, the two `agents::create` loops), and it creates ten: Forge, Mason, Pixel, Probe, Shield, Lezu, and then Scout, Relay, Ledger, Sentry. Eight of those are in the list above; Scout and Ledger are not in it. The other fifteen names above — Lens, Tensor, Reviz, Grid, Ops, Vault, Flow, Archi, Sigma, Steward, Pocket, Hawk, Compass, Strat, Closer — are created by nothing.
+
+*(Կոդի դեմ կարդացված 2026-10-14։)* Այս քսաներեքը սահմանված հավաքածուն են, ոչ թե բազայում եղած ագենտները։ Ագենտի տող ստեղծող միակ կոդը first-run seed-ն ա (`repo::seed`), ու այն ստեղծում ա տասը՝ Forge, Mason, Pixel, Probe, Shield, Lezu, հետո Scout, Relay, Ledger, Sentry։ Դրանցից ութը վերևի ցանկում կան, Scout-ն ու Ledger-ը՝ ոչ։ Մնացած տասնհինգ անունը ոչինչ չի ստեղծում։
+
 ### Truth requirement / Ճշմարտության պահանջ
 An agent may report only one of: completed with evidence, partially completed with evidence, blocked with reason, failed with reason, or not started. Vague progress claims are invalid.
 

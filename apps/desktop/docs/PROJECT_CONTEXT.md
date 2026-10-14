@@ -82,7 +82,7 @@ Surfaces span: Home, Chat and Group Chat, Projects, Tasks, Agents, Knowledge, Me
 9. Light/Dark appearance.
 10. Local database, backup, and restore foundation.
 11. Permission and approval gates for externally impactful actions.
-12. Auditable execution states: planned, running, blocked, awaiting approval, completed, failed.
+12. Auditable execution states. In the code a run's status is one of `drafted`, `queued`, `planning`, `awaiting_approval`, `running`, `paused`, `succeeded`, `failed`, `cancelled` (`RUN_STATUSES` in `src-tauri/core/src/domain.rs`, mirrored in `src/domain/enums.ts`). *(Until 2026-10-14 this item listed "planned, running, blocked, awaiting approval, completed, failed". `planned` and `blocked` are task statuses there (`TASK_STATUSES`), not run statuses, and `completed` is in neither list.)*
 
 ### Outside MVP but architecture-ready
 
@@ -120,7 +120,7 @@ Surfaces span: Home, Chat and Group Chat, Projects, Tasks, Agents, Knowledge, Me
 
 ## Non-negotiable laws
 
-BroPS is governed by non-negotiable laws — including evidence-backed completion, chat as interface (not canonical truth), written approved decisions, approval gates for high-impact actions, agent transparency of authority and result, equal-meaning multilingual documentation, and the AI-Operating-System (not admin-dashboard) product feel. These are defined canonically in [PRINCIPLES.md](PRINCIPLES.md); do not restate or fork them here.
+BroPS is governed by non-negotiable laws — including evidence-backed completion, chat as interface (not canonical truth), written approved decisions, approval gates for high-impact actions, and agent transparency of authority and result. These are defined canonically in [PRINCIPLES.md](PRINCIPLES.md) as L-001 … L-012; do not restate or fork them here. *(Until 2026-10-14 this paragraph also listed "equal-meaning multilingual documentation" and "the AI-Operating-System (not admin-dashboard) product feel" as laws defined there. Neither is one of the twelve. Multilingual parity is **principle** 6 in that file and is about product content (HY/EN/RU), not documentation; the nearest text to the second is principle 1, command-first — "the command, not the menu or dashboard" — and the words "Operating System" do not appear in that file.)*
 
 ---
 
@@ -200,7 +200,7 @@ BroPS-ը այն միջավայրն է, որտեղ Gev-ը կարող է մտած�
 9. Light/Dark appearance։
 10. Local database, backup և restore հիմք։
 11. Permission/approval gates արտաքին ազդեցություն ունեցող գործողությունների համար։
-12. Auditable execution state՝ planned, running, blocked, awaiting approval, completed, failed։
+12. Auditable execution state։ Կոդում run-ի status-ը սրանցից մեկն ա՝ `drafted`, `queued`, `planning`, `awaiting_approval`, `running`, `paused`, `succeeded`, `failed`, `cancelled` (`RUN_STATUSES`՝ `src-tauri/core/src/domain.rs`-ում, նույնը `src/domain/enums.ts`-ում)։ *(Մինչև 2026-10-14 այս կետը թվարկում էր «planned, running, blocked, awaiting approval, completed, failed»։ `planned`-ն ու `blocked`-ը այնտեղ task-ի status են (`TASK_STATUSES`), ոչ run-ի, իսկ `completed`-ը ոչ մի ցանկում չկա։)*
 
 ### MVP-ից դուրս, բայց architecture-ready
 
@@ -238,4 +238,4 @@ BroPS-ը այն միջավայրն է, որտեղ Gev-ը կարող է մտած�
 
 ## Անխախտ օրենքներ
 
-BroPS-ը կառավարվում է անխախտ օրենքներով՝ ներառյալ evidence-ով ամրագրված ավարտը, chat-ը որպես interface (ոչ canonical truth), գրավոր հաստատված որոշումները, approval gate-երը high-impact գործողությունների համար, գործակալների թափանցիկությունը authority-ի ու result-ի վերաբերյալ, հավասար իմաստ ունեցող բազմալեզու փաստաթղթերը և AI-Operating-System (ոչ admin-dashboard) արտադրանքի զգացողությունը։ Դրանք canonical կերպով սահմանված են [PRINCIPLES.md](PRINCIPLES.md)-ում. մի՛ վերաշարադրեք և մի՛ պատառեք դրանք այստեղ։
+BroPS-ը կառավարվում է անխախտ օրենքներով՝ ներառյալ evidence-ով ամրագրված ավարտը, chat-ը որպես interface (ոչ canonical truth), գրավոր հաստատված որոշումները, approval gate-երը high-impact գործողությունների համար, և գործակալների թափանցիկությունը authority-ի ու result-ի վերաբերյալ։ Դրանք canonical կերպով սահմանված են [PRINCIPLES.md](PRINCIPLES.md)-ում որպես L-001 … L-012. մի՛ վերաշարադրեք և մի՛ պատառեք դրանք այստեղ։ *(Մինչև 2026-10-14 այս պարբերությունը որպես այնտեղ սահմանված օրենք թվարկում էր նաև «հավասար իմաստ ունեցող բազմալեզու փաստաթղթերը» ու «AI-Operating-System (ոչ admin-dashboard) արտադրանքի զգացողությունը»։ Տասներկուսից ոչ մեկը դրանք չեն։ Բազմալեզու համարժեքությունը այդ ֆայլում **սկզբունք** 6-ն ա ու product բովանդակության մասին ա (HY/EN/RU), ոչ փաստաթղթերի. երկրորդին ամենամոտը սկզբունք 1-ն ա՝ command-first, «ոչ թե մենյուն կամ dashboard-ը», ու «Operating System» բառերը այդ ֆայլում չկան։)*

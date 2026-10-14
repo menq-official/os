@@ -44,6 +44,14 @@ Three rules, applied throughout:
 **Twelve confirmed, one reopened.** The reopened one is a documentation count; no fix to a control, a
 gate or a trust boundary was found to be overstated.
 
+> **Builder's note, 2026-10-14 (cockpit read R3-0515) — the `I-07` row above says P2; the ninth
+> report filed it as P3.** `2026-08-19-ninth-audit-5cf9b8c.md` states a severity for `I-07` in one
+> place, its heading: "`I-07` (P3) — the roadmap status board disagrees with its own checkboxes on
+> exactly the two phases that matter". The `P` column of this table restates the ninth round's
+> severities, and that cell does not match its source. Which severity stands is not decided here;
+> the verdict on `I-07` (CONFIRMED) does not depend on it. The auditor's text above is left
+> unchanged.
+
 ## Carried forward from rounds 1–8
 
 | # | Verdict here | Why |

@@ -18,6 +18,10 @@ earlier finding.
 
 Yield declined 45 -> 49 -> 28. Duplicates across rounds: **0**.
 
+> **Builder's note, 2026-10-14 (cockpit read R3-0847) — the yield did not decline at every step.**
+> The table above gives 45, 49 and 28 new findings: the count rose from round 1 to round 2 and fell
+> only in round 3. The auditor's sentence above is left unchanged.
+
 | Severity | Count |
 |---|---|
 | P0 | 1 |

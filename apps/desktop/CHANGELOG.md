@@ -3,15 +3,21 @@
 - **Purpose:** Record notable repository changes, most recent first.
 - **Scope:** Documentation and, later, released application changes. Future work is in [MASTER_EXECUTION_ROADMAP.md](../../MASTER_EXECUTION_ROADMAP.md).
 - **Owner:** Gev.
-- **Last updated:** 2026-08-04 (newest entry; the standing corrections below were added 2026-08-09 and amended 2026-10-01). Entries below are dated records; read none of them as the current state.
+- **Last updated:** 2026-08-04 (newest entry; the standing corrections below were added 2026-08-09 and amended 2026-10-01 and 2026-10-14). Entries below are dated records; read none of them as the current state.
 
 > **Three standing corrections that apply to every entry below (two added 2026-08-09, the third 2026-10-01).**
 > 1. Entries name `platform_governed_execution_supported()` as the gate that “stays false”. **No function
 >    of that name exists in the tree** — it is the §0.1 specification symbol from
 >    `docs/design/WINDOWS_BROKER_DESIGN.md`, recorded as `partial` in `config/spec-conformance.json`. The
 >    three real refusals are `governed_verification_unconfigured()`, `connect_broker()` off Linux, and the
->    broker's `UpstreamBlockedExecutor` fallback when `$BROPS_BROKER_CONFIG` is unset. The posture those
->    entries describe is real; the name is not.
+>    broker's `build_governed_executor` (`src-tauri/broker/src/main.rs`), which serves
+>    `UpstreamBlockedExecutor` unless `$BROPS_BROKER_CONFIG` names a deployment config that passes the
+>    §2.5 TCB floor and carries the key manifest, its signature file and its anti-rollback floor, the
+>    authority socket, the conversation source and a distinct sidecar principal; the manifest is then
+>    verified on every turn under the root anchor that floor pinned, and a turn that fails ends
+>    `blocked`. Nothing in the shipped app sets the variable. *(Until 2026-10-14 this line gave the
+>    condition as "when `$BROPS_BROKER_CONFIG` is unset" — the first of that function's refusals, not
+>    the whole of them.)* The posture those entries describe is real; the name is not.
 > 2. The audit verdicts quoted in these entries are **Builder-side**. The standing INDEPENDENT verdict is
 >    **RED**. Which round is current is in `AUDIT/AUDIT_LEDGER.md` and only there — this line named the
 >    2026-08-06 report as "never re-run" while eight later rounds were filed beside it.

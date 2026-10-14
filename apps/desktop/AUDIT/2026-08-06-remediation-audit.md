@@ -95,6 +95,11 @@ original F-01 *symptom*.
 
 **Why it held / where it failed.** It held on five of seven, and failed decisively on the fifth. HELD: (a) `build_run_attestation` genuinely has no `facts` parameter — its first positional argument is typed `AttestationState` and it raises SupervisorError on anything else (governed_supervisor.py:861-900); (b) the exhaustive shape check rejects the old protocol with a hard ServerError, observed verbatim as "attest-run has unexpected field(s) ['facts']" (governed_supervisor_server.py:552); (c) a fabricated run returns `no_terminal_run_state`, observed verbatim (governed_supervisor_server.py:556-564, governed_supervisor_ledger.py:814-855); (d) `run_id` is a CHECK not a selector (ledger:852) and `execution_attempt_id` only selects among rows the supervisor itself minted, so neither wire parameter contributes a value to the evidence; (e) the ledger DB is 0700 and chown'd to the supervisor account (run_live_turn.sh:186-190) while the supervisor process creates it 0600 (ledger:196-202), so the broker cannot forge rows by writing the file — it must go through the socket; (f) the DDL parity gate is real and wired — the two files are byte-identical and the `ledger-ddl` job runs `python tools/check_ledger_ddl_parity.py` on push-to-main and on five pull_request event types (ci.yml:1-14, 244-265), and the gate hard-fails on a missing copy rather than skipping; (g) the ledger survives a mid-turn restart — I closed and reopened it between accept-open and launch-gate and the gate still proceeded off the persisted window. FAILED: the state machine contains no proof of execution. `execution-started` records caller-asserted `process_group_id`/`cgroup_id` with no probe of any kind (governed_supervisor_ledger.py:490-497), and `complete-run` accepts seven run-produced values raw off the wire (governed_supervisor_server.py:505-541 -> ledger:589-623 -> ledger:731-746) which `evidence_from_state` then copies verbatim into the signed evidence (governed_supervisor.py:848-857). Chief among them is `output_handle` — the digest of the reply text the desktop commits. Every op is admitted from the SAME single uid (governed_supervisor_server.py:607), so the party the isolated-signer split exists to constrain drives every hop. I ran the whole lifecycle with no executor and obtained a signed brops.run-attestation.v1 whose `output_handle` is the sha256 of bytes I authored. The specific defect F-01 quoted is closed; the security property F-01 exists to establish — that the broker uid cannot obtain a signed receipt for a run that never happened — is not.
 
+> **Builder's note, 2026-10-14 (cockpit read R3-0508) — "held on five of seven" miscounts the
+> paragraph's own list.** The seven attacks are numbered (1)–(7) above. The HELD items (a)–(g) cover
+> attacks 1 (a, b), 2 (c), 3 (d), 4 (e), 6 (f) and 7 (g); the one FAILED leg is attack 5. That is
+> six held and one failed. The auditor's text above is left unchanged, and so is the verdict.
+
 **Evidence.** `engine/runtime/governed_supervisor.py:848-857 (evidence_from_state copies state.output_handle et al.), :861-867 (no facts parameter), :899-900; engine/runtime/governed_supervisor_ledger.py:490-497 (mark_executing, no probe), :556-559 (COMPLETION_HANDLE_FIELDS), :731-746 (raw facts inserted), :814-855 (load_attestation_state), :196-202 (0600 db); engine/runtime/governed_supervisor_server.py:505-541 (_op_complete_run), :552-564 (_op_attest_run), :607 (single-uid allowlist); engine/ci/live/run_live_turn.sh:180 (store 2775 group brops-store = supervisor+broker), :186-190 (ledger 0700 supervisor-owned); engine/ci/live/provision_keys.py:307-316 (every service allowlists only the broker uid); .github/workflows/ci.yml:244-265 (ledger-ddl job); tools/check_ledger_ddl_parity.py:60-91; both supervisor_ledger.sql copies sha256=772a8da43f4a9e19d0f6ffbf293571f814423918fb4569a21731ddaa423b4c48`
 
 ---
@@ -600,6 +605,12 @@ STEP 3 — the handle flows into the signature. record_completion persists it (g
 STEP 4 — the isolated signer's check is circular. _derive_hashes reads `store/<output_handle>` and asserts sha256(bytes) == handle (engine/runtime/isolated_signer.py:634-645); for a content-addressed store that is true by construction for ANY bytes the broker wrote. _derive_output_bytes just returns len() of the same blob (:657-663). _recompute_request_sha256 (:667-689) binds workspace/install/nonce and the three INPUT component hashes — not the output.
 
 STEP 5 — the one artifact that could have bound it is inert. proof_executor.rs:52-59 computes a `reply_binding` over the fd 3/4/5 digests and embeds it in its report (proof_executor.rs:138-144). Repo-wide grep for `reply_binding` across .rs and .py returns ONLY those four lines in proof_executor.rs. No consumer exists.
+
+> **Builder's note, 2026-10-14 (cockpit read R3-0509) — "ONLY those four lines" in STEP 5 is five.**
+> In `219c763`, `git grep reply_binding -- '*.rs' '*.py'` returns five lines, all in
+> `apps/desktop/src-tauri/proof/src/bin/proof_executor.rs`: 52, 59, 138, 141 and 144 — the count the
+> adversarial review of this finding and the R-03 re-read both give. The conclusion ("No consumer
+> exists") is not affected. The auditor's text above is left unchanged.
 
 STEP 6 — final acceptance is self-comparison. governed_verification::verify_and_accept judges against the broker's OWN Expected facts, which for a compromised broker are values it supplied to itself.
 
@@ -1132,6 +1143,14 @@ STEP 1: I subclassed the author's own fixture, engine/tests/test_deploy_prefligh
 **Why it matters.** The single question asks whether a receipt can assert something the governed chain did not produce and bind. Here it demonstrably does: the receipt cryptographically attests a tamper-evident evidence chain and the existence of containment evidence for THIS execution, and on Windows neither is a measurement — one is a provisioning constant and the other is a self-description written by the very principal the containment is meant to constrain. An auditor cross-checking a Windows receipt's evidence head against a real recorder chain finds no correspondence, yet the turn reports production_verified=true. The ledger's F-02 row states the opposite without qualifying it to Linux.
 
 **Adversarial review (P2).** Every step of the walkthrough reproduces in the file. I tried three refutations and all failed. (a) 'Maybe the supervisor recomputes the counters' — no: complete_run's ONLY validation of the three evidence ints is `Some(n) if n >= 0` (servers.rs:681-687), and there is no other entry point (attest_run's exact_keys at servers.rs:798 admits only op/run_id/execution_attempt_id, so nothing else can arrive). (b) 'Maybe the signer parses the containment document' — no: servers.rs:1020-1023 calls `derive("containment_evidence_handle", "containment_missing")`, which is store_read (servers.rs:67-77), a content-address existence check only; the bytes are dropped at servers.rs:1037 `let _ = (policy_bundle_sha256, containment_evidence_sha256)`. (c) 'Maybe the driver measures something' — no: win_live_turn.rs:185-193 lifts f.evidence_* verbatim from config.json, whose values win_provision.rs:112 and :206-208 write once as `sha256(b"brops-final-event-v1")` and 3/3/3. So all four evidence_* fields are deployment constants and the containment document is authored by the same process that produces the output (execution.rs:92-108), yet all five are signed into the 29-field attestation (servers.rs:844,848,856-858,868-870) and four are copied into the 23-key envelope (servers.rs:1068,1075-1077). AUDIT_LEDGER.md line 27 (F-02/F-18) marks this '✅ CLOSED (2026-08-06)' and describes a RECORDER-built hash-linked chain with '--evidence-out' and 'no config fallback left to fall back to' — that describes engine/Linux only, with no platform qualifier. DOWNGRADED P1→P2: this is not a forgery. The chain does produce, bind and sign the output; what is unsound is the SEMANTICS of 5 of 28 attested fields. It is confined to the lab kit (win_live_turn) and the demonstration seam (proof.rs:255-258 uses the same 3/3/3), platform_governed_execution_supported() stays false on Windows, and the shipped app cannot commit a trusted_verified row from either (repo.rs:1098 writes demonstration_verified_messages, and the badge projection at repo.rs:947-958 can only render 'trusted_verified' from a receipt_verification_attempts row this path never writes).
+
+> **Builder's note, 2026-10-14 (cockpit read R3-0510) — "29-field" and "28 attested fields" in this
+> finding are one object counted two ways.** In `219c763`,
+> `apps/desktop/src-tauri/win-live/src/servers.rs:888` reads
+> `const EVIDENCE_FIELDS_LEN: usize = 29; // 28 attest facts + decision`. The signed evidence object
+> has 29 fields; 28 of them are run facts and the 29th is `decision`. So "the 29-field attestation"
+> is the object, and "5 of 28 attested fields" (and §2's "five of the 28 signed evidence fields")
+> counts the facts only — 29 fields are signed, not 28. The auditor's text above is left unchanged.
 
 **Reviewer re-read.** `win-live/src/bin/win_provision.rs:112 (`sha256_hex(b"brops-final-event-v1")`), :206-208 (`evidence_event_count: 3, evidence_last_sequence: 3, evidence_head_sequence: 3`); win-live/src/bin/win_live_turn.rs:185-193; win-live/src/execution.rs:92-108 (broker authors its own containment doc), :124-138 (`produced` block, quoted lines 131-135 verified verbatim at 131-135); win-live/src/servers.rs:675-687 (shape-only validation), :754-765 (stored), :844/:848/:856-858 (signed), :868-870, :1020-1023 + :67-77 (existence-only resolve), :1037, :1068/:1075-1077; apps/desktop/AUDIT/AUDIT_LEDGER.md:27`
 
@@ -2452,6 +2471,11 @@ let _ = FlushFileBuffers(h);
 
 **Adversarial review (P3).** Confirmed, and the gap is wider than the finding states. My own grep over .github/workflows returns exactly four cargo test/check lines — ci.yml:49 (-p brops-core), :115 (cargo check), :117 (-p brops), :133 (-p brops-core windows_broker), :135 (-p brops-win-broker) — and zero matches for win-live|win_live|brops-win-live|CROSS_ACCOUNT. The quoted two steps are verbatim the entire run-command set of the `windows-broker` job (ci.yml:120-135), whose own comment at :127-132 states it does NOT flip platform_governed_execution_supported(). The extra fact the finding missed: Cargo.toml:47 puts brops-win-live under `[target.'cfg(windows)'.dependencies]`, so ci.yml:115's `cargo check` on ubuntu-latest does not even COMPILE the crate, and no -p selector on the windows job pulls it in either. So proof.rs's five in-process chain tests (proof.rs:342-409) — which lib.rs advertises as running on the Linux runner — are executed by no gate, and neither is win_live_proof.ps1; the whole F-01 remediation in servers.rs is regression-guarded by nothing on any runner. The cross-account claim likewise has no artifact: proof/ contains only win_live_proof.ps1, whose header line 1 says 'self-contained, same-account' and whose line 46 derives the SID from the current interactive identity, while CROSS_ACCOUNT_PROOF.md:24-32 and :50-58 present the RESULT lines as prose with no script or captured output. P3 as filed: this is an assurance gap, not an exploit.
 
+> **Builder's note, 2026-10-14 (cockpit read R3-0511) — "exactly four cargo test/check lines" is
+> followed by five.** In `219c763`, `.github/workflows/ci.yml` has four `cargo test` run lines (49,
+> 117, 133, 135 — the four the finding lists) and one `cargo check` run line (115): five in all. No
+> other workflow file there has either. The auditor's text above is left unchanged.
+
 **Reviewer re-read.** `.github/workflows/ci.yml:120-135 (whole windows-broker job; quote verified at :129-135), :115, :117, :49; apps/desktop/src-tauri/Cargo.toml:47 (`[target.'cfg(windows)'.dependencies]`); win-live/src/proof.rs:342-409 (the ungated tests); win-live/proof/win_live_proof.ps1:1, :46-48; win-live/proof/CROSS_ACCOUNT_PROOF.md:24-32, :50-58; apps/desktop/AUDIT/AUDIT_LEDGER.md:23 (F-01 cites Linux CI run 31078055077)`
 
 > #### Implementer gate — fill this in BEFORE changing any code
@@ -2727,6 +2751,15 @@ Reported here so no one re-litigates them. The adversarial review refuted each o
 ## 7. Coverage
 
 What each group actually read, in its own words. Anything not covered is stated.
+
+> **Builder's note, 2026-10-14 (cockpit read R3-0512) — the groups below give different line counts
+> for the same snapshot file, one apart.** Counted in `219c763` (newline count, which is also what
+> `wc -l` prints; every one of these files ends in a newline): `engine/ci/live/run_live_turn.sh` 294,
+> `engine/runtime/supervisor_ledger.sql` 177, `engine/ci/live/run_supervisor.py` 167,
+> `engine/ci/live/build_tcb_pin_manifest.py` 121, `apps/desktop/AUDIT/AUDIT_LEDGER.md` 70,
+> `apps/desktop/src-tauri/win-live/src/execution.rs` 186,
+> `apps/desktop/src-tauri/win-live/src/tcb.rs` 81. Where a group below says 295, 178, 168, 122, 71,
+> 187 or 82 for those files, it is one too many. The groups' own words are left unchanged.
 
 
 **`f01-oracle`** — FULLY READ, line by line: engine/runtime/governed_supervisor.py (932 lines), engine/runtime/governed_supervisor_ledger.py (917), engine/runtime/governed_supervisor_server.py (774), engine/runtime/supervisor_ledger.sql (177), apps/desktop/src-tauri/core/schema/supervisor_ledger.sql (177), tools/check_ledger_ddl_parity.py (111), engine/ci/live/run_supervisor.py (full), apps/desktop/AUDIT/AUDIT_LEDGER.md (full), and the F-01/F-02/F-23 sections of apps/desktop/AUDIT/2026-08-06-independent-audit.md.

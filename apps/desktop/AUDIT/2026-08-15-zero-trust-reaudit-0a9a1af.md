@@ -222,6 +222,12 @@ which is exactly what `A-02` said it was not. (e) is the honest limit and is unc
 document to *itself*; what stops a wholesale forgery is custody of the directory plus the `output_handle`
 check at (f). `A-02` was reported as defence-in-depth and it is now defence-in-depth that works.
 
+> **Builder's note, 2026-10-14 (cockpit read R3-0513) — "five forged chains" above is six.** The
+> block lists six cases, (a) through (f), and this report's own results table in §5 says
+> "`attack_a02.py` — six forged chains through the real verifier | 4 refused, 1 accepted-by-design,
+> 1 refused by `EvidenceMismatch`", which is what the six lines show. The auditor's text above is
+> left unchanged.
+
 **And I ran the risk this fix created.** The verifier now hashes with JCS (`canonical_bytes`) while **both
 writers** still emit `serde_json::to_vec` (`governed_recorder.rs:960-963`, `win-live/src/execution.rs:161-173`).
 Before `A-02` a divergence was harmless; now it would refuse a *genuine* turn. Reconstructing the exact

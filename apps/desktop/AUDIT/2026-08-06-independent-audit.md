@@ -17,6 +17,11 @@
 >
 > Այս գտածոները արդեն անցել են մեկ հակափաստարկային անցում — մեկ այլ agent փորձել է սպանել յուրաքանչյուրը և չի կարողացել։ 5 գտածո սպանվել է և հանված է (տես վերջին բաժինը)։ Բայց դա քո ստուգումը չի փոխարինում։
 
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0895) — «վերջին բաժինը» սխալ հասցե ա։** Հերքված
+> հինգ գտածոն «Մաս 3 — Հերքված գտածոներ»-ում են, ու դա վերջին բաժինը չի. դրանից հետո գալիս են
+> «Մաս 4 — Փաստաթղթային drift»-ը ու «Առաջարկվող հերթականություն»-ը։ Աուդիտորի տեքստը վերևում
+> թողնված ա անփոփոխ։
+
 ---
 
 ## Ամփոփում
@@ -296,6 +301,14 @@ Any local uid on the box can `echo -n <bytes> > /opt/brops-live/store/$(sha256 o
 **Հակափաստարկային վճիռ (P2).** Could not refute. run_live_turn.sh:122 'chmod 1777 "$SOCK" "$REPORT" "$STORE"' is verbatim and is the LAST mode change applied to $STORE — the three service servers start afterwards (lines 143-145) and nothing re-tightens it. FileArtifactStore.read_verified (run_signer.py:48-59) tests only 64-lower-hex shape, isfile, and sha256(data)==handle, so any local uid that writes store/<sha256 of its own bytes> gets a resolvable handle; the sticky bit blocks replacing existing blobs but not adding new ones. That makes _verify_chain_handles (isolated_signer.py:647-656) a content-address tautology and lets the REASON_CONTAINMENT_MISSING gate (638-639) be satisfied with no containment. The claim gap is documented, not invented: isolated_signer.py:290-295 says 'a real deployment backs it with the signer/supervisor-only protected directory' and the design (WAVE_3B_ISOLATED_SIGNER_DESIGN.md §1.3) requires a 'protected, append-only, content-addressed evidence store'. Held at P2 rather than raised: planting blobs alone yields nothing without the supervisor attestation, so this is an enabler/claim-accuracy defect, not a standalone break.
 
 **Հերքողի վերընթերցածը.** `engine/ci/live/run_live_turn.sh:122 and engine/ci/live/run_signer.py:48-59`
+
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0502) — վերնագրի «in the shipped deployment»-ը
+> հակասում ա նույն այս գրառման `F-18`-ին։** `F-18`-ի վճիռը նույն live kit-ը (`engine/ci/live/`)
+> անվանում ա «root-only, proof/CI harness, nothing shipped»։ `b91f235`-ում
+> `apps/desktop/src-tauri/tauri.conf.json`-ի `bundle`-ը ոչ `resources` ուներ, ոչ `externalBin`,
+> ուրեմն installer-ը այս script-ը չէր կրում, ու `.github/workflows/`-ում `run_live_turn` բառը
+> զրո անգամ կար։ Վերնագրի «shipped deployment»-ը կարդալ որպես live kit-ի deployment, ոչ թե
+> shipped հավելված։ Գտածոն ու P2-ն չեն փոխվում. աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
 
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ — լրացնել ՆԱԽ քան սկսես
 > - [ ] Բացել եմ `engine/ci/live/run_live_turn.sh:122` և հաստատել եմ որ վերևի կոդը իրական է
@@ -632,6 +645,15 @@ uses: tauri-apps/tauri-action@v0
 
 **Հերքողի վերընթերցածը.** `.github/workflows/release.yml:51 (and 15-16, 38)`
 
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0503) — «shipped auto-updates»-ը ու «every
+> deployed client»-ը նկարագրում են մի բան որ `b91f235`-ում չկար։** Նույն այս գրառման Part 2-ը
+> չափել ա՝ «Auto-update mechanism … Zero code. The dependency is not even declared»։ Նորից
+> նայված ա այդ commit-ում. `updater` բառը չկար ոչ `apps/desktop/src-tauri/Cargo.toml`-ում, ոչ
+> `apps/desktop/package.json`-ում, ոչ `apps/desktop/src-tauri/tauri.conf.json`-ում։ Ուրեմն այդ
+> commit-ում updater-ի բանալին ոչ մի client-ի համար trust anchor չէր. «Ինչո՞ւ է կարևոր»
+> պարբերությունը կարդալ որպես latent, ինչպես աուդիտորի սեփական վճիռն ա գրում («a live latent
+> defect»)։ Գտածոն ու P2-ն չեն փոխվում. աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
+
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ — լրացնել ՆԱԽ քան սկսես
 > - [ ] Բացել եմ `.github/workflows/release.yml:51` և հաստատել եմ որ վերևի կոդը իրական է
 > - [ ] Հետագծել եմ կանչողին և հաստատել եմ որ ուղին հասանելի է
@@ -785,6 +807,12 @@ if _read(root, "NEXT_CHAT.md") is None:
 **Հակափաստարկային վճիռ (P2).** Could not refute. The identical `if _read(root, "NEXT_CHAT.md") is None: return problems` guard opens _check_current_state (183), _check_docs_reference_state (324), _check_status_tokens (384) and _check_current_contradictions (412), and CANONICAL_FILES (44-47) is (CLAUDE.md, PROJECT_STATE.md, TASKS.md, OWNERS.md, MASTER_EXECUTION_ROADMAP.md, docs/ARCHITECTURE.md) — NEXT_CHAT.md is absent. I searched for the guard that would save it: config/canonical-read-manifest.json:3 lists NEXT_CHAT.md and its notes assert 'Every path here is asserted to exist by the coordination gate', but _check_manifest_active_docs (352-358) only checks the REVERSE direction and only for ACTIVE_WAVE_DOCS — there is no manifest-path-existence check anywhere in check(). _check_state_sync passes because the deletion itself appears in the diff (472). main() prints GREEN with the `extra` clause silently dropped (579). One partial mitigation: the separate repo-state job still hard-fails if config/current_state.json is missing (check_repo_state.py:328-331), so this kills the semantic layer, not the file's existence.
 
 **Հերքողի վերընթերցածը.** `tools/check_coordination.py:183,324,384,412 + 44-47 + 579`
+
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0504) — «Դեֆեկտը» պարբերության
+> `_check_docs_reference_state (322)`-ը սխալ տող ա։** `b91f235`-ի `tools/check_coordination.py`-ում
+> `if _read(root, "NEXT_CHAT.md") is None:` guard-ը չորս տողում ա՝ 183, 324, 384, 412, ու ուրիշ
+> ոչ մի տեղ. `_check_docs_reference_state`-ինը 324-ն ա, ինչպես գրում են վճիռն ու վերընթերցման
+> ցանկը։ Աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
 
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ — լրացնել ՆԱԽ քան սկսես
 > - [ ] Բացել եմ `tools/check_coordination.py:183` և հաստատել եմ որ վերևի կոդը իրական է
@@ -1819,6 +1847,12 @@ function isGuardDenied(message: string): boolean {
 
 **Հերքողի վերընթերցածը.** `.github/workflows/release.yml:38 (vs .github/workflows/ci.yml:98 and a11y.yml:29)`
 
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0505) — «used five times in ci.yml (lines 98,
+> 111, 130, 154, 173)»-ը սխալ ա հաշված։** `b91f235`-ի `.github/workflows/ci.yml`-ում
+> `actions/setup-python@0b93645e…`-ը վեց տողում ա՝ 98, 111, 130, 154, 174, 191 — ինչպես գրում ա
+> Part 2-ի challenger-ի նշումը այս նույն գրառման մեջ։ 173-րդ տողում այն չկա։ Աուդիտորի տեքստը
+> վերևում թողնված ա անփոփոխ։
+
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ — լրացնել ՆԱԽ քան սկսես
 > - [ ] Բացել եմ `.github/workflows/release.yml:38` և հաստատել եմ որ վերևի կոդը իրական է
 > - [ ] Հետագծել եմ կանչողին և հաստատել եմ որ ուղին հասանելի է
@@ -2014,6 +2048,12 @@ function isGuardDenied(message: string): boolean {
 - **Per-automation scheduler pane (`auSched`) in the detail view**
   - A hardcoded constant string, which the rubric defines as a stub. No schedule is ever read, set or displayed.
   - `apps/desktop/src/features/Automations.tsx:550-562 — hardcoded "No schedule" + hint "Scheduled fires need the scheduler backend"`
+
+  > **Builder-ի նշում, 2026-10-14 (cockpit read R3-0506) — «which the rubric defines as a stub»-ը
+  > հղում ա մի կանոնի որ այս գրառման մեջ տպված սանդղակում չկա։** Part 2-ի սկզբի սանդղակը հինգ
+  > աստիճան ունի՝ `1.00` / `0.75` / `0.50` / `0.25` / `0.00`, ու «stub» բառը չի պարունակում։
+  > Գնահատողին տրված ավելի լրիվ սանդղակ եղե՞լ ա՝ այս գրառումից չի երևում։ Կետը մնում ա `0.00`-ի
+  > ցանկում. գնահատականը աուդիտորինն ա ու չի փոխվում, աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
 - **Scheduler that fires **governed** dispatches (fire → `bridge.task-request` → lease → verified receipt)**
   - The core deliverable of the phase does not exist in any form — no timer, no fire loop, no dispatch call site.
   - `no evidence found — grep for cron|scheduler|schedule_at|next_fire across apps/, bridge/, contracts/ (*.rs, *.ts, *.tsx, *.py, *.sql, *.json) matched only package-lock.json:3229 (React's `scheduler` dep) and Automations.tsx comments at :78, :451, :550, :558`
@@ -2184,6 +2224,13 @@ function isGuardDenied(message: string): boolean {
 - **[Phase ci-tests] No CI gate can pass vacuously via `continue-on-error` or a soft failure** — `1` → `0.75`
   - The property as stated is false, and nothing tests it. tools/check_capabilities.py:45 `return set(re.findall(r"(?:commands|files)::([a-z0-9_]+)", body))` cannot match the handler entry at apps/desktop/src-tauri/src/lib.rs:97 `governed_turn::governed_turn_execute`, so the capability gate passes vacuously on the one command Wave 3b added; tools/check_ai_surfaces.py:41 parses only commands.rs. 'No continue-on-error' is true today (grep over .github/workflows returns none) but is enforced by nothing — there is no workflow-lint job — so 1.00's 'a real test that would fail if it broke' is not met.
 
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0507) — վերևի վերջին կետի
+> `tools/check_capabilities.py:45`-ը ու `tools/check_ai_surfaces.py:41`-ը մեկ տողով շեղված են։**
+> `b91f235`-ում մեջբերված `return set(re.findall(…))`-ը `check_capabilities.py`-ի 46-րդ տողն ա
+> (45-րդը `body = re.sub(…)`-ն ա), ու `COMMANDS_RS = "apps/desktop/src-tauri/src/commands.rs"`-ը
+> `check_ai_surfaces.py`-ի 42-րդն ա (41-րդը դատարկ տող ա) — ինչպես Part 1-ի գտածոներն են գրում։
+> Աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
+
 ---
 
 # Մաս 3 — Հերքված գտածոներ (ՄԻ՛ ՈՒՂՂԻՐ)
@@ -2260,6 +2307,12 @@ function isGuardDenied(message: string): boolean {
 - `PROJECT_STATE.md` / `TASKS.md` / `NEXT_CHAT.md` / `config/current_state.json` = `2026-08-02` (`b91f235`)
 
 **Առաջարկվող լուծում.** 6 օր և 4+ PR ուշացում։ Կա՛մ թարմացնել roadmap-ը, կա՛մ §J-ն փոխել իրական աշխատանքի հոսքին։ Գործող օրենքը ավելի լավ է, քան անտեսվողը — բայց հիմա այն անտեսվում է լուռ, առանց CI-ի բողոքի (տես `F-` supply-chain գտածոները coordination gate-ի մասին)։
+
+> **Builder-ի նշում, 2026-10-14 (cockpit read R3-0896) — `F-`-ի համարը լրացված չի։** Այս գրառման
+> մեջ coordination gate-ը վերնագրում կրող միակ գտածոն `F-19`-ն ա («Deleting NEXT_CHAT.md silently
+> disables the entire semantic layer of the coordination gate, which then prints GREEN»,
+> dimension `supply-chain-ci`)։ Աուդիտորը հենց դա՞ նկատի ուներ, թե մի քանիսը՝ տեքստից չի երևում։
+> Աուդիտորի տեքստը վերևում թողնված ա անփոփոխ։
 
 > #### ⚠️ ՍՏՈՒԳՄԱՆ ԴԱՐՊԱՍ
 > - [ ] Ստուգել եմ `git log -1 --format=%ad -- MASTER_EXECUTION_ROADMAP.md`
