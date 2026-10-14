@@ -18,7 +18,8 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     // The timeouts above treat the symptom; this treats the load. vitest's default worker count is
-    // the machine's CPU count minus one, and with 80 jsdom suites that oversubscribes the box: on
+    // the machine's CPU count minus one, and with one jsdom environment per suite file (80 of them
+    // when this was measured) that oversubscribes the box: on
     // a 12-CPU Windows machine on 2026-09-19 the default spent 451–474 s in `environment` and
     // 123–145 s in `tests` for a 78–81 s wall clock, while `--maxWorkers=4` spent 200 s and 62 s for
     // 92–96 s — half the contention for a sixth more wall time. `--maxWorkers=2` cost 122–165 s.

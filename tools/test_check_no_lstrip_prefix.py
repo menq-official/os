@@ -21,6 +21,7 @@ import contextlib
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 import check_no_lstrip_prefix as gate
 
@@ -232,13 +233,34 @@ class TheRepositoryItself(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertGreater(scanned, 100, "the sweep found almost no files; check the root")
 
-    def test_check_roadmap_order_uses_removeprefix(self):
-        source = (ROOT / "tools" / "check_roadmap_order.py").read_text(encoding="utf-8")
-        self.assertIn('.replace("\\\\", "/").removeprefix("./")', source)
+    # The two below CALL the fixed functions. Until 2026-10-14 each asserted that one exact
+    # expression stood in the other tool's source, and stayed green with a character-set strip
+    # appended after it -- the defect back, the text still there.
 
-    def test_check_audit_reports_uses_removeprefix(self):
-        source = (ROOT / "tools" / "check_audit_reports.py").read_text(encoding="utf-8")
-        self.assertIn('.split("#", 1)[0].removeprefix("./")', source)
+    def test_check_roadmap_order_strips_the_prefix_and_not_the_dot(self):
+        import check_roadmap_order as order
+
+        with mock.patch.object(order.receipt_store, "load",
+                               return_value={"declared_phase": order.META}):
+            # `.claude/` and `.github/` are meta scope; with the dot stripped neither is.
+            for path in ("./.claude/settings.json", ".claude/settings.json",
+                         ".\\.github\\workflows\\ci.yml", ".github/workflows/ci.yml"):
+                self.assertIsNone(order.scope_problem(ROOT, "any-session", path), path)
+            # The positive control: the same call still refuses product code, and names the
+            # path with its `./` gone and nothing else.
+            refused = order.scope_problem(ROOT, "any-session", "./apps/desktop/src/App.tsx")
+            self.assertIn("may not edit apps/desktop/src/App.tsx.", refused or "")
+
+    def test_check_audit_reports_strips_the_prefix_and_not_the_dot(self):
+        import check_audit_reports as reports
+
+        def link(target: str) -> str | None:
+            return reports.authoritative_link(
+                f"**Authoritative current assessment:** [the report]({target})")
+
+        self.assertEqual(link("./.claude/audit/report.md#verdict"), ".claude/audit/report.md")
+        self.assertEqual(link(".claude/audit/report.md"), ".claude/audit/report.md")
+        self.assertEqual(link("./2026-10-09-report.md"), "2026-10-09-report.md")
 
 
 if __name__ == "__main__":

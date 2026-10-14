@@ -154,8 +154,9 @@ afterwards needs an administrator.
 > already in place**. What puts it there is `brops_install_anchor` (`provision/src/posix_install.rs`):
 > run once, as root, at install time, it creates the anchor directory
 > created at `<POSIX_MACHINE_ROOT>/trust-anchor` (read `anchor::POSIX_MACHINE_ROOT` for the current
-> literal rather than copying one out of a document), mode `0755`, owned by a **different** uid — root or a
-> dedicated `brops-anchor` account — with every ancestor likewise, hands the retained keys to the
+> literal rather than copying one out of a document), mode `0755`, owned by a **different** uid — root: the
+> installer refuses to run as any other uid and creates no account — with every ancestor likewise,
+> hands the retained keys to the
 > desktop account, and does not report success until the application's own launch-time check passes
 > **for that account**. The `.deb` runs it from `postinst` through `/usr/lib/brops/brops-install`, and
 > CI runs its end-to-end test as root. A machine whose install step did not run is not supported for
@@ -368,8 +369,11 @@ command surface.
 
 ## 6. Governed vs. ungoverned execution (operational meaning)
 
-- **Ungoverned providers** (`claude-cli` / `anthropic` / `ollama`) produce normal streamed replies.
-  This is the working daily path. Note that `claude-cli` with `BROPS_PROJECT_DIR` set is
+- **Ungoverned providers** (`claude-cli` / `anthropic` / `ollama`) produce normal streamed replies
+  only under the development opt-in `BROPS_ALLOW_UNGOVERNED=1`, which the `dev-ungoverned` build
+  sets for itself; the default build refuses each of them by name and, with nothing set, refuses
+  with *"no AI provider configured"* (`resolve_provider`, `src-tauri/src/ai.rs`). Note that
+  `claude-cli` with `BROPS_PROJECT_DIR` set is
   *contained* — a sandbox, a bounded shell, a tier-bounded specialist — but it is **not governed**:
   no lease, no signed receipt, and path scope is stated rather than enforced. The UI does not call
   it governed, and neither should you.

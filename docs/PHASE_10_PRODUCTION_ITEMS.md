@@ -114,7 +114,9 @@ closeable by editing CI, `tauri.conf.json` or `docs/`; each is an audited change
   trusts the control-plane digest; (b) ✅ the hook commands in `engine/.claude/settings.json` invoking
   `python -B` on **every** `||` interpreter alternative; (c) ◑ done: `compileall` now runs AFTER
   `engine/tools/bro_live_validate.py` in both `.github/workflows/ci.yml` and
-  `engine/.github/workflows/verify.yml`, a cache-clearing step runs immediately before the probe,
+  `engine/.github/workflows/verify.yml` (only the first runs here: GitHub dispatches the root
+  `.github/workflows/` and never executes the vendored `verify.yml`, so the step in it is text and
+  the executed evidence is `ci.yml`'s), a cache-clearing step runs immediately before the probe,
   the validator is invoked as `python -B`, and both jobs carry `PYTHONDONTWRITEBYTECODE=1` — which
   `compileall` was NOT the only producer of: `engine/tools/bro_validate.py` calls `py_compile`,
   which writes caches even under that variable, and the probe planted a shadow on itself by

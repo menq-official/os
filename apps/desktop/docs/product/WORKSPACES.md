@@ -2,7 +2,7 @@
 - **Scope:** Per-workspace definitions from Home through Settings. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [NAVIGATION.md](NAVIGATION.md), [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [GROUP_CHAT.md](GROUP_CHAT.md), [SEARCH_AND_COMMAND_PALETTE.md](SEARCH_AND_COMMAND_PALETTE.md), [USER_FLOWS.md](USER_FLOWS.md), [../architecture/ARCHITECTURE.md](../architecture/ARCHITECTURE.md), [../architecture/DESIGN_SYSTEM.md](../architecture/DESIGN_SYSTEM.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS Workspaces Specification / Աշխատանքային տարածքների սպեցիֆիկացիա
 
@@ -40,6 +40,8 @@ Accepted choices with context, alternatives, rationale, owner, effective date, c
 
 ## Bridge / Կամուրջ
 The governed bridge panel — the only screen from which the engine's decision ledger, the independent-verifier verdicts and a governed turn are reachable. The two mirrors are read-only; the governed turn is sent only on an explicit click. It shows only what the desktop actually received: a verdict appears only when the broker or the engine issued one, "the broker refused" and "no broker was reached" are different outcomes, and an empty mirror reads as nothing to mirror. Added after this specification was drafted (`src/features/Bridge.tsx`); no flow document covers it yet.
+
+*(Read against the code 2026-10-14.)* Bridge is not the only screen: the same panel is mounted on two. `BridgePage` in `src/features/Bridge.tsx` renders `<BridgePanel asPage />` as the routed page (`bridge` in `src/app/routes.tsx`), and `src/features/Decisions.tsx` mounts `<BridgePanel taskId={selected?.id} />` under its own list, where the verifier-verdicts mirror is scoped to the selected decision. Both mounts read the two mirrors (`desktop.readDecisionLedger`, `desktop.readVerifierVerdicts`) and both carry the send control for a governed turn. No other file under `src/` mounts the panel.
 
 ## Research / Հետազոտություն
 Evidence-first investigations with questions, sources, findings, contradictions, confidence, and unresolved gaps.

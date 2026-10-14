@@ -5,7 +5,7 @@ import { playwright } from '@vitest/browser-playwright';
 // The THIRD test project, and the only one that measures rather than reads.
 //
 // `vitest.config.ts` and `vitest.a11y.config.ts` both set `css: false`. That is not a detail:
-// it means 713 unit tests and 59 axe checks run against a DOM with **no stylesheet attached**,
+// it means every unit test and every axe check runs against a DOM with **no stylesheet attached**,
 // so every assertion about appearance in this repository is really an assertion about a
 // className string. `A-01` is what that costs — a test asserted the token `sigbreathe` was in a
 // class list (it was) while the element it named rendered at `opacity: 0`, invisible, and shipped.

@@ -2,7 +2,7 @@
 - **Scope:** Knowledge, Memory, Decisions, Research, Library, Calendar, Automations, Activity, Notifications, Files, Integrations, Analytics, Security, Settings. For each: entry point, primary action, key sub-flows, and the canonical states it must show. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [WORKSPACES.md](WORKSPACES.md), [USER_FLOWS.md](USER_FLOWS.md), [STATES.md](STATES.md), [CHAT_FLOWS.md](CHAT_FLOWS.md), [PROJECT_TASK_FLOWS.md](PROJECT_TASK_FLOWS.md), [DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md), [AGENT_FLOWS.md](AGENT_FLOWS.md), [NAVIGATION.md](NAVIGATION.md), [SCREEN_INVENTORY.md](SCREEN_INVENTORY.md), [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS Workspace Flows
 
@@ -13,6 +13,8 @@ This document specifies what the user actually sees and does inside each remaini
 Flows that already have dedicated documents are out of scope here: Chat and Group Chat ([CHAT_FLOWS.md](CHAT_FLOWS.md)), Projects and Tasks ([PROJECT_TASK_FLOWS.md](PROJECT_TASK_FLOWS.md)), Decisions-as-approval and Approvals ([DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md)), and Agents ([AGENT_FLOWS.md](AGENT_FLOWS.md)). The Decisions workspace surface itself is covered below for completeness and defers its approval mechanics to that document.
 
 Global rule (from [USER_FLOWS.md](USER_FLOWS.md)): no flow may hide execution state, approval state, ownership, failure, or uncertainty.
+
+*(Read against the code 2026-10-14.)* The flows below are the specification, and four things they assume are not in the shipped app, which [`../../SECURITY.md`](../../SECURITY.md) defines as a single-user local desktop app. **Several human roles** — the six in C.4 sub-flow 1 (Owner, Admin, Member, Viewer, Agent, Service), "gated to Owner/Admin" in C.2 and C.5, "managing others' automations" in B.2, "others' … schedules" in B.1: no schema file under `src-tauri/core/schema/` creates a user, role or membership table, and no file under `src/` outside the tests has the word Admin, Member or Viewer as a role. **A server** — "writes that need the server" in C.5: the app's store is a local SQLite database (`SECURITY.md`, *Data at rest*). **Email delivery** — "optional email" in B.4 sub-flow 4: the notification commands registered in `src-tauri/src/lib.rs` are `list_notifications` and `mark_notification_read`; no command sets a delivery channel. **Sessions and devices** — C.4 sub-flow 2: no schema file creates a table of login sessions or of devices (the one table with `session` in its name, `governed_turn_staging_session` in `supervisor_ledger.sql`, is the upload cursor of a governed turn's artifact).
 
 ---
 
@@ -49,6 +51,8 @@ Global rule (from [USER_FLOWS.md](USER_FLOWS.md)): no flow may hide execution st
   2. **Open a decision.** Shows context, options considered, chosen option, rationale, owner, approver, consequences, and rollback/replacement path.
   3. **Propose / move state.** Create a decision (state `proposed`); route to review; an approver approves/rejects/defers. Silence is never approval; chat agreement is not canonical until recorded; agents may recommend but must not impersonate the approver.
   4. **Supersede.** A superseding decision must reference the prior one; the chain stays visible.
+
+  *(Read against the code 2026-10-14.)* Sub-flows 3 and 4 are the specification; the shipped page lists decisions and changes none. `src/features/Decisions.tsx` loads the desktop's local table through `desktop.listDecisions()` and nothing else writes to it from the page: `src/services/desktop.ts` has no wrapper that creates a decision or moves its state. The host registers two decision commands, `list_decisions` and `create_decision` (`src-tauri/src/commands.rs`, `src-tauri/src/lib.rs`); nothing under `src/` calls the second, and no command changes a decision's state or supersedes one.
 - **States:** `loading`, `empty` (first-run invite to record the first decision), `populated` (state + owner + approver inline), `error`, `offline` (read cached, no state changes), `permission-denied` (approve gated to the approver), `blocked` (waiting on an upstream dependency or unverified context), `awaiting-approval` (high-impact decision paused for explicit owner approval), `destructive-confirmation` (reject/supersede names the effect), `success` (approved decision updates linked tasks/knowledge/policy). See [STATES.md](STATES.md).
 
 ### A.4 Research / Հետազոտություն
@@ -198,6 +202,8 @@ With this document, every primary workspace in [SCREEN_INVENTORY.md](SCREEN_INVE
 
 Համընդհանուր կանոն ([USER_FLOWS.md](USER_FLOWS.md)-ից)․ ոչ մի հոսք չի կարող թաքցնել կատարման վիճակը, հաստատման վիճակը, սեփականությունը, ձախողումը կամ անորոշությունը։
 
+*(Կոդի դեմ կարդացված 2026-10-14։)* Ներքևի հոսքերը սպեցիֆիկացիան են, ու դրանց ենթադրած չորս բան shipped app-ում չկա, որը [`../../SECURITY.md`](../../SECURITY.md)-ն սահմանում ա որպես մեկ օգտատիրոջ local desktop app։ **Մի քանի մարդկային role** — Գ.4-ի 1-ին ենթահոսքի վեցը (Owner, Admin, Member, Viewer, Agent, Service), Գ.2-ի ու Գ.5-ի «gated Owner/Admin-ին»-ը, Բ.2-ի «ուրիշների automation-ների կառավարումը», Բ.1-ի «ուրիշների … schedule-ները»․ `src-tauri/core/schema/`-ի տակ ոչ մի schema ֆայլ user-ի, role-ի կամ membership-ի աղյուսակ չի ստեղծում, ու `src/`-ի տակ, թեստերից դուրս, ոչ մի ֆայլում Admin, Member կամ Viewer բառը որպես role չկա։ **Server** — Գ.5-ի «server պահանջող write-երը»․ app-ի պահոցը local SQLite բազա ա (`SECURITY.md`, *Data at rest*)։ **Email-ով առաքում** — Բ.4-ի 4-րդ ենթահոսքի «optional email»-ը․ `src-tauri/src/lib.rs`-ում գրանցված ծանուցումների հրամաններն են `list_notifications`-ն ու `mark_notification_read`-ը. առաքման channel դնող հրաման չկա։ **Session-ներ ու device-ներ** — Գ.4-ի 2-րդ ենթահոսք․ ոչ մի schema ֆայլ login session-ների կամ device-ների աղյուսակ չի ստեղծում (անվան մեջ `session` ունեցող միակ աղյուսակը՝ `supervisor_ledger.sql`-ի `governed_turn_staging_session`-ը, governed turn-ի artifact-ի upload-ի cursor-ն ա)։
+
 ---
 
 ## Ա. Intelligence
@@ -233,6 +239,8 @@ With this document, every primary workspace in [SCREEN_INVENTORY.md](SCREEN_INVE
   2. **Բացել որոշում.** Ցույց է տալիս context, դիտարկված option-ներ, ընտրված option, rationale, owner, approver, consequences և rollback/replacement path։
   3. **Propose / փոխել state.** Ստեղծել որոշում (`proposed`); ուղղել review; approver-ը approve/reject/defer է անում։ Լռությունը երբեք approval չէ; chat համաձայնությունը canonical չէ մինչև գրանցումը; ագենտները կարող են recommend անել, բայց չեն կարող approver-ի կերպար ընդունել։
   4. **Supersede.** Superseding որոշումը պետք է հղի նախորդին; շղթան մնում է տեսանելի։
+
+  *(Կոդի դեմ կարդացված 2026-10-14։)* 3-րդ ու 4-րդ ենթահոսքերը սպեցիֆիկացիան են. shipped էջը որոշումները ցուցակում ա ու ոչ մեկը չի փոխում։ `src/features/Decisions.tsx`-ը desktop-ի local աղյուսակը բեռնում ա `desktop.listDecisions()`-ով, ու էջից դրան ուրիշ ոչինչ չի գրում՝ `src/services/desktop.ts`-ում որոշում ստեղծող կամ դրա state-ը փոխող wrapper չկա։ Host-ը որոշումների երկու հրաման ա գրանցում՝ `list_decisions` ու `create_decision` (`src-tauri/src/commands.rs`, `src-tauri/src/lib.rs`). երկրորդը `src/`-ի տակ ոչինչ չի կանչում, ու որոշման state-ը փոխող կամ այն supersede անող հրաման չկա։
 - **Վիճակներ․** `loading`, `empty` (first-run՝ գրանցել առաջին որոշումը), `populated` (state + owner + approver inline), `error`, `offline` (read cached, state չի փոխվում), `permission-denied` (approve-ը gated approver-ին), `blocked` (սպասում upstream dependency-ի կամ չստուգված context-ի), `awaiting-approval` (բարձր ազդեցության որոշումը կասեցված է owner-ի բացահայտ approval-ի), `destructive-confirmation` (reject/supersede՝ էֆեկտով), `success` (approved որոշումը թարմացնում է կապված task/knowledge/policy)։ Տես [STATES.md](STATES.md)։
 
 ### Ա.4 Research / Հետազոտություն

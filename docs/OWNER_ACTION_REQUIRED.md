@@ -1168,8 +1168,9 @@ without one.
 
 ## 2f. The repository is public and grants nothing — and four bundled fonts ship without their notice
 
-Two defects, opposite in kind. The tenth round's audit found them (`F13`) and every clause below was
-measured, not inferred.
+Two defects, opposite in kind. They were written here on 2026-09-20 as `F13` — an id that no filed
+audit report and neither ledger carries; the tenth round's report names neither defect — and every
+clause below was measured, not inferred.
 
 ### 1. The first-party code has no outbound licence at all — and this one is yours
 

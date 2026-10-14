@@ -439,14 +439,60 @@ class TheRealInputs(unittest.TestCase):
             self.assertIn("and stderr", text)
             self.assertEqual(inputs.gates(), ["check_x.py"])
 
-    def test_the_two_gates_it_runs_take_the_arguments_it_passes(self):
-        """`check_bundle_budget.py --root` and a bare `check_runbook_snippets.py`: if either
-        stopped accepting that, this gate would report a usage error as a RED bundle."""
-        import check_bundle_budget
-        import inspect
-        self.assertIn('"--root"', inspect.getsource(check_bundle_budget.main))
-        for marker in check_push_ready.NO_BUILD:
-            self.assertIn(marker, inspect.getsource(check_bundle_budget))
+    def test_the_bundle_gate_takes_root_and_says_no_build_in_the_words_this_gate_reads(self):
+        """`check_bundle_budget.py --root <tree>`, run the way this gate runs it: if it stopped
+        accepting that, or reworded either answer in `NO_BUILD`, this gate would report a usage
+        error or a missing build as a RED bundle.
+
+        The real gate, through the real `run_gate`, on a tree with no build and then on one whose
+        build is older than a source. Until 2026-10-14 this was a substring check of the gate's
+        source, green with the option renamed and with either sentence reworded, as long as the
+        old words stayed in a comment. Mutant: any of those three ⇒ red here."""
+        import json
+        import os
+
+        inputs = check_push_ready.Inputs(ROOT)
+        stale_words, missing_words = check_push_ready.NO_BUILD
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = pathlib.Path(tmp)
+            desktop = tree / "apps" / "desktop"
+            (desktop / "src").mkdir(parents=True)
+            (desktop / "perf-budget.json").write_text(
+                json.dumps({"entries": {"index": {"max_gzip_kb": 500}}, "routes": {}}),
+                encoding="utf-8")
+
+            code, text = inputs.run_gate(BUNDLE, ["--root", str(tree)])
+            self.assertEqual(code, 1, text)
+            self.assertIn(missing_words, text)
+            self.assertNotIn("usage:", text)
+
+            manifest = desktop / "dist" / ".vite" / "manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({"index.html": {
+                "file": "assets/index.js", "name": "index", "src": "index.html",
+                "isEntry": True}}), encoding="utf-8")
+            source = desktop / "src" / "App.tsx"
+            source.write_text("x", encoding="utf-8")
+            later = manifest.stat().st_mtime + 60
+            os.utime(source, (later, later))
+
+            code, text = inputs.run_gate(BUNDLE, ["--root", str(tree)])
+            self.assertEqual(code, 1, text)
+            self.assertIn(stale_words, text)
+            self.assertNotIn("usage:", text)
+
+    def test_the_snippets_gate_reaches_a_verdict_when_run_bare(self):
+        """A bare `check_runbook_snippets.py`, run the way this gate runs it. The test this
+        replaces named that gate in its docstring and never touched it. Mutant: the gate starts
+        to require an argument ⇒ it prints usage, not a verdict, and this is red."""
+        inputs = check_push_ready.Inputs(ROOT)
+        blocker = inputs.snippets_blocker()
+        if blocker is not None:
+            self.skipTest(f"the gate itself cannot run here: {blocker}")
+        code, text = inputs.run_gate(SNIPPETS, [])
+        self.assertIn(code, (0, 1), text)
+        self.assertRegex(text, r"(?m)^(GREEN|RED): ")
+        self.assertNotIn("usage:", text)
 
 
 if __name__ == "__main__":

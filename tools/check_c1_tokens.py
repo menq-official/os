@@ -120,7 +120,11 @@ def root_blocks(css: str) -> list[dict[str, str]]:
 
 
 def root_declarations(css: str) -> dict[str, str]:
-    """The BASE `:root` — the block §C.1 parity is measured against. Pure/testable."""
+    """The BASE `:root` — the block §C.1 parity is measured against. Pure/testable.
+
+    Called by this gate's tests only: `main()` does not go through here, it takes
+    `root_blocks(css)[0]` itself, so a test of this function does not pin which block the gate
+    compares (read 2026-10-14)."""
     return root_blocks(css)[0]
 
 
