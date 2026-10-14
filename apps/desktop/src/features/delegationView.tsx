@@ -171,8 +171,6 @@ export function outcomeBadge(outcome: DelegationOutcome): { tone: Tone; key: Cha
       return { tone: 'success', key: 'outcomeOk' };
     case 'error':
       return { tone: 'danger', key: 'outcomeError' };
-    case 'cancelled':
-      return { tone: 'warning', key: 'outcomeCancelled' };
     case 'running':
       return { tone: 'info', key: 'outcomeRunning' };
     default:

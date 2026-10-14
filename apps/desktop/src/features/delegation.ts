@@ -102,7 +102,6 @@ export function isWorkPath(v: unknown): v is string {
 
 // ── The wire contract ───────────────────────────────────────────────────────────────
 
-/** Where a rendered tool list came from. Never invented. */
 /**
  * Where the spawned agent's NAME came from — the backend's `agentOrigin`.
  *
@@ -146,6 +145,7 @@ export function originIsUnbounded(o: AgentOrigin): boolean {
   return o === 'cli_builtin' || o === 'unrecognized';
 }
 
+/** Where a rendered tool list came from. Never invented. */
 export type ToolsSource =
   /** The definition this app handed the CLI as `--agents` for that exact agent type. It IS what
    *  bounds the run, so the card may call it enforced. (`ai.rs::ToolsSource::AgentDefinition`.) */
@@ -180,7 +180,7 @@ export interface DelegationGrant {
   enforcement: ScopeEnforcement;
 }
 
-export type DelegationOutcome = 'running' | 'ok' | 'error' | 'cancelled' | 'unknown';
+export type DelegationOutcome = 'running' | 'ok' | 'error' | 'unknown';
 
 export interface Delegation {
   /** Stable spawn id (the CLI's `tool_use.id`). Two events with one id are one delegation. */
@@ -387,7 +387,7 @@ export function parseDelegation(raw: unknown): Delegation | null {
   };
 }
 
-const OUTCOMES: readonly DelegationOutcome[] = ['ok', 'error', 'cancelled'];
+const OUTCOMES: readonly DelegationOutcome[] = ['ok', 'error'];
 
 /**
  * Fold one event into the list.
@@ -474,11 +474,6 @@ export function applyDelegationEventForConversation(
     if (!parsed || parsed.conversationId !== conversationId) return [...list];
   }
   return applyDelegationEvent(list, ev);
-}
-
-/** Fold a whole batch (a reload of persisted delegations, or a replayed turn). */
-export function reduceDelegationEvents(events: readonly DelegationEvent[]): Delegation[] {
-  return events.reduce<Delegation[]>((acc, ev) => applyDelegationEvent(acc, ev), []);
 }
 
 /**

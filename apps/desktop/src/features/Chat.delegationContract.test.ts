@@ -20,7 +20,6 @@ import {
   parseDelegationList,
   parseDelegationRecord,
   readGrant,
-  reduceDelegationEvents,
   resolveTools,
   type Delegation,
   type DelegationEvent,
@@ -237,11 +236,31 @@ describe('the event fold', () => {
   });
 
   it('calls an unreadable outcome unknown, never ok', () => {
-    const out = reduceDelegationEvents([
-      spawned,
-      { type: 'delegationSettled', id: 'toolu_1', outcome: 'sort_of_worked' },
-    ]);
+    const out = applyDelegationEvent(applyDelegationEvent([], spawned), {
+      type: 'delegationSettled', id: 'toolu_1', outcome: 'sort_of_worked',
+    });
     expect(out[0].outcome).toBe('unknown');
+  });
+
+  // `ai.rs::delegation_settlements` is the one place a settled frame's outcome is chosen
+  // (`DelegationSettled { outcome: &'static str }` has no other constructor). The reader keeps
+  // the words that function can send and nothing else, so a word the backend never says cannot
+  // sit in the vocabulary as if something produced it.
+  it('reads exactly the outcomes the backend sends', () => {
+    const aiRs = readFileSync(resolve(REPO_ROOT, 'apps/desktop/src-tauri/src/ai.rs'), 'utf8');
+    const chooser = /let outcome = match block\.get\("is_error"\)[\s\S]*?\n        \};/.exec(aiRs);
+    expect(chooser, 'ai.rs no longer chooses the outcome where this test reads it').not.toBeNull();
+    const sent = [...new Set([...chooser![0].matchAll(/=> "([a-z_]+)"/g)].map((m) => m[1]))].sort();
+    expect(sent).toEqual(['error', 'ok', 'unknown']);
+
+    const settle = (outcome: string) =>
+      applyDelegationEvent(applyDelegationEvent([], spawned), {
+        type: 'delegationSettled', id: 'toolu_1', outcome,
+      })[0].outcome;
+    for (const outcome of sent) expect(settle(outcome)).toBe(outcome);
+    // Never sent, so never read as a word of its own — on the live path or from a stored record.
+    expect(settle('cancelled')).toBe('unknown');
+    expect(parseDelegationRecord(spawn({ outcome: 'cancelled' }))!.outcome).toBe('unknown');
   });
 
   it('drops a spawn event whose payload the reader refuses', () => {

@@ -191,11 +191,6 @@ export const STR = {
     hy: 'ձախողվեց',
     ru: 'ошибка',
   },
-  outcomeCancelled: {
-    en: 'cancelled',
-    hy: 'չեղարկված',
-    ru: 'отменено',
-  },
   outcomeUnknown: {
     en: 'finished · outcome unreadable',
     hy: 'ավարտվեց · արդյունքն ընթեռնելի չէ',

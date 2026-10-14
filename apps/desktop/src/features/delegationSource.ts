@@ -27,7 +27,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { hasBackend } from '../services/desktop';
 import { parseDelegationList, type Delegation } from './delegation';
 
-/** Proposed name for the read-side command. See the report for the full contract. */
+/** Proposed name for the read-side command. No backend registers it; the reply this module
+ *  would accept from it is whatever `parseDelegationList` (`delegation.ts`) accepts. */
 export const DELEGATION_LIST_COMMAND = 'list_delegations';
 
 export type DelegationUnavailable =
@@ -71,7 +72,8 @@ export function classifyDelegationFailure(message: string): DelegationUnavailabl
  * `Conversations.tsx` now renders the surface itself and passes the thread it is actually
  * showing, so the probe is scoped to one conversation rather than asking for everything and
  * sorting it out afterwards. It stays OPTIONAL for the case with no thread open (and for the
- * direct unit tests below), where `null` goes out and the backend would decide what that means.
+ * direct unit tests in `Chat.delegation.test.tsx`), where `null` goes out and the backend would
+ * decide what that means.
  * Every record also carries its own `conversationId`, so a reply can still be checked rather
  * than assumed to match what was asked for.
  */

@@ -17,14 +17,16 @@
 // ---------------------------
 // `create_integration` NOW EXISTS: it is registered in `commands.rs`, declared in
 // `command-policy.json` and `build.rs`, and granted as `allow-create-integration`. The
-// desktop can declare a connector. Use `desktop.createIntegration` — the typed boundary —
-// rather than the local wrapper below, which stays only until this file's caller moves over.
+// desktop can declare a connector. `declareIntegration` below is what the page calls; it sends
+// the call through `desktop.createIntegration` — the typed boundary — and adds what that does
+// not do: it checks the input, validates the reply and classifies a refusal.
 //
 // `probe_integration` STILL DOES NOT EXIST, and that is a decision rather than an omission.
 // Nothing downstream can answer it: `bridge/engine_sidecar.py` does dispatch named ops now,
-// but its whole table is one row (`governance.read`), and no engine, operator or supervisor
-// endpoint knows anything about external connectors. Registering a command that
-// cannot produce a boolean `reachable` would make this surface WORSE: today's capability-wall
+// but its whole table is two rows (`governance.read` and `approval.request`), neither of them
+// about connectors, and no engine, operator or supervisor endpoint knows anything about
+// external connectors. Registering a command that cannot produce a boolean `reachable` would
+// make this surface WORSE: today's capability-wall
 // refusal classifies as `unsupported` ("this build cannot ask", a fact about the build, and
 // true), while a registered no-answer command downgrades it to `indeterminate` ("we asked and
 // learned nothing", a fact about an attempt that never happened).
@@ -40,6 +42,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { Integration } from '../domain/entities';
+import { desktop } from '../services/desktop';
 import type { Reachability } from './integrationsModel';
 
 /** The backend command that would ask the engine/operator to contact the connector.
@@ -213,9 +216,12 @@ export async function declareIntegration(
   const p = provider.trim();
   if (n === '') return { ok: false, kind: 'invalid', field: 'name', reason: 'name is required' };
   if (p === '') return { ok: false, kind: 'invalid', field: 'provider', reason: 'provider is required' };
-  const transport = opts.transport ?? tauriTransport;
   try {
-    const raw = await transport(DECLARE_COMMAND, { name: n, provider: p });
+    // One production wrapper of `create_integration`: the typed boundary's. A test injects a
+    // transport instead and is handed the same command and arguments that wrapper sends.
+    const raw: unknown = opts.transport
+      ? await opts.transport(DECLARE_COMMAND, { name: n, provider: p })
+      : await desktop.createIntegration(n, p);
     return parseDeclareReply(raw);
   } catch (e) {
     const reason = messageOf(e);

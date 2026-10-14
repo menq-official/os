@@ -9,6 +9,7 @@
 // Extracted from the page so each rule can be unit-tested on its own.
 
 import type { DirEntry, FileContent } from '../domain/entities';
+import { parseTimestamp } from './timestamps';
 
 // ── guard vocabulary ────────────────────────────────────────────────────────
 //
@@ -123,15 +124,10 @@ export function establishedContentSize(data: Pick<FileContent, 'readonly' | 'siz
 // `null` when the platform did not report one. The page rendered neither, so a
 // real value the backend had already established was simply dropped.
 
-/** Parse the backend's `modified` field. Returns `null` when unset/unparseable. */
+/** Parse the backend's `modified` field. Returns `null` when unset/unparseable. The parsing is
+ *  `parseTimestamp`'s — the one parser for the timestamps the backend writes. */
 export function parseModified(raw: string | null | undefined): Date | null {
-  if (raw == null) return null;
-  const s = String(raw).trim();
-  if (s === '') return null;
-  const ms = Number(s);
-  if (!Number.isFinite(ms)) return null;
-  const d = new Date(ms);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return parseTimestamp(raw);
 }
 
 // ── ordering ────────────────────────────────────────────────────────────────

@@ -2,18 +2,20 @@
 // about them.
 //
 // ---- Why this module exists at all -------------------------------------------------
-// The direct chat already draws Bro's delegations: `Conversations.tsx` folds the
-// `delegationSpawned` / `delegationSettled` frames off the shared `StreamEvent` channel and
-// renders `DelegationSurface` beneath the workspace — but only for `kind === 'direct'`. In a
-// group room the same frames are folded and then drawn nowhere. A group room is exactly where
-// handing work to a named specialist matters most, so the gap is worth closing.
+// A group room has TWO delegation surfaces, one per live stream, and this module feeds one.
 //
-// It is closed HERE rather than there because `Conversations.tsx` is finished and off limits to
-// this task. What that leaves is the one live stream the Group Chat screen genuinely owns: the
-// consensus deck's own `desktop.streamReply` calls, the asks it sends to participants when a
-// round opens (or when it chases the silent ones). Delegations reported by THOSE turns reach
-// this module; delegations reported by the room's ordinary chat turns above do not, and the
-// surface says so out loud rather than letting a partial list read as the room's whole record.
+//  * The room's ordinary chat turns. `Conversations.tsx` folds the `delegationSpawned` /
+//    `delegationSettled` frames off the shared `StreamEvent` channel and renders
+//    `DelegationSurface` beneath the workspace for both kinds of conversation, direct and
+//    group. `GroupChat.tsx` mounts `<Conversations>`, so those delegations are drawn there.
+//  * The consensus deck's own `desktop.streamReply` calls — the asks it sends to participants
+//    when a round opens (or when it chases the silent ones). That stream belongs to the Group
+//    Chat screen, not to `Conversations.tsx`, so its frames are folded HERE and drawn by
+//    `GroupChat.tsx`'s `RoomDelegations`.
+//
+// Delegations reported by the deck's asks reach this module; delegations reported by the
+// room's ordinary chat turns do not, and the deck's surface says so out loud rather than
+// letting a partial list read as the room's whole record.
 //
 // ---- The two rules this module keeps -----------------------------------------------
 //  1. BINDING. A delegation filed under the wrong conversation is worse than one not shown, so

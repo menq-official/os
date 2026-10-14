@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // The probe module imports Tauri's `invoke` for its default transport. These tests
-// always inject a transport, so the real IPC is never touched — the mock only keeps
-// the import from exploding in jsdom.
+// inject a transport (or, for the one declare test without one, stand in for the typed
+// boundary), so the real IPC is never touched — the mock only keeps the import from
+// exploding in jsdom.
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: () => Promise.reject(new Error('no tauri in tests')),
   Channel: class {},
@@ -12,6 +13,7 @@ import {
   probeIntegration, declareIntegration, parseProbeReply, parseDeclareReply,
   isCapabilityRefusal, PROBE_COMMAND, DECLARE_COMMAND,
 } from './integrationsProbe';
+import { desktop } from '../services/desktop';
 
 const AT = '2026-01-01T00:00:00.000Z';
 const now = () => AT;
@@ -170,5 +172,25 @@ describe('declareIntegration', () => {
     const transport = vi.fn().mockResolvedValue({ ok: true });
     expect(await declareIntegration('X', 'x', { transport }))
       .toMatchObject({ ok: false, kind: 'refused' });
+  });
+
+  it('with no injected transport, declares through the typed boundary and no second wrapper', async () => {
+    const record = {
+      id: 'in-9', name: 'Slack', provider: 'slack', status: 'disconnected',
+      createdAt: '1', updatedAt: '1',
+    };
+    const boundary = vi.spyOn(desktop, 'createIntegration').mockResolvedValue(record);
+    try {
+      const out = await declareIntegration('  Slack ', ' slack ');
+      expect(boundary.mock.calls).toEqual([['Slack', 'slack']]);
+      expect(out).toEqual({ ok: true, integration: record });
+      // The boundary's reply is still validated here, and its refusal still classified.
+      boundary.mockResolvedValue({ ok: true } as never);
+      expect(await declareIntegration('X', 'x')).toMatchObject({ ok: false, kind: 'refused' });
+      boundary.mockRejectedValue(new Error(`${DECLARE_COMMAND} not allowed. Permissions associated with this command: `));
+      expect(await declareIntegration('X', 'x')).toMatchObject({ ok: false, kind: 'unsupported' });
+    } finally {
+      boundary.mockRestore();
+    }
   });
 });
