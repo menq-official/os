@@ -11,8 +11,10 @@
 //! `BRO_AUDIT_ANCHOR_SIGNER` — a command that, in the engine's own words, "MUST run under
 //! a principal that cannot write the ledger".
 //!
-//! On Debian that principal already exists: a `signer` user whose key file the engine's
-//! account cannot read. On Windows the app runs entirely as the installing user. One
+//! On Debian that principal is a `signer` user whose key file the engine's account cannot
+//! read — an account only the runbook creates, by hand (`adduser` in
+//! `docs/DEBIAN_DEPLOYMENT.md`); the `.deb`'s postinst adds no user. On Windows
+//! the app runs entirely as the installing user. One
 //! account, one hand — an anchor signed by the account that can rewrite what it attests
 //! proves nothing, and shipping it would produce anchors that *look* valid. This module
 //! builds the missing principal.
@@ -122,9 +124,14 @@
 //!   `CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE`. That constructor has no such flag.
 //! * The **mask constants** below are the same numbers as `pipe_acl`'s. They are restated
 //!   because this crate builds on Linux, where `brops-win-live` is not a dependency, and the
-//!   *decisions* must be unit-testable there. They cannot drift silently:
-//!   `tests/audit_signer.rs::win_live_constants_have_not_drifted` pins every one of them
-//!   against the real `brops_win_live::pipe_acl` on Windows.
+//!   *decisions* must be unit-testable there. On Windows,
+//!   `tests/audit_signer.rs::win_live_constants_have_not_drifted` pins most of them, not all:
+//!   eleven masks, [`WRITE_ACCESS_BITS`] and the two TCB SIDs against the real
+//!   `brops_win_live::pipe_acl`, [`FILE_READ_EA`] and [`FILE_GENERIC_READ`] against
+//!   `provision_custody`, and [`TCB_SIDS`] against `tcb_floor`. It asserts nothing about
+//!   [`FILE_WRITE_EA`], [`FILE_GENERIC_WRITE`], [`FILE_DELETE_CHILD`],
+//!   [`LEDGER_WRITE_ACCESS_BITS`], [`READ_ACCESS_BITS`] or [`GENERIC_BITS`], and of
+//!   [`WORLD_SIDS`] only that it contains `pipe_acl`'s list.
 //! * The **transport** is `brops-win-broker`'s peer-SID-authenticated named pipe, not a new
 //!   one. See [`PIPE_SPEC`].
 //!
@@ -139,8 +146,9 @@
 //!
 //! # Fail closed
 //!
-//! Every function here returns a refusal rather than a degraded success. There is no path
-//! that produces [`AnchorEnv`] without a completed [`ReadbackProof`]. An install that
+//! Every function here returns a refusal rather than a degraded success. No function in
+//! this module produces [`AnchorEnv`] without a completed [`ReadbackProof`] — though both
+//! are plain structs with `pub` fields, so the type itself does not forbid it. An install that
 //! quietly proceeded without the second principal would emit anchors that verify and prove
 //! nothing, which is strictly worse than an honestly unanchored ledger — which the engine
 //! already reports as its own distinct refusal (`AuditAnchorMissing`).
@@ -417,8 +425,11 @@ pub fn is_service_sid(sid: &str) -> bool {
     sid.starts_with("S-1-5-80-")
 }
 
-/// Cheap syntactic SID check — same rule as `provision_custody::looks_like_sid`. The real
-/// arbiter is `ConvertStringSidToSidW` on the Windows side; this exists so the pure plan can
+/// Cheap syntactic SID check — the same rule as the private `looks_like_sid` in
+/// `win-live/src/provision_custody.rs` and the one in `win-live/src/pipe_acl.rs`: three copies of
+/// one body, because this crate cannot depend on `brops-win-live` off Windows.
+/// `tests/source_copies.rs` reads the three sources and fails when one body differs. The
+/// real arbiter is `ConvertStringSidToSidW` on the Windows side; this exists so the pure plan can
 /// refuse obviously-wrong input on any host, including in a Linux unit test.
 pub fn looks_like_sid(s: &str) -> bool {
     s.starts_with("S-1-")
@@ -453,8 +464,10 @@ pub struct SignerPaths {
     pub shim_path: PathBuf,
     /// The service executable.
     pub service_exe: PathBuf,
-    /// `%LOCALAPPDATA%\<app>\audit`. The engine's ledger, its `.head`, `.anchor` and
-    /// `.append-lock` all live here and inherit its DACL.
+    /// `%LOCALAPPDATA%\<app>\audit`. Where the design puts the engine's ledger, its `.head`,
+    /// `.anchor` and `.append-lock`, so that they inherit its DACL. A plan only: the engine
+    /// takes its ledger path from `BRO_AUDIT_LEDGER`, which nothing under `src-tauri` sets, and
+    /// [`LEDGER_DIR_NAME`] / [`LEDGER_FILE_NAME`] are read by [`SignerPaths::new`] alone.
     pub ledger_dir: PathBuf,
     /// The ledger itself.
     pub ledger_file: PathBuf,
@@ -513,9 +526,13 @@ pub struct DaclPlan {
     pub app_sid: String,
     /// The account the signer service runs as.
     pub signer_sid: String,
-    /// Owner to stamp on the object. Always `BUILTIN\Administrators`: a file's owner
-    /// implicitly holds `READ_CONTROL | WRITE_DAC`, so any DACL is only as strong as its
-    /// owner, and leaving the creating account as owner would let it re-grant itself.
+    /// The owner the plan would like stamped on the object: every constructor writes
+    /// `BUILTIN\Administrators`, because a file's owner implicitly holds
+    /// `READ_CONTROL | WRITE_DAC`, so any DACL is only as strong as its owner.
+    ///
+    /// **Nothing reads this field.** [`plan_as_facts`] and [`winimpl::apply_dacl`] both take the
+    /// owner as a separate argument, [`verify_ledger_custody`] accepts the app as the ledger's
+    /// owner too, and `anchor::seal` applies its plan with no owner at all.
     pub owner_sid: String,
 }
 
@@ -604,6 +621,8 @@ fn check_principals(plan: &DaclPlan) -> Result<(), AnchorRefusal> {
     if !is_service_sid(&plan.signer_sid) {
         return Err(AnchorRefusal::SignerNotAServiceAccount { sid: plan.signer_sid.clone() });
     }
+    // Not reachable today: neither of `TCB_SIDS` begins `S-1-5-80-`, so the rule above has already
+    // refused both (`tests/audit_signer_pins.rs::no_tcb_principal_is_accepted_as_the_signer`).
     if TCB_SIDS.contains(&plan.signer_sid.as_str()) {
         return Err(AnchorRefusal::SignerNotAServiceAccount { sid: plan.signer_sid.clone() });
     }
@@ -1305,9 +1324,11 @@ impl AnchorRefusal {
 
 /// The two variables `bro_audit_log` needs, plus the evidence that emitting them is honest.
 ///
-/// There is deliberately no constructor that takes the paths alone. The only way to obtain one
-/// is [`AnchorEnv::from_proofs`], which requires both [`ReadbackProof`]s — so the code path
-/// that says "anchoring is on" cannot exist without the code path that proved it.
+/// There is deliberately no constructor that takes the paths alone: the only *function* that
+/// returns one is [`AnchorEnv::from_proofs`], which requires both [`ReadbackProof`]s. That is a
+/// convention and not something the type enforces — every field here is `pub`, and so is every
+/// field of [`ReadbackProof`], so a struct literal anywhere in a dependent crate builds either
+/// with no proof behind it. Nothing in the tree does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnchorEnv {
     pub signer_command: String,
@@ -1370,7 +1391,13 @@ impl AnchorEnv {
 // The installer's plan
 // =================================================================================================
 
-/// The exact elevated steps, in order, that create the second principal.
+/// The elevated steps, in order, that create the second principal — as text, for a reader.
+///
+/// **This is not what gets executed.** `audit-signer/src/register.rs::apply` — the one function
+/// that makes these steps real — does not run these strings: it builds its own argument vector
+/// for `sc.exe create` (`service_create_argv`, the same options written a second time) and runs
+/// `create`, `sidtype` and `start` only. The `sc.exe description` line below is run by nothing,
+/// and nothing holds the two copies of the create line equal.
 ///
 /// **The last step cannot succeed today (cockpit read R3-0007).** `sc.exe start` is issued against
 /// `brops-audit-signer.exe`, which is a console binary with no Service Control Manager entry
@@ -2309,8 +2336,9 @@ pub mod winimpl {
     }
 }
 
-/// Off Windows the second principal is not this module's business: POSIX deployments already
-/// have a `signer` user and `lib.rs`'s existing `secure_owner_only_file` path is unchanged.
+/// Off Windows the second principal is not this module's business: a POSIX deployment's
+/// `signer` user is a runbook step (`adduser` in `docs/DEBIAN_DEPLOYMENT.md`) that no installer
+/// performs, and `lib.rs`'s existing `secure_owner_only_file` path is unchanged.
 /// Every entry point here refuses rather than pretending.
 #[cfg(not(windows))]
 pub mod winimpl {

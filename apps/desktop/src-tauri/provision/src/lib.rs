@@ -570,7 +570,7 @@ pub fn create_dir_all_mode(dir: &Path, mode: u32) -> std::io::Result<()> {
 #[cfg(unix)]
 pub fn secure_data_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(Exposure::OwnerOnly.dir_mode()))
 }
 #[cfg(not(unix))]
 pub fn secure_data_dir(_dir: &Path) -> std::io::Result<()> {
@@ -583,7 +583,7 @@ pub fn secure_data_dir(_dir: &Path) -> std::io::Result<()> {
 #[cfg(unix)]
 pub fn secure_owner_only_file(path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(Exposure::OwnerOnly.file_mode()))
 }
 #[cfg(not(unix))]
 pub fn secure_owner_only_file(_path: &Path) -> std::io::Result<()> {
@@ -592,7 +592,7 @@ pub fn secure_owner_only_file(_path: &Path) -> std::io::Result<()> {
 
 pub fn directory_protection() -> Protection {
     if cfg!(unix) {
-        Protection::PosixMode(0o700)
+        Protection::PosixMode(Exposure::OwnerOnly.dir_mode())
     } else {
         Protection::InheritedFromParent { platform: platform_name() }
     }
@@ -600,7 +600,7 @@ pub fn directory_protection() -> Protection {
 
 pub fn key_file_protection() -> Protection {
     if cfg!(unix) {
-        Protection::PosixMode(0o600)
+        Protection::PosixMode(Exposure::OwnerOnly.file_mode())
     } else {
         Protection::InheritedFromParent { platform: platform_name() }
     }
@@ -1165,9 +1165,12 @@ pub fn load_key(trust_dir: &Path, authority: &str) -> Result<AuthorityKey, Provi
 
 /// Write a file at a STATED mode, creating its directory at the matching one.
 ///
-/// The single implementation both this crate and `brops_audit_signer` write through. A
-/// second copy would be a second place for the umask to creep back in — which is precisely
-/// how the operator-root pin came to be group-writable on a stock Debian box.
+/// The implementation both this crate and `brops_audit_signer` write through — for everything
+/// except a new private key. A second copy is a second place for the umask to creep back in,
+/// which is precisely how the operator-root pin came to be group-writable on a stock Debian
+/// box, and there are two: [`write_key_file`] below repeats the open / mode / write / fsync /
+/// chmod sequence with `create_new` in place of truncate and its own error label per step, and
+/// `anchor.rs` has a `create_new` open at a stated mode of its own.
 ///
 /// See [`Exposure`] for why the mode is never inherited and why it is applied twice.
 pub fn write_at(path: &Path, bytes: &[u8], exposure: Exposure) -> std::io::Result<()> {
@@ -1429,9 +1432,11 @@ fn occupancy(path: &Path) -> Result<Occupancy, ProvisionError> {
 
 /// Mint the trust store on first launch, or verify the one that is already there.
 ///
-/// Call this immediately after `secure_data_dir(&app_data_dir)` and before the
-/// database is opened. An `Err` must abort startup: a half-trusted governance chain is
-/// worse than an absent one, so there is no degraded mode to fall back to.
+/// **The host does not call this.** `src-tauri/src/lib.rs` calls [`provision_with_anchor`]
+/// directly — after `secure_data_dir(&app_data_dir)` and the single-instance lock, before the
+/// database is opened — and this wrapper's only callers are in `tests/anchor_custody.rs`.
+/// Whichever is called, an `Err` must abort startup: a half-trusted governance chain is worse
+/// than an absent one, so there is no degraded mode to fall back to.
 ///
 /// Equivalent to [`provision_with_anchor`] with no anchor. A store minted this way can
 /// NEVER be given one afterwards — see that function for why. A Windows deployment that

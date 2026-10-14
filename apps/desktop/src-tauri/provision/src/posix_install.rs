@@ -708,8 +708,11 @@ pub fn deliver_as_current_account(
     Ok(trust)
 }
 
-/// Remove `<app_data>/trust`. Runs as the desktop account, and only ever for a store the same
-/// installer run delivered a moment earlier and then could not prove.
+/// Remove `<app_data>/trust`. Runs as the desktop account. The installer reaches it from one
+/// place, `Undo::run`, for a store the same run delivered a moment earlier and then could not
+/// prove — but nothing here checks that: the body refuses root and then removes whatever is at
+/// that path. The binary dispatches `rollback --app-data DIR` for any invoker who is not root,
+/// so it removes what the invoking account could already delete by hand, and no more.
 pub fn rollback_as_current_account(app_data_dir: &Path) -> Result<(), ProvisionError> {
     refuse_root_in_user_half("rollback")?;
     let trust = app_data_dir.join(TRUST_DIR);
