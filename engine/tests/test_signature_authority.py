@@ -591,6 +591,43 @@ def patch_environ_without_pins():
         yield
 
 
+class RegistryAntiRollbackFloorTests(SignatureFixture):
+    """The trusted-key registry's anti-rollback floor (BRO_OPERATOR_REGISTRY_MIN), including
+    the present-but-null registry_version fallback: `registry_version: null` must fall through
+    to issued_at_epoch instead of refusing every load (a fail-closed denial of service) when a
+    floor is pinned. Ported from the frozen Bro repository's N-3 fix (2026-09-19)."""
+
+    def floor(self, value):
+        return _patch.dict(_os.environ, {"BRO_ENV": "ci", "BRO_OPERATOR_REGISTRY_MIN": str(value)})
+
+    def resign(self, **overrides):
+        payload = {**self.registry["payload"], **overrides}
+        self.write_registry(sign_payload(self.keys["operator-root"]["private_key"], payload))
+
+    def test_absent_registry_version_falls_back_to_issued_at_epoch(self):
+        with self.floor(NOW):
+            self.load()
+
+    def test_null_registry_version_falls_back_to_issued_at_epoch(self):
+        self.resign(registry_version=None)
+        with self.floor(NOW):
+            self.load()  # refused before: "carries no integer registry_version/issued_at_epoch"
+
+    def test_null_registry_version_still_enforces_the_floor_through_the_epoch(self):
+        self.resign(registry_version=None)
+        with self.floor(NOW + 1):
+            with self.assertRaises(SignatureError) as caught:
+                self.load()
+        self.assertIn("rolled-back", str(caught.exception))
+
+    def test_an_integer_registry_version_below_the_floor_is_refused(self):
+        self.resign(registry_version=5)
+        with self.floor(6):
+            with self.assertRaises(SignatureError) as caught:
+                self.load()
+        self.assertIn("rolled-back", str(caught.exception))
+
+
 def _write_pin_file(test_case, public_key, *, mode, acknowledge_self_owned=True):
     # write the pin OUTSIDE the repository (a fresh temp dir); resolve() so no
     # incidental symlink parent (e.g. /tmp on some platforms) trips the
