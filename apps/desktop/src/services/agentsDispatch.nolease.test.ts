@@ -11,7 +11,7 @@ import {
   DISPATCH_REQUEST_PROTOCOL, DISPATCH_RESULT_PROTOCOL,
   type Assignment, type AssignmentInput, type DispatchOutcome,
 } from './agentsDispatch';
-import { FORBIDDEN, decodeCharCodeRuns, flatten } from '../test/credentialSweep';
+import { FORBIDDEN, flatten } from '../test/credentialSweep';
 
 /**
  * Phase 6's stop condition, as a test: **"If fan-out tempts the desktop to hold/relay a lease →
@@ -57,7 +57,7 @@ const BASE: AssignmentInput = {
 
 const assignment = (): Assignment => buildAssignment(BASE);
 
-// `flatten`, `decodeCharCodeRuns` and `FORBIDDEN` live in ../test/credentialSweep.ts — one copy, where
+// `flatten` and `FORBIDDEN` live in ../test/credentialSweep.ts — one copy, where
 // this file used to carry its own.
 
 describe('dispatch — the desktop never serializes a lease or a key', () => {
@@ -70,7 +70,7 @@ describe('dispatch — the desktop never serializes a lease or a key', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('the frame is exactly the five declared fields — extra keys cannot ride along', async () => {
+  it('the frame is exactly the six declared fields — extra keys cannot ride along', async () => {
     let sent: Record<string, unknown> = {};
     await attemptDispatch(assignment(), async (req) => {
       sent = req as unknown as Record<string, unknown>; return null;
@@ -168,20 +168,7 @@ describe('dispatch — the desktop never serializes a lease or a key', () => {
     expect(clean.filter((s) => FORBIDDEN.test(s))).toEqual([]);
   });
 
-  it('`I-03`: one byte outside the printable range no longer defeats the decode', () => {
-    // The ninth audit escaped route 3's fix by appending 0x0a: the all-or-nothing decode returned
-    // null for the whole array and the sweep went silent again. Both escapes are pinned here as
-    // well as in the boundary suite. They were pinned twice because the sweep itself was pasted
-    // into three files; this suite and the boundary suite now share ../test/credentialSweep.ts.
-    const codes = Array.from('lease-7f2a91').map((c) => c.charCodeAt(0));
-    const trailing = [...codes, 0x0a];
-    const interleaved = codes.flatMap((c) => [c, 0x0a]);
-    for (const bytes of [codes, trailing, interleaved]) {
-      expect(flatten({ smuggled: bytes })).toContain('lease-7f2a91');
-      expect(flatten({ smuggled: bytes }).filter((s) => FORBIDDEN.test(s)).length)
-        .toBeGreaterThan(0);
-    }
-    // And still not a wildcard: an array with no printable byte decodes to nothing.
-    expect(decodeCharCodeRuns([1, 2, 3, 999])).toEqual([]);
-  });
+  // Ninth audit `I-03` (one out-of-range byte defeating the decode) is pinned once for the two
+  // services suites, in `agentsDispatch.boundary.test.ts`: both import the same
+  // `../test/credentialSweep.ts`, so a second copy here tested the same function again.
 });

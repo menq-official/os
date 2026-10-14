@@ -163,9 +163,11 @@ function parseEngineAccount(raw: unknown): EngineAccount | undefined {
 
 /**
  * Parse the raw Rust `GovernanceRead` reply into the typed shape, FAIL-CLOSED: unless
- * the reply is a well-formed `{ state: 'ok', records: [...] }`, it degrades to `blocked`
- * (a malformed/refused reply) or `unreachable` — it will NEVER upgrade an unknown or
- * malformed reply into `ok`, so no fabricated data can ever reach a page as mirrored.
+ * the reply is a well-formed `{ state: 'ok', records: [...] }`, it degrades — to `blocked`
+ * for an `ok` with no records array, to the reply's own state when that is `blocked` or
+ * `unreachable`, and to `unreachable` for a non-object or an unknown state. It will NEVER
+ * upgrade an unknown or malformed reply into `ok`, so no fabricated data can ever reach a
+ * page as mirrored.
  */
 export function parseGovernanceRead(surface: GovernanceSurface, raw: unknown): GovernanceRead {
   if (!isRecord(raw)) {

@@ -1,5 +1,9 @@
-// The single typed boundary between React and the Tauri (Rust + SQLite) backend.
-// Every call is a real `invoke` of a `#[tauri::command]`; there is no mock layer.
+// The typed boundary between React and the Tauri (Rust + SQLite) backend — the main one, not the
+// only one. Four other modules reach Tauri themselves: `features/delegationSource.ts` and
+// `features/integrationsProbe.ts` import `invoke`, `agentsDispatch.ts` imports it dynamically for
+// a dispatch command that does not exist yet, and `features/settingsIdentity.ts` reads the app
+// name and version from `@tauri-apps/api/app`.
+// Every call here is a real `invoke` of a `#[tauri::command]`; there is no mock layer.
 // Outside a Tauri runtime (e.g. a plain browser) these reject, and the UI shows
 // its error state — that is the honest "backend unavailable" behaviour.
 
@@ -357,10 +361,12 @@ export const desktop = {
 
   // Phase-2 governance mirror (READ-ONLY; mirror, never decide). Each wrapper invokes
   // a read-only Tauri command that asks the engine sidecar and parses the typed reply
-  // FAIL-CLOSED: a thrown transport error is mapped to `unreachable`, a refused/malformed
-  // reply to `blocked`, and only a well-formed schema-valid reply to `ok`. The renderer
-  // supplies no key/lease and never decides — it can only surface engine truth or an
-  // honest blocked/unreachable state.
+  // FAIL-CLOSED: a thrown transport error is mapped to `unreachable`; so is a reply that is not
+  // an object or names no known state. A reply that says `blocked` or `unreachable` keeps its own
+  // state, an `ok` with no records array becomes `blocked`, and only an `ok` carrying a records
+  // array is `ok` — the records themselves are not checked here. The renderer supplies no
+  // key/lease and never decides — it can only surface engine truth or an honest
+  // blocked/unreachable state.
   readEvidenceChain: (taskId?: string) =>
     governanceRead('evidenceChain', 'read_evidence_chain', { taskId: taskId ?? null }),
   readEngineApprovalQueue: () => governanceRead('approvalQueue', 'read_engine_approval_queue'),

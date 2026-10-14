@@ -43,6 +43,13 @@ export type ApprovalRequestOutcome =
   | { state: 'refused'; reason: string }
   | { state: 'blocked'; reason: string };
 
+/**
+ * Key fragments that name a decision. Six of the eight `brops_core::approval_request` holds in its
+ * own `DECISION_WORDS`: `adjudication` and `signed` are refused on the Rust side only, which runs
+ * before this parser.
+ */
+export const DECISION_WORDS = ['granted', 'disposition', 'verdict', 'decision', 'outcome', 'approved'] as const;
+
 const HEX64 = /^[0-9a-f]{64}$/;
 
 function blocked(reason: string): ApprovalRequestOutcome {
@@ -64,7 +71,7 @@ export function parseApprovalRequestOutcome(raw: unknown): ApprovalRequestOutcom
   // a control-room key may decide an approval, and this path has none.
   for (const key of Object.keys(doc)) {
     const lower = key.toLowerCase();
-    for (const word of ['granted', 'disposition', 'verdict', 'decision', 'outcome', 'approved']) {
+    for (const word of DECISION_WORDS) {
       if (lower.includes(word)) {
         return blocked(
           `the outcome carries a \`${word}\`-shaped field; an approval is adjudicated by an ` +

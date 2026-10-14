@@ -11,6 +11,9 @@
 // be able to show one that nobody signed.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const invokeMock = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
@@ -19,7 +22,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { desktop } from './desktop';
-import { parseApprovalRequestOutcome, REQUESTABLE_COMMANDS } from './approvalRequest';
+import { DECISION_WORDS, parseApprovalRequestOutcome, REQUESTABLE_COMMANDS } from './approvalRequest';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -76,7 +81,13 @@ describe('a desktop approval-request never carries a key or a lease', () => {
   });
 
   it('asks for one of the three approvals and never a command', () => {
-    expect([...REQUESTABLE_COMMANDS]).toEqual(['approve', 'deny', 'request-verification']);
+    // The contract's own enum, read from the file. A literal typed here stayed green whatever
+    // `contracts/approval-request.schema.json` came to say.
+    const contract = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, 'contracts/approval-request.schema.json'), 'utf8'),
+    ) as { properties: { requested_command: { enum: string[] } } };
+    expect(contract.properties.requested_command.enum).toHaveLength(3);
+    expect([...REQUESTABLE_COMMANDS]).toEqual(contract.properties.requested_command.enum);
     for (const verb of ['cancel', 'retry', 'reassign']) {
       expect([...REQUESTABLE_COMMANDS]).not.toContain(verb);
     }
@@ -138,11 +149,29 @@ describe('what the renderer may believe coming back', () => {
   });
 
   it('AN OUTCOME CLAIMING A DECISION IS BLOCKED, whatever else it says', () => {
-    for (const word of ['granted', 'disposition', 'verdict', 'decision', 'approved']) {
+    // Every word, written out and compared with the list, so one deleted from `DECISION_WORDS`
+    // fails twice. The loop covered five while the parser held six: `outcome` could go unnoticed.
+    const EVERY_WORD = ['granted', 'disposition', 'verdict', 'decision', 'outcome', 'approved'];
+    expect([...DECISION_WORDS]).toEqual(EVERY_WORD);
+    for (const word of EVERY_WORD) {
       const out = parseApprovalRequestOutcome(recorded({ [word]: true }));
       expect(out.state).toBe('blocked');
       expect(out).toHaveProperty('reason', expect.stringContaining(word));
     }
+  });
+
+  it('refuses no decision word the Rust side does not refuse first', () => {
+    // `brops_core::approval_request` holds eight words and runs before this parser; this side holds
+    // six of them (`adjudication` and `signed` are Rust's alone). A word here that Rust lacks would
+    // be a rule with no counterpart on the side that decides.
+    const rust = readFileSync(
+      resolve(REPO_ROOT, 'apps/desktop/src-tauri/core/src/approval_request.rs'), 'utf8',
+    );
+    const list = /const DECISION_WORDS: \[&str; \d+\] = \[([^\]]*)\];/.exec(rust);
+    expect(list, 'approval_request.rs no longer declares DECISION_WORDS in this form').not.toBeNull();
+    const rustWords = [...list![1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+    expect(rustWords.length).toBeGreaterThanOrEqual(DECISION_WORDS.length);
+    for (const word of DECISION_WORDS) expect(rustWords, word).toContain(word);
   });
 
   it('an unknown state is blocked rather than guessed at', () => {

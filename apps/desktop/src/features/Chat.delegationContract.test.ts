@@ -24,10 +24,11 @@ import {
   type Delegation,
   type DelegationEvent,
 } from './delegation';
+import { CONTRACT_SCHEMA_SOURCE, ID_PATTERN_SOURCE, MODES, RISKS } from '../services/agentsDispatch';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../../../..');
-const SCHEMA = resolve(REPO_ROOT, 'engine/schemas/task-contract.schema.json');
+const SCHEMA = resolve(REPO_ROOT, CONTRACT_SCHEMA_SOURCE);
 
 /** A well-formed spawn payload, as the proposed backend contract would send it. */
 const spawn = (over: Record<string, unknown> = {}) => ({
@@ -53,17 +54,29 @@ describe('path grammar — the same language the engine enforces', () => {
   // engine tightens `workPath` and this file does not follow, the surface starts drawing scopes
   // as validated grants that the engine would refuse.
   //
-  // Skipped only where the engine tree is genuinely not beside the app — a checkout of the app
+  // Skipped only where the contracts are genuinely not beside the app — a checkout of the app
   // alone, off CI. It used to skip whenever the schema FILE was absent, so a moved or renamed
-  // schema ended the parity check with a green run. With `engine/` there, or under CI, a schema
+  // schema ended the parity check with a green run. With `contracts/` there, or under CI, a schema
   // that cannot be read fails here.
-  const appAlone = !process.env.CI && !existsSync(resolve(REPO_ROOT, 'engine'));
+  const appAlone = !process.env.CI && !existsSync(resolve(REPO_ROOT, 'contracts'));
   it.skipIf(appAlone)('is copied character-for-character from task-contract.schema.json', () => {
     const schema = JSON.parse(readFileSync(SCHEMA, 'utf8')) as {
       $defs: { repoPath: { pattern: string }; absolutePath: { pattern: string } };
     };
     expect(REPO_PATH_PATTERN).toBe(schema.$defs.repoPath.pattern);
     expect(ABSOLUTE_PATH_PATTERN).toBe(schema.$defs.absolutePath.pattern);
+  });
+
+  it.skipIf(appAlone)('holds the id pattern and the mode and risk vocabularies to the same file', () => {
+    // These three were mirrors with no reader of the schema: the id pattern was a private RegExp
+    // checked against typed examples, and the two enums were compared with nothing.
+    const schema = JSON.parse(readFileSync(SCHEMA, 'utf8')) as {
+      properties: { mode: { enum: string[] }; risk: { enum: string[] } };
+      $defs: { id: { pattern: string } };
+    };
+    expect(ID_PATTERN_SOURCE).toBe(schema.$defs.id.pattern);
+    expect([...MODES]).toEqual(schema.properties.mode.enum);
+    expect([...RISKS]).toEqual(schema.properties.risk.enum);
   });
 
   it('accepts a repo-relative scope and an absolute one outside the repo', () => {

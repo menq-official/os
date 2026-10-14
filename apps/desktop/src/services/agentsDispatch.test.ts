@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,8 +12,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import {
-  CONTRACT_SCHEMA_VERSION, DEFAULT_AUTHORITY, DISPATCH_REQUEST_PROTOCOL,
-  DISPATCH_RESULT_PROTOCOL, DISPATCH_PROBE_PROTOCOL, TIER_TOOLS,
+  AUTHORITY_POLICY_SOURCE, CONTRACT_SCHEMA_SOURCE, CONTRACT_SCHEMA_VERSION, DEFAULT_AUTHORITY,
+  DISPATCH_REQUEST_PROTOCOL, DISPATCH_RESULT_PROTOCOL, DISPATCH_PROBE_PROTOCOL,
+  ID_PATTERN_SOURCE, INDEPENDENCE_MINIMUM_BY_RISK, RISKS, TIER_TOOLS,
   attemptDispatch, buildAssignment, isAbsolutePath, isContractId, isRepoPath, isWorkPath,
   packRoleDefinitionName, parseDispatchReply, pathCovers, probeDispatchChannel, slug,
   splitLines, validateAssignment,
@@ -111,10 +112,53 @@ describe('path grammar — mirrors task-contract.schema.json $defs', () => {
     expect(pathCovers('.', 'apps/desktop')).toBe(false);
     expect(pathCovers('.', 'engine')).toBe(false);
     expect(pathCovers('.', '.')).toBe(true);
-    const schema = readFileSync(resolve(REPO_ROOT, 'contracts/task-contract.schema.json'), 'utf8');
+    const schema = readFileSync(resolve(REPO_ROOT, CONTRACT_SCHEMA_SOURCE), 'utf8');
     expect(schema).toContain("'.' alone is the repository root entry itself and grants nothing beneath it");
     const engine = readFileSync(resolve(REPO_ROOT, 'engine/runtime/bro_security.py'), 'utf8');
     expect(engine).toMatch(/if not pattern or pattern == "\.":\s*\n\s*return path == "\."/);
+  });
+
+  it('names the source of record as the schema it mirrors, not the copy the engine loads', () => {
+    // The Tasks page prints this path beside every refusal. It said `engine/schemas/…` and called
+    // that "the single normative source", while `contracts/README.md` declares `contracts/` the
+    // source of record and the engine's file a copy held identical to it.
+    expect(CONTRACT_SCHEMA_SOURCE).toBe('contracts/task-contract.schema.json');
+    expect(readFileSync(resolve(REPO_ROOT, 'contracts/README.md'), 'utf8'))
+      .toContain('The source of record for every schema both halves consume');
+  });
+
+  it('quotes in its refusal the id pattern it applies, not a second copy of it', () => {
+    const problems = validateAssignment(build({ coreSkills: ['Bad Skill'] }));
+    expect(problems.filter((p) => p.field === 'core_skills').map((p) => p.message))
+      .toEqual([`'Bad Skill' is not a valid contract id (${ID_PATTERN_SOURCE})`]);
+  });
+});
+
+// ── The authority mirror ────────────────────────────────────────────────────
+describe('authority — mirrors engine/agents/authority-policy.json', () => {
+  // The path patterns and the tier table are each held to the file they copy. These three were
+  // compared with nothing but literals typed here, so a change to the policy left them standing.
+  const policy = JSON.parse(readFileSync(resolve(REPO_ROOT, AUTHORITY_POLICY_SOURCE), 'utf8')) as {
+    risk_order: string[];
+    default: Record<string, unknown>;
+    independence_minimum_by_risk: Record<string, string>;
+  };
+
+  it('ranks risk in the order the policy declares', () => {
+    expect([...RISKS]).toEqual(policy.risk_order);
+  });
+
+  it('carries the default record field for field, for every field it carries', () => {
+    const mirrored = Object.entries(DEFAULT_AUTHORITY);
+    expect(mirrored.map(([k]) => k).sort()).toEqual(['allowed_modes', 'risk_ceiling']);
+    for (const [field, value] of mirrored) {
+      expect(value, `DEFAULT_AUTHORITY.${field} has drifted from the policy's default record`)
+        .toEqual(policy.default[field]);
+    }
+  });
+
+  it('demands the independence level the policy sets for each risk', () => {
+    expect(INDEPENDENCE_MINIMUM_BY_RISK).toEqual(policy.independence_minimum_by_risk);
   });
 });
 
@@ -139,24 +183,14 @@ describe('capability grant — names a real generated definition', () => {
     expect(a.grant.tierDefinitionPath).toBe('.claude/agents/reader.md');
   });
 
-  // The assertions above compare the table with literals typed into this file. THIS table is the
-  // one Tasks.tsx and Agents.tsx render, and the only test that reads the generated definitions
-  // (`features/Chat.delegationTiers.guard.test.ts`) checks a second, identical-today copy in
-  // `features/delegation.ts`. Until the two are one export, each is held to the files directly.
+  // That the table equals the `tools:` each generated tier definition declares is held once, by
+  // `features/Chat.delegationTiers.guard.test.ts`: `features/delegation.ts` re-exports THIS
+  // object, so the test that stood here read the same three files against the same table.
   const AGENTS_DIR = resolve(REPO_ROOT, '.claude/agents');
-  const generated = (['reader', 'runner', 'builder'] as const).every((t) => existsSync(resolve(AGENTS_DIR, `${t}.md`)));
 
-  it.skipIf(!generated)('matches the `tools:` each generated tier definition declares, in order', () => {
-    for (const tier of ['reader', 'runner', 'builder'] as const) {
-      const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(resolve(AGENTS_DIR, `${tier}.md`), 'utf8'));
-      const line = /^tools:\s*(.+)$/m.exec(frontmatter?.[1] ?? '');
-      expect(line, `${tier}.md has no \`tools:\` frontmatter`).not.toBeNull();
-      expect([...TIER_TOOLS[tier]], `TIER_TOOLS.${tier} has drifted from .claude/agents/${tier}.md`)
-        .toEqual(line![1].split(',').map((t) => t.trim()).filter(Boolean));
-    }
-  });
-
-  it.skipIf(!generated)('counts the pack-role definitions the module header says it reads', () => {
+  // Not skipped when a tier file is absent. It was, on all three being present — so the one check
+  // that counts exactly three tier definitions switched itself off when one went missing.
+  it('counts the pack-role definitions the module header says it reads', () => {
     // The header said 262, which is every file in the directory — including the three tier
     // definitions the same sentence says are the only enforced ones.
     const names = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));

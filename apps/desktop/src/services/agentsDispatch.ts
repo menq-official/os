@@ -58,8 +58,13 @@ import { hasBackend } from './desktop';
 
 /** `schema` const in the task-contract schema. */
 export const CONTRACT_SCHEMA_VERSION = 1;
-/** The single normative source these rules mirror. Quoted in the UI so a reader can check. */
-export const CONTRACT_SCHEMA_SOURCE = 'engine/schemas/task-contract.schema.json';
+/**
+ * The schema these rules mirror, as its source of record (`contracts/README.md`). Quoted in the
+ * UI so a reader can check. `engine/schemas/task-contract.schema.json`, which the comments in
+ * this file cite, is the copy the engine loads; `tools/check_contracts_single_source.py` holds
+ * the two identical.
+ */
+export const CONTRACT_SCHEMA_SOURCE = 'contracts/task-contract.schema.json';
 /** The authority record source. */
 export const AUTHORITY_POLICY_SOURCE = 'engine/agents/authority-policy.json';
 /** Where the capability half of a grant is declared. */
@@ -105,10 +110,9 @@ export const TIER_CAN_WRITE: Record<CapabilityTier, boolean> = {
 // an override it cannot prove: a `release` mode or a `critical` risk is refused here with
 // a reason that names the missing proof, not silently allowed.
 
+// Only the two fields this module applies are mirrored. The record's `can_build`, `can_verify`
+// and `can_release` were copied here too and read by nothing.
 export const DEFAULT_AUTHORITY = {
-  can_build: true,
-  can_verify: false,
-  can_release: false,
   allowed_modes: ['review', 'work'] as readonly Mode[],
   risk_ceiling: 'high' as Risk,
 } as const;
@@ -132,12 +136,10 @@ export function verifierIsMandatory(risk: Risk): boolean {
 // backslash, no ':', no glob metacharacter, no NUL. A scope must be provably literal.
 //
 // DRIFT WARNING: these are a mirror. If the schema changes, this changes with it:
-// `features/Chat.delegationContract.test.ts` compares the two sources below with the schema
-// file character for character, and `agentsDispatch.test.ts` pins the corpus that proves the
+// `features/Chat.delegationContract.test.ts` compares the three sources below, and `MODES` and
+// `RISKS` above, with the schema file character for character, and `agentsDispatch.test.ts` pins the corpus that proves the
 // two agree on the cases that matter. A mirror that has drifted is worse than none — but it can only ever refuse
 // MORE than the engine, never accept more, because the engine re-validates everything.
-
-const ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,127}$/;
 
 // The two path patterns are exported AS THE SCHEMA WRITES THEM — the pattern source, character
 // for character — and the RegExp is built from that string. `features/delegation.ts` used to
@@ -153,6 +155,10 @@ export const REPO_PATH_PATTERN_SOURCE = String.raw`^(?:\.|(?!~)(?!\.\.?(?:/|$))[
 /** `engine/schemas/task-contract.schema.json` → `$defs.absolutePath.pattern`, verbatim. */
 export const ABSOLUTE_PATH_PATTERN_SOURCE = String.raw`^(?:/|[A-Za-z]:/)(?!\.\.?(?:/|$))[^\s\\/:*?\[\x00](?:[^\\/:*?\[\x00]*[^\s\\/:*?\[\x00])?(?:/(?!\.\.?(?:/|$))[^\s\\/:*?\[\x00](?:[^\\/:*?\[\x00]*[^\s\\/:*?\[\x00])?)*$`;
 
+/** `engine/schemas/task-contract.schema.json` → `$defs.id.pattern`, verbatim. */
+export const ID_PATTERN_SOURCE = String.raw`^[a-z0-9][a-z0-9._-]{1,127}$`;
+
+const ID_PATTERN = new RegExp(ID_PATTERN_SOURCE);
 const REPO_PATH_PATTERN = new RegExp(REPO_PATH_PATTERN_SOURCE);
 const ABSOLUTE_PATH_PATTERN = new RegExp(ABSOLUTE_PATH_PATTERN_SOURCE);
 
@@ -334,9 +340,11 @@ export interface AssignmentInput {
 }
 
 /**
- * Build the assignment. Pure and total: it never throws and never silently repairs an
- * input. A field the caller gave badly stays bad and `validateAssignment` reports it —
- * quietly fixing a malformed id here would hide the very thing the contract exists to pin.
+ * Build the assignment. Pure and total: it never throws. Four ids ARE normalised on the way
+ * in — `taskId`, `packId`, `agentSlug` and `verifierAgentSlug` each pass through `slug()`, so
+ * 'Task 42!' becomes `task-42` and validates. Every other field is copied as given: one the
+ * caller gave badly stays bad and `validateAssignment` reports it. The skill ids are among
+ * those, so a malformed one is refused rather than repaired.
  */
 export function buildAssignment(input: AssignmentInput): Assignment {
   const agentId = slug(input.agentSlug);
@@ -399,7 +407,7 @@ function dupes(list: readonly string[]): string[] {
 function checkIdList(list: readonly string[], field: string, problems: Problem[]): void {
   for (const id of list) {
     if (!isContractId(id)) {
-      problems.push({ field, message: `'${id}' is not a valid contract id (^[a-z0-9][a-z0-9._-]{1,127}$)` });
+      problems.push({ field, message: `'${id}' is not a valid contract id (${ID_PATTERN_SOURCE})` });
     }
   }
   for (const d of dupes(list)) problems.push({ field, message: `'${d}' is listed twice; entries must be unique` });
