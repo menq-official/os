@@ -224,8 +224,8 @@ def main(argv: list[str]) -> int:
     # O-2. The anchor authority is the ONE the provisioner must NOT mint: `bro_audit_log`
     # accepts nothing else for an audit head, and a private half in the app's own store
     # would put the ledger's writer back in possession of a key that anchors it. So the
-    # expected set is every authority the engine knows MINUS that one, and its absence is
-    # checked separately and on the filesystem below.
+    # expected set is every authority the engine knows MINUS that one, and its absence was
+    # checked separately and on the filesystem in the O-2 section above.
     require(ANCHOR_AUTHORITIES == (AUDIT_ANCHOR,),
             f"bro_audit_log accepts exactly one anchor authority ({ANCHOR_AUTHORITIES})")
     provisionable = set(AUTHORITY_TYPES) - {AUDIT_ANCHOR}

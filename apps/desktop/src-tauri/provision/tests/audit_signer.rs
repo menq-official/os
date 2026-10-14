@@ -6,9 +6,16 @@
 //! `pipe_acl` / `provision_custody` / `tcb_floor` do it in the live kit. The **syscalls** need
 //! Windows, and creating the service account needs Administrator.
 //!
-//! Checks that only run under elevation are the ones that rot, so the tests that cannot run here
-//! **print a SKIP naming the exact missing capability** and assert whatever they still can. None
-//! of them passes by default: a skipped test asserts nothing and says so out loud.
+//! The seven tests that make those syscalls are `#[cfg(windows)]`: off Windows they are not
+//! skipped, they are absent, and one `#[cfg(not(windows))]` test is absent on Windows. All eight
+//! are listed, with the leg that runs each, in `prerequisites::COMPILED_OUT`, which
+//! `prerequisites_guard.rs` holds equal to the gates in this file.
+//!
+//! Where a test that IS compiled lacks a capability — a token that may not apply a DACL or
+//! assign an owner, no installed signer service, a suite running as root — it calls
+//! `prerequisites::skip`, which **fails the test naming the missing capability** on every
+//! machine. It prints a SKIP line and returns early instead only when
+//! `BROPS_TEST_MISSING_PREREQUISITES` names that capability's tag.
 //!
 //! # Read the negative results carefully
 //!
@@ -165,14 +172,26 @@ fn a_signer_that_is_not_a_virtual_service_account_is_refused() {
 
 #[test]
 fn a_world_principal_is_refused_on_either_side() {
+    // Either side, in both plans, and refused AS a world principal: a world SID in the signer's
+    // place is not a service SID either, so "it was refused" alone would not show this rule ran.
+    type Plan = fn(&str, &str) -> Result<anc::DaclPlan, AnchorRefusal>;
+    let plans: [(&str, Plan); 2] =
+        [("key", anc::key_dacl_plan), ("ledger", anc::ledger_dacl_plan)];
     for world in ["S-1-1-0", "S-1-5-11", "S-1-5-32-545"] {
-        assert!(
-            matches!(
-                anc::key_dacl_plan(world, SIGNER),
-                Err(AnchorRefusal::WorldPrincipal { .. })
-            ),
-            "{world} was accepted as the app principal"
-        );
+        for (which, plan) in plans {
+            for (side, refused) in [("app", plan(world, SIGNER)), ("signer", plan(APP, world))] {
+                match refused {
+                    Err(AnchorRefusal::WorldPrincipal { what, sid }) => {
+                        assert_eq!(what, side, "the {which} plan blamed the wrong side");
+                        assert_eq!(sid, world);
+                    }
+                    other => panic!(
+                        "the {which} plan did not refuse {world} as a world principal on the \
+                         {side} side: {other:?}"
+                    ),
+                }
+            }
+        }
     }
 }
 
@@ -471,22 +490,100 @@ fn a_signer_that_cannot_use_its_own_key_is_refused_at_provisioning_not_at_first_
     ));
 }
 
-#[test]
-fn every_refusal_says_what_failed_and_that_the_ledger_stays_unanchored() {
-    let refusals = vec![
+/// Where a variant sits in [`one_of_every_refusal`]. The match has no wildcard arm, so a new
+/// `AnchorRefusal` variant does not compile here until it is given a slot — and the slot count
+/// then fails `one_of_every_refusal` until an instance of it is in the list.
+fn refusal_slot(refusal: &AnchorRefusal) -> usize {
+    match refusal {
+        AnchorRefusal::NotASid { .. } => 0,
+        AnchorRefusal::ShimPathNotAbsolute { .. } => 1,
+        AnchorRefusal::WorldPrincipal { .. } => 2,
+        AnchorRefusal::SamePrincipal { .. } => 3,
+        AnchorRefusal::SignerNotAServiceAccount { .. } => 4,
+        AnchorRefusal::SignerSidSubstituted { .. } => 5,
+        AnchorRefusal::NullDacl { .. } => 6,
+        AnchorRefusal::DaclNotProtected { .. } => 7,
+        AnchorRefusal::UnmappedGenericRights { .. } => 8,
+        AnchorRefusal::WorldInDacl { .. } => 9,
+        AnchorRefusal::UntrustedOwner { .. } => 10,
+        AnchorRefusal::KeyReachableByApp { .. } => 11,
+        AnchorRefusal::KeyGrantsOutsideTheTcb { .. } => 12,
+        AnchorRefusal::SignerCannotUseItsOwnKey { .. } => 13,
+        AnchorRefusal::LedgerWritableBySigner { .. } => 14,
+        AnchorRefusal::LedgerNotWritableByApp { .. } => 15,
+        AnchorRefusal::KeyActuallyReadable { .. } => 16,
+        AnchorRefusal::Unmeasurable { .. } => 17,
+        AnchorRefusal::DescriptorDenied { .. } => 18,
+        AnchorRefusal::AclNotEnumerable { .. } => 19,
+        AnchorRefusal::SignerAbsent { .. } => 20,
+        AnchorRefusal::Unsupported { .. } => 21,
+        AnchorRefusal::ElevationRequired { .. } => 22,
+    }
+}
+const REFUSAL_SLOTS: usize = 23;
+
+/// One instance of EVERY `AnchorRefusal` variant, each exactly once.
+fn one_of_every_refusal() -> Vec<AnchorRefusal> {
+    let path = || "x".to_string();
+    let all = vec![
+        AnchorRefusal::NotASid { what: "app".into(), value: "OFFICE\\gev".into() },
+        AnchorRefusal::ShimPathNotAbsolute { path: "relay.exe".into() },
+        AnchorRefusal::WorldPrincipal { what: "app".into(), sid: "S-1-1-0".into() },
         AnchorRefusal::SamePrincipal { sid: APP.to_string() },
-        AnchorRefusal::NullDacl { path: "x".into() },
-        AnchorRefusal::DaclNotProtected { path: "x".into() },
-        AnchorRefusal::KeyActuallyReadable { path: "x".into() },
-        AnchorRefusal::AclNotEnumerable { path: "x".into(), why: "GetAce(2) of 4 failed".into() },
-        AnchorRefusal::ElevationRequired { step: "creating the service".into() },
+        AnchorRefusal::SignerNotAServiceAccount { sid: ADMINS.to_string() },
         AnchorRefusal::SignerSidSubstituted {
             name: "X".into(),
             derived: "S-1-5-80-1".into(),
             resolved: "S-1-5-21-9".into(),
         },
+        AnchorRefusal::NullDacl { path: path() },
+        AnchorRefusal::DaclNotProtected { path: path() },
+        AnchorRefusal::UnmappedGenericRights { path: path(), grantees: vec![APP.to_string()] },
+        AnchorRefusal::WorldInDacl { path: path(), grantees: vec!["S-1-1-0".to_string()] },
+        AnchorRefusal::UntrustedOwner { path: path(), owner_sid: APP.to_string() },
+        AnchorRefusal::KeyReachableByApp {
+            path: path(),
+            app_sid: APP.to_string(),
+            observed_mask: anc::FILE_READ_DATA,
+        },
+        AnchorRefusal::KeyGrantsOutsideTheTcb { path: path(), grantees: vec![APP.to_string()] },
+        AnchorRefusal::SignerCannotUseItsOwnKey {
+            path: path(),
+            signer_sid: SIGNER.to_string(),
+            observed_mask: anc::FILE_READ_DATA,
+        },
+        AnchorRefusal::LedgerWritableBySigner {
+            path: path(),
+            signer_sid: SIGNER.to_string(),
+            observed_mask: anc::DELETE,
+        },
+        AnchorRefusal::LedgerNotWritableByApp {
+            path: path(),
+            app_sid: APP.to_string(),
+            observed_mask: anc::FILE_READ_DATA,
+        },
+        AnchorRefusal::KeyActuallyReadable { path: path() },
+        AnchorRefusal::Unmeasurable { path: path(), why: "error 2".into() },
+        AnchorRefusal::DescriptorDenied { path: path() },
+        AnchorRefusal::AclNotEnumerable { path: path(), why: "GetAce(2) of 4 failed".into() },
+        AnchorRefusal::SignerAbsent { why: "the service is not registered".into() },
+        AnchorRefusal::Unsupported { platform: "linux".into(), what: "reading a DACL".into() },
+        AnchorRefusal::ElevationRequired { step: "creating the service".into() },
     ];
-    for r in refusals {
+    let mut filled = [0usize; REFUSAL_SLOTS];
+    for refusal in &all {
+        filled[refusal_slot(refusal)] += 1;
+    }
+    assert!(
+        filled.iter().all(|count| *count == 1),
+        "the list does not hold each AnchorRefusal variant exactly once: {filled:?}"
+    );
+    all
+}
+
+#[test]
+fn every_refusal_says_what_failed_and_that_the_ledger_stays_unanchored() {
+    for r in one_of_every_refusal() {
         let text = r.explain();
         assert!(text.contains("REFUSING"), "{text}");
         assert!(text.contains("UNANCHORED"), "{text}");
@@ -901,18 +998,41 @@ fn the_install_steps_name_the_virtual_account_and_never_a_password() {
 
 #[test]
 fn the_two_roots_are_separate_and_the_shim_is_not_inside_the_engine() {
-    let paths = anc::SignerPaths::new(
-        Path::new("C:\\ProgramData\\BroPS"),
-        Path::new("C:\\Users\\gev\\AppData\\Local\\BroPS"),
-        Path::new("C:\\Program Files\\BroPS"),
-    );
+    // Roots this platform splits into components, as `absolute_shim` does and for the same
+    // reason. Off Windows a backslash is not a separator: `C:\Program Files\BroPS\engine` is
+    // ONE component there, nothing joined onto a sibling string starts with it, and the last
+    // assertion below could not fail wherever the shim was put.
+    let (machine_root, app_data, install_dir) = if cfg!(windows) {
+        (
+            PathBuf::from("C:\\ProgramData\\BroPS"),
+            PathBuf::from("C:\\Users\\gev\\AppData\\Local\\BroPS"),
+            PathBuf::from("C:\\Program Files\\BroPS"),
+        )
+    } else {
+        (
+            PathBuf::from("/var/lib/brops"),
+            PathBuf::from("/home/gev/.local/share/brops"),
+            PathBuf::from("/opt/brops"),
+        )
+    };
+    let paths = anc::SignerPaths::new(&machine_root, &app_data, &install_dir);
+    // The fixture really is three directories: each derived path is BELOW its own root, by
+    // components. Without this the negative assertions below pass on strings that do not parse.
+    assert!(paths.key_file.starts_with(&machine_root) && paths.key_file != machine_root);
+    assert!(paths.ledger_dir.starts_with(&app_data) && paths.ledger_dir != app_data);
+    assert!(paths.shim_path.starts_with(&install_dir) && paths.shim_path != install_dir);
     // The key lives under a machine root; the ledger under the per-user root. Opposite
     // exclusions, so they cannot share a DACL by accident.
     assert!(!paths.key_file.starts_with(&paths.ledger_dir));
     assert!(!paths.ledger_dir.starts_with(&paths.signer_dir));
     // `bro_audit_log._signer_argv` refuses a signer path inside the engine root.
-    let engine_root = PathBuf::from("C:\\Program Files\\BroPS\\engine");
-    assert!(!paths.shim_path.starts_with(&engine_root));
+    let engine_root = install_dir.join("engine");
+    assert!(
+        !paths.shim_path.starts_with(&engine_root),
+        "the shim {} is inside the engine root {}",
+        paths.shim_path.display(),
+        engine_root.display()
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -977,17 +1097,19 @@ fn this_key_signs_audit_heads_and_nothing_else() {
     assert_eq!(anc::ANCHOR_ARTIFACT_TYPE, "audit-head");
     assert!(anc::ANCHOR_AUTHORITIES.contains(&anc::ANCHOR_AUTHORITY));
     // The narrowing itself: exactly one authority may anchor, and it is a type this crate never
-    // mints a private half for. `provision()` walks `MINTED_AUTHORITIES` to generate keys and
-    // `RETAINED_AUTHORITIES` to write them down; the anchor authority must be in NEITHER, or the
-    // app's own account would hold the seed again and O-2 would reopen.
+    // mints a private half for. The mint walks `RETAINED_AUTHORITIES`, generating a key for each
+    // and writing it down, and generates the operator root separately; `MINTED_AUTHORITIES` is
+    // the set the verifier requires the registry to carry, read by nothing that mints. The
+    // anchor authority must be in NEITHER, or the app's own account would hold the seed again
+    // and O-2 would reopen.
     assert_eq!(anc::ANCHOR_AUTHORITIES, ["audit-anchor"]);
     assert!(
         !brops_provision::MINTED_AUTHORITIES.contains(&anc::ANCHOR_AUTHORITY),
-        "provision() would mint a private half for the anchor authority"
+        "the verifier would require every registry to carry an active anchor-authority key"
     );
     assert!(
         !brops_provision::RETAINED_AUTHORITIES.contains(&anc::ANCHOR_AUTHORITY),
-        "provision() would write a private half for the anchor authority to disk"
+        "provision() would mint a private half for the anchor authority and write it to disk"
     );
     // And the operator root, whose destruction this round is about, is minted but never
     // retained. A regression that put it back would be silent everywhere else.

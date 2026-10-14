@@ -111,18 +111,18 @@ fn reroot(trust: &Path) -> SigningKey {
     // records of its own neighbour proves nothing that the neighbour's location does not
     // already prove. What the manifest covers is the app-writable half.
 
-    let mut payload = payload_of(trust, REGISTRY_REL);
+    let mut payload = payload_of(trust, &registry_rel());
     payload["operator_public_key"] = Value::from(public.clone());
     for entry in payload["keys"].as_array_mut().unwrap() {
         if entry["authority_type"] == Value::from("operator-root") {
             entry["public_key"] = Value::from(public.clone());
         }
     }
-    respin(trust, &root, REGISTRY_REL, payload);
+    respin(trust, &root, &registry_rel(), payload);
     // The session names the operator ENTRY's key_id, which reroot leaves alone, so it
     // only needs a signature under the new root.
-    let session = payload_of(trust, SESSION_REL);
-    respin(trust, &root, SESSION_REL, session);
+    let session = payload_of(trust, &session_rel());
+    respin(trust, &root, &session_rel(), session);
 
     prov::verify_store_without_custody_proof(trust, &anchor_of(trust)).expect(
         "a store re-rooted through the pin must verify — otherwise a later refusal in \
@@ -161,8 +161,16 @@ fn respin(trust: &Path, root: &SigningKey, relative: &str, payload: Value) {
     repair_digest(trust, relative);
 }
 
-const REGISTRY_REL: &str = "registry/config/trusted-keys.json";
-const SESSION_REL: &str = "artifacts/conductor-session.json";
+/// The signed registry, relative to the ANCHOR directory, `/`-separated — spelled from the
+/// crate's own layout constants rather than typed again here.
+fn registry_rel() -> String {
+    format!("{}/{}", prov::REGISTRY_ROOT_DIR, prov::REGISTRY_REL)
+}
+
+/// The conductor-session artifact, relative to the TRUST directory, `/`-separated.
+fn session_rel() -> String {
+    format!("{}/{}", prov::ARTIFACTS_DIR, prov::CONDUCTOR_SESSION_FILE)
+}
 
 /// Which of the two halves a signed document lives in.
 ///
@@ -173,7 +181,7 @@ const SESSION_REL: &str = "artifacts/conductor-session.json";
 /// at once. The conductor-session artifact stays in the app-side store, where it is bound by a
 /// digest the manifest records from the anchor.
 fn document_root(trust: &Path, relative: &str) -> PathBuf {
-    if relative.starts_with("registry/") {
+    if relative.starts_with(&format!("{}/", prov::REGISTRY_ROOT_DIR)) {
         anchor_of(trust)
     } else {
         trust.to_path_buf()
@@ -370,7 +378,7 @@ fn a_registry_signed_by_the_wrong_authority_is_refused_by_the_signature_check_al
     // one that proves that check exists.
     let dir = tempfile::tempdir().unwrap();
     let p = mint_at(dir.path()).unwrap();
-    let mut payload = payload_of(&p.trust_dir, REGISTRY_REL);
+    let mut payload = payload_of(&p.trust_dir, &registry_rel());
     payload["issued_at_epoch"] = Value::from(payload["issued_at_epoch"].as_i64().unwrap() + 1);
     let impostor = prov::load_key(&p.trust_dir, "issuer").unwrap();
     let document = prov::sign_document(&impostor.signing, payload).unwrap();
@@ -390,13 +398,13 @@ fn a_registry_whose_operator_entry_is_not_the_pinned_key_is_refused() {
     let p = mint_at(dir.path()).unwrap();
     let root = reroot(&p.trust_dir);
     let other = prov::load_key(&p.trust_dir, "issuer").unwrap();
-    let mut payload = payload_of(&p.trust_dir, REGISTRY_REL);
+    let mut payload = payload_of(&p.trust_dir, &registry_rel());
     for entry in payload["keys"].as_array_mut().unwrap() {
         if entry["authority_type"] == Value::from("operator-root") {
             entry["public_key"] = Value::from(other.public_key_hex());
         }
     }
-    respin(&p.trust_dir, &root, REGISTRY_REL, payload);
+    respin(&p.trust_dir, &root, &registry_rel(), payload);
 
     let err = mint_at(dir.path()).expect_err("a registry without its signer must refuse");
     assert!(err.to_string().contains("operator-root key is not the pinned key"), "{err}");
@@ -410,9 +418,9 @@ fn a_registry_that_stops_declaring_production_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let p = mint_at(dir.path()).unwrap();
     let root = reroot(&p.trust_dir);
-    let mut payload = payload_of(&p.trust_dir, REGISTRY_REL);
+    let mut payload = payload_of(&p.trust_dir, &registry_rel());
     payload["production"] = Value::from(false);
-    respin(&p.trust_dir, &root, REGISTRY_REL, payload);
+    respin(&p.trust_dir, &root, &registry_rel(), payload);
 
     let err = mint_at(dir.path()).expect_err("a non-production registry must be refused");
     assert!(err.to_string().contains("not marked production"), "{err}");
@@ -424,9 +432,9 @@ fn a_registry_naming_an_operator_key_other_than_the_pin_is_refused() {
     let p = mint_at(dir.path()).unwrap();
     let root = reroot(&p.trust_dir);
     let other = prov::load_key(&p.trust_dir, "issuer").unwrap();
-    let mut payload = payload_of(&p.trust_dir, REGISTRY_REL);
+    let mut payload = payload_of(&p.trust_dir, &registry_rel());
     payload["operator_public_key"] = Value::from(other.public_key_hex());
-    respin(&p.trust_dir, &root, REGISTRY_REL, payload);
+    respin(&p.trust_dir, &root, &registry_rel(), payload);
 
     let err = mint_at(dir.path()).expect_err("a mismatched declared root must be refused");
     assert!(err.to_string().contains("operator key other than the pinned one"), "{err}");
@@ -437,13 +445,13 @@ fn a_revoked_authority_key_leaves_the_store_unusable_rather_than_silently_degrad
     let dir = tempfile::tempdir().unwrap();
     let p = mint_at(dir.path()).unwrap();
     let root = reroot(&p.trust_dir);
-    let mut payload = payload_of(&p.trust_dir, REGISTRY_REL);
+    let mut payload = payload_of(&p.trust_dir, &registry_rel());
     for entry in payload["keys"].as_array_mut().unwrap() {
         if entry["authority_type"] == Value::from("release") {
             entry["status"] = Value::from("revoked");
         }
     }
-    respin(&p.trust_dir, &root, REGISTRY_REL, payload);
+    respin(&p.trust_dir, &root, &registry_rel(), payload);
 
     let err = mint_at(dir.path()).expect_err("a missing active authority must be refused");
     let text = err.to_string();
@@ -456,9 +464,9 @@ fn an_expired_conductor_session_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let p = mint_at(dir.path()).unwrap();
     let root = reroot(&p.trust_dir);
-    let mut payload = payload_of(&p.trust_dir, SESSION_REL);
+    let mut payload = payload_of(&p.trust_dir, &session_rel());
     payload["expires_at_epoch"] = Value::from(1);
-    respin(&p.trust_dir, &root, SESSION_REL, payload);
+    respin(&p.trust_dir, &root, &session_rel(), payload);
 
     let err = mint_at(dir.path()).expect_err("an expired session token must be refused");
     assert!(err.to_string().contains("has expired"), "{err}");
@@ -469,9 +477,9 @@ fn a_conductor_session_rebound_to_another_identity_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let p = mint_at(dir.path()).unwrap();
     let root = reroot(&p.trust_dir);
-    let mut payload = payload_of(&p.trust_dir, SESSION_REL);
+    let mut payload = payload_of(&p.trust_dir, &session_rel());
     payload["role"] = Value::from("owner");
-    respin(&p.trust_dir, &root, SESSION_REL, payload);
+    respin(&p.trust_dir, &root, &session_rel(), payload);
 
     let err = mint_at(dir.path()).expect_err("a rebound session token must be refused");
     let text = err.to_string();
@@ -955,6 +963,9 @@ fn the_posture_file_describes_the_store_that_was_actually_minted() {
 /// manifest in the anchor, goes to verify the store, and refuses on the files that are no
 /// longer there — demonstrated below with the store removed — and on a real install the anchor
 /// is the half this account cannot remove.
+///
+/// Two refusals are read here, and they are not the same one: the refusal the removed store
+/// really produces, and a `Corrupt` built by hand for the wording all `Corrupt`s share.
 #[test]
 fn a_refusal_does_not_promise_a_re_mint_that_the_anchor_forbids() {
     let dir = tempfile::tempdir().unwrap();
@@ -964,8 +975,15 @@ fn a_refusal_does_not_promise_a_re_mint_that_the_anchor_forbids() {
     fs::remove_dir_all(&p.trust_dir).unwrap();
     let err = mint_at(dir.path()).expect_err("removing the store must not produce a re-mint");
     assert!(!p.trust_dir.exists(), "something was re-minted over a live anchor: {err}");
+    // The refusal that call really returned: it is about the store that is gone, and it does
+    // not say that removing it gets a new one. (Today it is the verifier's `Io` refusal on the
+    // first file the manifest lists — not a `Corrupt`, so the text checked below is not its.)
+    let refused = err.to_string();
+    assert!(refused.contains(&p.trust_dir.display().to_string()), "{refused}");
+    assert!(!refused.contains("re-minted from scratch"), "{refused}");
+    assert!(!refused.to_lowercase().contains("to have it re-minted"), "{refused}");
 
-    // So no refusal may say it would have worked.
+    // And no `Corrupt` refusal may say it would have worked — every one shares this text.
     let corrupt = prov::ProvisionError::Corrupt { what: "w".into(), detail: "d".into() };
     let text = corrupt.to_string();
     assert!(!text.contains("to have it re-minted from scratch"), "{text}");

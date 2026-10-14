@@ -10,8 +10,9 @@
 //! One check here needs a genuinely sealed directory, which no platform lets a process
 //! manufacture out of nothing: on Windows it is a fixed `%TEMP%` path sealed once ever, and on
 //! POSIX it must be a directory owned by another uid, because an owner may always `chmod` what
-//! it owns. `tests/prerequisites/mod.rs` supplies whichever exists and SKIPS — visibly, and as
-//! a hard failure under CI — naming exactly what is missing when neither does.
+//! it owns. `tests/prerequisites/mod.rs` supplies whichever exists and, when neither does, FAILS
+//! naming exactly what is missing — on every machine, not only under CI. It returns early
+//! instead only where `BROPS_TEST_MISSING_PREREQUISITES` names that prerequisite's tag.
 //!
 //! **Nothing in this file is `#[cfg]`-ed out any more.** Two tests used to be `#[cfg(windows)]`,
 //! so on Linux they were not skipped but absent, and the nine that remained all measured a
@@ -367,21 +368,38 @@ fn a_sealed_anchor_refuses_this_accounts_own_writes() {
 // The entry points: which of them enforce, and which say plainly that they do not
 // =================================================================================================
 
-/// The unsealed entry points carry `custody: None`, and nothing else does.
+/// Both unsealed entry points carry `custody: None` — the mint, the verifier, and the mint again
+/// when it finds a manifest and only verifies.
 ///
 /// This is what keeps the split honest. `provision.rs` builds every one of its stores this way,
 /// so if `custody` could be `Some` without a measurement having happened, that whole file would
 /// silently be reporting a property it never checked.
+///
+/// The other half — that a store which DID come through `verify_existing` carries `Some` — is
+/// not asserted here: it needs an anchor this account cannot write, and the one test that has
+/// such a store is `audit-signer/tests/anchor_end_to_end.rs`, which is `#![cfg(windows)]`.
 #[test]
 fn the_unsealed_entry_points_report_that_they_measured_nothing() {
     let (_temp, _machine_root, app_data) = writable_root();
-    let provisioned =
-        prov::mint_store_without_custody_proof(&app_data, &app_data.join("anchor"), None)
-            .expect("mint");
+    let anchor_dir = app_data.join("anchor");
+    let minted =
+        prov::mint_store_without_custody_proof(&app_data, &anchor_dir, None).expect("mint");
+    assert!(minted.freshly_minted, "the fixture did not mint, so the first case is not a mint");
+    assert!(minted.custody.is_none(), "an unsealed mint claimed a custody proof it never took");
+
+    let verified = prov::verify_store_without_custody_proof(&minted.trust_dir, &anchor_dir)
+        .expect("the store just minted verifies");
     assert!(
-        provisioned.custody.is_none(),
-        "an unsealed mint claimed a custody proof it never took"
+        verified.custody.is_none(),
+        "the unsealed verifier claimed a custody proof it never took: {:?}",
+        verified.custody
     );
+
+    // The mint entry point over a store that already exists takes its verify-only branch.
+    let found = prov::mint_store_without_custody_proof(&app_data, &anchor_dir, None)
+        .expect("a second call finds the manifest and verifies");
+    assert!(!found.freshly_minted, "the second call minted over a live anchor");
+    assert!(found.custody.is_none(), "the verify-only branch of the unsealed mint claimed custody");
 }
 
 /// **The guard that makes the split safe**: the PRODUCTION verifier refuses an unsealed anchor.
@@ -491,14 +509,23 @@ fn the_engine_environment_no_longer_acknowledges_a_self_owned_pin() {
             "provisioning still tells the engine to switch its custody rules off              ({forbidden}): {names:?}"
         );
     }
-    // And the two variables it DOES export point into the anchor, not the trust store.
-    for (name, value) in provisioned.engine_env() {
-        if name == "BRO_OPERATOR_ROOT_PUBKEY_FILE" || name == "BRO_OPERATOR_REGISTRY_MIN_FILE" {
-            assert!(
-                Path::new(&value).starts_with(&provisioned.anchor_dir),
-                "{name} points at {value}, which is not inside the anchor"
-            );
-        }
+    // And the three it DOES export — the pin, the floor and the registry root — are each there
+    // exactly once and point into the anchor, not the trust store. Looked up by name: a loop
+    // over whatever happens to be exported asserts nothing when an export is dropped.
+    let exported = provisioned.engine_env();
+    for required in [
+        "BRO_OPERATOR_ROOT_PUBKEY_FILE",
+        "BRO_OPERATOR_REGISTRY_MIN_FILE",
+        "BRO_TRUSTED_REGISTRY_ROOT",
+    ] {
+        let values: Vec<&String> =
+            exported.iter().filter(|(name, _)| *name == required).map(|(_, v)| v).collect();
+        assert_eq!(values.len(), 1, "{required} is exported {} times: {names:?}", values.len());
+        assert!(
+            Path::new(values[0]).starts_with(&provisioned.anchor_dir),
+            "{required} points at {}, which is not inside the anchor",
+            values[0]
+        );
     }
 }
 
@@ -673,7 +700,8 @@ fn the_effective_uid_probe_agrees_with_the_kernel() {
 // =================================================================================================
 
 /// A POSIX first launch is refused **at the top, by name, before anything is minted** — and the
-/// refusal names the directory, the uid, the modes, and the fact that no tool ships to make it.
+/// refusal names the directory, the uid, the modes, the installer tool that creates it, that
+/// root runs that tool, and that this application never does.
 ///
 /// This is the decision, taken purely, so this test runs on Windows too. What it replaced: the
 /// application minted the entire store, wrote the pin, the floor and the manifest, and only

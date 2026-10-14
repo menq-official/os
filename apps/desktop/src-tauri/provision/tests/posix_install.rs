@@ -361,7 +361,7 @@ fn the_floor_walk_reaches_every_entry_inside_the_anchor() {
     let clean = floor_text(&anchor_dir);
     assert!(!clean.contains(&format!("{}/", anchor_dir.display())), "{clean}");
 
-    let registry = anchor_dir.join(prov::REGISTRY_ROOT_DIR).join("config").join("trusted-keys.json");
+    let registry = anchor_dir.join(prov::REGISTRY_ROOT_DIR).join(prov::REGISTRY_REL);
     set_mode(&registry, 0o664);
     let loose = floor_text(&anchor_dir);
     assert!(loose.contains("trusted-keys.json") && loose.contains("0664"), "{loose}");

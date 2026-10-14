@@ -148,6 +148,29 @@ fn a_platform_exemption_outside_the_table_is_refused() {
     prerequisites::not_applicable("a_test_that_is_not_in_the_reviewed_table");
 }
 
+/// Is `platform` one a leg of the CI test matrix is? The matrix is `ubuntu-latest` and
+/// `windows-latest` (`prerequisites/mod.rs` names it), so: `windows`, and `linux` or the `unix`
+/// it is one of. Not `macos` — no leg runs there, so an exemption "on macos" would be an early
+/// return on a platform where nothing measures the property and nothing runs the exemption.
+fn is_a_matrix_platform(platform: &str) -> bool {
+    ["windows", "linux", "unix"].contains(&platform)
+}
+
+/// The accepted set is the matrix's own. It used to include `macos`.
+#[test]
+fn an_exemption_may_only_name_a_platform_the_matrix_runs() {
+    for runs in ["windows", "linux", "unix"] {
+        assert!(is_a_matrix_platform(runs), "{runs} is a leg of the matrix and was refused");
+    }
+    for absent in ["macos", "darwin", "freebsd", "wasm", "Windows", "", "*"] {
+        assert!(!is_a_matrix_platform(absent), "{absent:?} was accepted as a matrix platform");
+    }
+    // And every platform the table names today is one of them.
+    for (test, platform, _) in prerequisites::PLATFORM_EXEMPTIONS {
+        assert!(is_a_matrix_platform(platform), "{test}: {platform}");
+    }
+}
+
 /// Every entry in the table names a test that actually exists, on a platform this matrix runs,
 /// with a reason that says where the property IS measured.
 ///
@@ -174,7 +197,7 @@ fn every_platform_exemption_names_a_test_that_exists() {
              dangling exemption exempts nothing and hides that it stopped applying"
         );
         assert!(
-            ["windows", "linux", "macos", "unix"].contains(&platform),
+            is_a_matrix_platform(platform),
             "`{test}` is exempted on `{platform}`, which is not a platform this matrix runs"
         );
         // The reason has to say where the property IS measured. An exemption whose reason is
@@ -390,4 +413,27 @@ fn a_measured_euid_decides_whether_this_is_root() {
 #[should_panic(expected = "is UNKNOWN")]
 fn an_unmeasured_euid_is_not_read_as_not_root() {
     prerequisites::root_from_euid_probe(Err("the probe file could not be created".to_string()));
+}
+
+/// Nor is it a prerequisite somebody can declare missing.
+///
+/// `sealed_anchor` used to hand a failed probe to `skip` under `posix-foreign-anchor`, so a box
+/// that had declared that tag — because it has no foreign-owned directory — returned early from
+/// the one test that measures a sealed anchor when the uid could not be read at all. It asks
+/// `measured_euid` now, which takes no tag: the panic names the failure and says no tag covers
+/// it. (That `sealed_anchor` calls it is seen by running
+/// `anchor_custody::a_sealed_anchor_refuses_this_accounts_own_writes` with the tag declared and
+/// `anchor::posix_euid` made to fail; nothing in an ordinary run can make that probe fail.)
+#[test]
+#[should_panic(expected = "not a missing prerequisite a tag can declare")]
+fn an_unmeasured_euid_is_not_a_declarable_skip() {
+    prerequisites::measured_euid(Err("the probe file could not be created".to_string()));
+}
+
+/// And a measured one is handed back as it was measured.
+#[test]
+fn a_measured_euid_is_returned_unchanged() {
+    for uid in [0u32, 1, 1000, 65534, u32::MAX] {
+        assert_eq!(prerequisites::measured_euid(Ok(uid)), uid);
+    }
 }

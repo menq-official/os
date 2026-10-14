@@ -176,9 +176,15 @@ pub fn skip(test: &str, tag: &str, what: &str) {
 
 /// Every test allowed to return early because the platform it is running on has no such thing.
 ///
-/// Reviewed as a table on purpose: the entries are the complete list of properties this leg of
-/// the matrix does not measure, and the other leg does. Adding one is a visible act; it cannot
-/// be done by exporting anything.
+/// Reviewed as a table on purpose: the entries are every test that calls [`not_applicable`],
+/// each a property this leg of the matrix does not measure and the other leg does. Adding one
+/// is a visible act; it cannot be done by exporting anything.
+///
+/// It is not everything a leg leaves unmeasured. [`COMPILED_OUT`] lists the tests the compiler
+/// removes, and a `#[cfg(…)] { … }` block INSIDE a test body is in neither table:
+/// `prerequisites_guard.rs` counts only gates at column 0, so — for one —
+/// `provision.rs::nothing_provisioned_carries_a_mode_the_umask_decided` drops its measured half
+/// on Windows and is listed nowhere.
 ///
 /// `(test, the platform where it does not apply, the counterpart that measures it)`.
 pub const PLATFORM_EXEMPTIONS: [(&str, &str, &str); 2] = [
@@ -302,8 +308,8 @@ pub fn not_applicable(test: &str) {
     else {
         panic!(
             "{test} tried to exempt itself as a platform fact, but it is not in \
-             prerequisites::PLATFORM_EXEMPTIONS. That table is the complete list of properties \
-             this platform does not measure; an exemption that is not in it is an environment \
+             prerequisites::PLATFORM_EXEMPTIONS. That table is every test allowed to return \
+             early as a platform fact; an exemption that is not in it is an environment \
              gap wearing a platform's clothes — use `skip` with a tag instead."
         );
     };
@@ -340,12 +346,24 @@ pub fn running_as_root() -> bool {
 /// account, simply carried a guess. A guard whose own measurement failed has nothing to say,
 /// and says so.
 pub fn root_from_euid_probe(probe: Result<u32, String>) -> bool {
+    measured_euid(probe) == 0
+}
+
+/// The effective uid a probe measured — or a panic, because a probe that failed measured none.
+///
+/// Both askers go through here: [`running_as_root`], and [`sealed_anchor`], which used to file
+/// the same failure under [`TAG_POSIX_FOREIGN_ANCHOR`] — so on a machine that had declared that
+/// tag for the reason it exists (no foreign-owned directory), a uid that could not be measured
+/// returned early as a declared skip. No tag declares a failed measurement away.
+pub fn measured_euid(probe: Result<u32, String>) -> u32 {
     match probe {
-        Ok(uid) => uid == 0,
+        Ok(uid) => uid,
         Err(why) => panic!(
-            "this process's effective uid could not be measured ({why}), so whether the suite \
-             is running as root is UNKNOWN. That is not `false`: every test that asks would \
-             otherwise assert a custody property under a guess"
+            "this process's effective uid could not be measured ({why}), so it — and with it \
+             whether the suite is running as root — is UNKNOWN. That is not `false`, and it is \
+             not a missing prerequisite a tag can declare: every test that asks would otherwise \
+             assert a custody property under a guess, or return early as though a fixture were \
+             absent"
         ),
     }
 }
@@ -649,17 +667,8 @@ pub fn sealed_anchor(test: &str) -> Option<SealedAnchor> {
 pub fn sealed_anchor(test: &str) -> Option<SealedAnchor> {
     use brops_provision::anchor;
 
-    let euid = match anchor::posix_euid() {
-        Ok(uid) => uid,
-        Err(e) => {
-            skip(
-                test,
-                TAG_POSIX_FOREIGN_ANCHOR,
-                &format!("this process's effective uid could not be measured ({e})"),
-            );
-            return None;
-        }
-    };
+    // A failed probe panics, whatever is declared: see [`measured_euid`].
+    let euid = measured_euid(anchor::posix_euid().map_err(|e| e.to_string()));
     if euid == 0 {
         skip(
             test,
