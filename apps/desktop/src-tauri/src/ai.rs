@@ -123,6 +123,14 @@ const MAX_MESSAGES: usize = 1000;
 /// conversation to some *other* local service. Rejects embedded credentials,
 /// fragments, and non-http(s) schemes.
 fn validate_ollama_url(url: &str) -> Result<(), String> {
+    validate_ollama_url_with(url, env_bool)
+}
+
+/// [`validate_ollama_url`]'s rules, with the two opt-ins asked of `opt_in` by variable name
+/// instead of read from the process environment — so a test states both answers and does not
+/// change its verdict on a machine that exports one of them (cockpit read R3-1272). An opt-in
+/// is asked only when the URL needs it, as before.
+fn validate_ollama_url_with(url: &str, opt_in: impl Fn(&str) -> bool) -> Result<(), String> {
     let parsed = reqwest::Url::parse(url).map_err(|e| format!("invalid BROPS_OLLAMA_URL: {e}"))?;
     let scheme = parsed.scheme();
     if scheme != "http" && scheme != "https" {
@@ -146,7 +154,7 @@ fn validate_ollama_url(url: &str) -> Result<(), String> {
     // conversation can't be redirected to a different local service by a merely
     // plausible-looking URL. Fails closed like every other opt-in flag.
     if parsed.port_or_known_default() != Some(DEFAULT_OLLAMA_PORT)
-        && !env_bool("BROPS_ALLOW_OLLAMA_NONDEFAULT_PORT")
+        && !opt_in("BROPS_ALLOW_OLLAMA_NONDEFAULT_PORT")
     {
         return Err(format!(
             "BROPS_OLLAMA_URL must use port {DEFAULT_OLLAMA_PORT}; set BROPS_ALLOW_OLLAMA_NONDEFAULT_PORT=1 (or true) to allow another port"
@@ -159,7 +167,7 @@ fn validate_ollama_url(url: &str) -> Result<(), String> {
     let is_loopback = host == "localhost"
         || host_ip.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false);
     if !is_loopback {
-        if !env_bool("BROPS_ALLOW_REMOTE_OLLAMA") {
+        if !opt_in("BROPS_ALLOW_REMOTE_OLLAMA") {
             return Err("remote Ollama is blocked; set BROPS_ALLOW_REMOTE_OLLAMA=1 (or true) to allow a non-local host".to_string());
         }
         if scheme != "https" {
@@ -3311,8 +3319,10 @@ fn interpret_bridge_result(doc: &serde_json::Value) -> Result<GovernedReply, Str
 /// subprocess discipline in three of its four parts (stdin payload, bounded reads, one
 /// absolute deadline) and not in the fourth: the round trip runs in `spawn_blocking`
 /// ([`governed_sidecar_call`]), which cannot be cancelled, so dropping this future does not
-/// kill the child — it is reaped when the round trip ends. Fail-closed +
-/// VERIFIED-receipt-mandatory via [`interpret_bridge_result`].
+/// kill the child — it is reaped when the round trip ends. Fail-closed on a failed or empty
+/// result via [`interpret_bridge_result`], which verifies NOTHING: it hands back the reply and
+/// the receipt's signed wire, empty strings when the engine sent no receipt, and the command
+/// layer verifies that wire (an empty one Blocks there).
 async fn governed_engine(
     python: &str,
     sidecar: &str,
@@ -3663,8 +3673,8 @@ mod tests {
     }"###;
 
     /// The `{"type":"user"}` line that returned that delegation. Note `is_error` is ABSENT, and
-    /// the real completion status sits in a TOP-LEVEL `tool_use_result` object the parser never
-    /// looks at.
+    /// the real completion status sits in a TOP-LEVEL `tool_use_result` object, which
+    /// `delegation_settlements` reads when `is_error` is absent.
     const CAPTURED_SETTLE_LINE: &str = r###"{
       "type": "user",
       "message": {
@@ -3694,7 +3704,7 @@ mod tests {
 
     /// A `{"type":"user"}` line from INSIDE the running specialist — one of its own `Glob`
     /// returns. It is distinguished from the delegation's return only by a non-null
-    /// `parent_tool_use_id`, which nothing in this module reads.
+    /// `parent_tool_use_id`, which `delegation_spawns` and `delegation_settlements` both read.
     const CAPTURED_NESTED_RESULT_LINE: &str = r###"{
       "type": "user",
       "message": {
@@ -3746,9 +3756,9 @@ mod tests {
         assert_eq!(spawns[0].prohibited_scope, vec![".claude".to_string()]);
     }
 
-    /// The rest of `delegation_spawns` is sound — only the NAME is wrong. Renaming the captured
-    /// block to `Task` (changing nothing else) makes the same line parse completely, which is
-    /// what pins the defect to that one comparison.
+    /// The second spelling in `DELEGATION_BLOCK_NAMES`. Renaming the captured block to `Task`
+    /// (changing nothing else) parses the same line completely, so the name the tool is GRANTED
+    /// under is still accepted beside the `Agent` the CLI emits.
     #[test]
     fn the_same_captured_block_parses_completely_once_it_is_called_task() {
         let mut line = captured(CAPTURED_SPAWN_LINE);
@@ -3768,9 +3778,9 @@ mod tests {
         assert_eq!(s.prohibited_scope, vec![".claude".to_string()]);
     }
 
-    /// The settlement arm DOES match the real return line — but reports `unknown`, because the
-    /// live CLI sent no `is_error` on a delegation that completed successfully. The authoritative
-    /// `"status": "completed"` sits in the top-level `tool_use_result`, which nothing reads.
+    /// The settlement arm matches the real return line and reports `ok`. The live CLI sent no
+    /// `is_error` on a delegation that completed successfully; the authoritative
+    /// `"status": "completed"` sits in the top-level `tool_use_result`, and that is what is read.
     #[test]
     fn the_real_delegation_return_settles_ok_from_the_line_level_status() {
         let line = captured(CAPTURED_SETTLE_LINE);
@@ -4897,7 +4907,7 @@ mod tests {
             assert_eq!(args.get(pos + 1), Some(&String::new()), "--tools must be followed by \"\"");
             // MCP fully locked to the (absent) --mcp-config → no MCP servers load.
             assert!(args.iter().any(|a| a == "--strict-mcp-config"), "must pass --strict-mcp-config");
-            // only project settings load (from the empty sandbox) → no user hooks/plugins/MCP.
+            // no setting sources load at all → no user or project hooks/plugins/MCP.
             let sp = args.iter().position(|a| a == "--setting-sources").expect("--setting-sources present");
             assert_eq!(args.get(sp + 1), Some(&String::new()), "no setting sources → no user/project hooks");
             assert!(args.iter().any(|a| a == "--no-session-persistence"));
@@ -4910,7 +4920,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_args_agent_enables_bounded_bash_chat_disables_all() {
+    fn tool_args_agent_enables_bash_and_task_chat_disables_all() {
         // Sandboxed chat (no project dir): ALL built-in tools off, no Bash, no deny-list needed.
         let chat = tool_args(false);
         let pos = chat.iter().position(|a| a == "--tools").expect("--tools present");
@@ -4918,7 +4928,8 @@ mod tests {
         assert!(!chat.iter().any(|a| a.contains("Bash")), "chat has no Bash");
         assert!(!chat.iter().any(|a| a == "--disallowedTools"), "chat needs no deny-list");
 
-        // Conductor: file tools + Bash + Task, in acceptEdits, bounded by the deny-list. `Task` is
+        // Conductor: file tools + Bash + Task, in acceptEdits. The shell itself is not bounded
+        // (`BRO_BASH_DENY` is empty); the deny-list carries the two sets asserted below. `Task` is
         // what makes Bro able to delegate at all — without it the pack/role split in his prompt is
         // narration, and `engine/agents/authority-policy.json` has no way to reach a running agent.
         let agent = tool_args(true);
@@ -5165,8 +5176,12 @@ mod tests {
         assert_eq!(production.matches("ollama_endpoint(&url, ").count(), 2);
     }
 
+    /// With neither opt-in given. The answers are passed in, not read from the environment: this
+    /// test called `validate_ollama_url` and so failed on a machine exporting
+    /// `BROPS_ALLOW_OLLAMA_NONDEFAULT_PORT=1` (cockpit read R3-1272).
     #[test]
     fn ollama_url_is_loopback_only_by_default() {
+        let validate_ollama_url = |url: &str| validate_ollama_url_with(url, |_| false);
         for good in ["http://localhost:11434", "http://127.0.0.1:11434", "http://[::1]:11434", "http://localhost:11434/"] {
             assert!(validate_ollama_url(good).is_ok(), "{good} should be allowed");
         }
@@ -5183,6 +5198,35 @@ mod tests {
         ] {
             assert!(validate_ollama_url(bad).is_err(), "{bad} should be rejected");
         }
+    }
+
+    /// Each opt-in, given. It lifts its own rule and no other: the port opt-in does not admit a
+    /// remote host, the remote opt-in does not admit another port, and a remote host over plain
+    /// http is refused whatever was opted into.
+    #[test]
+    fn each_ollama_opt_in_lifts_its_own_rule_and_no_other() {
+        const PORT: &str = "BROPS_ALLOW_OLLAMA_NONDEFAULT_PORT";
+        const REMOTE: &str = "BROPS_ALLOW_REMOTE_OLLAMA";
+        let with = |given: &'static [&'static str], url: &str| {
+            validate_ollama_url_with(url, |key| given.contains(&key))
+        };
+        // The port opt-in.
+        assert!(with(&[PORT], "http://localhost:8080").is_ok());
+        assert!(with(&[PORT], "http://localhost").is_ok(), "implicit port 80, opted into");
+        assert!(with(&[REMOTE], "http://localhost:8080").is_err(), "the remote opt-in is not the port one");
+        assert!(with(&[PORT], "https://ollama.example.com:11434").is_err(), "the port opt-in is not the remote one");
+        // The remote opt-in, and the https rule it does not lift.
+        assert!(with(&[REMOTE], "https://ollama.example.com:11434").is_ok());
+        let plain = with(&[REMOTE, PORT], "http://ollama.example.com:11434").expect_err("plain http");
+        assert_eq!(plain, "a remote Ollama host must use https");
+        assert!(with(&[REMOTE], "https://ollama.example.com").is_err(), "implicit port 443 is not 11434");
+        assert!(with(&[REMOTE, PORT], "https://ollama.example.com").is_ok());
+        // Neither opt-in reaches the rules that have none.
+        for bad in ["http://user:pass@localhost:11434", "http://localhost:11434/v1", "ftp://localhost:11434"] {
+            assert!(with(&[REMOTE, PORT], bad).is_err(), "{bad} has no opt-in");
+        }
+        // Asked only when the URL needs it: a default loopback URL consults neither.
+        assert!(validate_ollama_url_with("http://localhost:11434", |key| panic!("asked for {key}")).is_ok());
     }
 
     #[test]
