@@ -79,6 +79,52 @@ fn post_message_demonstration_verified_posts_and_badges_atomically() {
     assert_eq!(receipt_of(&c, &conv.id, &m.id).as_deref(), Some("demonstration_verified"));
 }
 
+/// The header's "never collides with the production trust records", as a test (cockpit read
+/// R3-1259): one message carrying BOTH a substantiated demonstration row and an accepted production
+/// attempt projects the production outcome, whichever of the two it is. The attempt is the first
+/// `COALESCE` arm of `MESSAGE_TRUST_COLUMNS`; nothing asserted that order before this.
+#[test]
+fn an_accepted_production_attempt_wins_over_a_demonstration_row_on_the_same_message() {
+    for outcome in ["development_untrusted", "trusted_verified"] {
+        let c = db::open_in_memory().expect("open migrated db");
+        let conv = repo::chat::create_conversation(&c, "direct", "Bro", brops_core::repo::audit::Actor::local_operator()).expect("conversation");
+        let m = repo::chat::post_message_demonstration_verified(
+            &c,
+            NewMessage {
+                conversation_id: conv.id.clone(),
+                role: "agent".to_string(),
+                author: "Bro".to_string(),
+                body: "one body, two records".to_string(),
+            },
+        )
+        .expect("post + record");
+        // The demonstration badge is really there first, so what follows replaces something.
+        assert_eq!(receipt_of(&c, &conv.id, &m.id).as_deref(), Some("demonstration_verified"));
+
+        c.execute(
+            "INSERT INTO receipt_verification_attempts
+                (id, wire_envelope_jcs_b64, wire_signature_b64, outcome, message_id, verified_at)
+             VALUES ('att-1', 'e', 's', ?1, ?2, '1')",
+            [outcome, m.id.as_str()],
+        )
+        .expect("plant an accepted attempt beside the demonstration row");
+
+        assert_eq!(
+            receipt_of(&c, &conv.id, &m.id).as_deref(),
+            Some(outcome),
+            "the production record must be what is projected, not the demonstration badge",
+        );
+        let demo_rows: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM demonstration_verified_messages WHERE message_id = ?1",
+                [&m.id],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(demo_rows, 1, "the demonstration row is still there; it lost, it was not removed");
+    }
+}
+
 /// A demonstration row that does NOT carry the digest of the body it sits on paints no badge.
 ///
 /// This is the shape the table had before migration 0024 and the shape every row written before it

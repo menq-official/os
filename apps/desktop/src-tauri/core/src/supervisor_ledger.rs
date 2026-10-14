@@ -31,10 +31,17 @@
 //!
 //! # WHAT IS LIVE, AND WHAT IS ONLY TESTED
 //!
-//! Of the three, only (3) has a caller. Outside this file's own tests the workspace uses
-//! [`create_schema`], [`evidence_floor_cas`], [`EvidenceHead`], [`LedgerError`] and the two lease
-//! constants (`broker/src/main.rs`, `win-live/src/servers.rs`), plus the pure [`lease_launch_gate`]
-//! from the Windows kit. **Nothing calls the acceptance state machine or the outbox**:
+//! Of the three, only (3) has a caller. Outside this file's own tests the workspace uses, by
+//! symbol:
+//!
+//! - [`create_schema`] — `broker/src/main.rs` (the only symbol the broker takes), both Linux proof
+//!   drivers (`proof/src/bin/live_turn.rs`, `ladder_turn.rs`) and the Windows kit
+//!   (`win-live/src/servers.rs`, `proof.rs`, `bin/win_live_turn.rs`);
+//! - [`evidence_floor_cas`], [`EvidenceHead`], [`LedgerError`], the pure [`lease_launch_gate`]
+//!   with [`LaunchGate`], and the two lease constants — `win-live/src/servers.rs` alone
+//!   ([`LEASE_DURATION_MS`] is also read by a test in `governed_verification.rs`).
+//!
+//! **Nothing calls the acceptance state machine or the outbox**:
 //! [`accept_prepare`], [`advance`], [`gate_and_start`], [`current_state`], [`lease_payload_bytes`],
 //! [`enqueue_terminal`], [`pending_outbox`] and [`mark_published`] are reached only by the tests
 //! below.
@@ -794,6 +801,12 @@ pub enum OutboxOutcome {
 /// terminal state may be enqueued. On a retry that presents byte-identical bytes ⇒
 /// [`OutboxOutcome::Idempotent`]; differing bytes for the same attempt ⇒ [`LedgerError::Conflict`]. The
 /// filename is the design's atomic terminal path `<run_id>__<execution_attempt_id>.json`.
+///
+/// Two things this does NOT do (cockpit read R3-0145; unreached code, see the module header). The
+/// retry compares `payload_sha256` and nothing else: a retry carrying the same bytes with a different
+/// `terminal_state`, `run_id` or `terminal_record_handle` answers `Idempotent` and the first row
+/// stands. And `run_id` — so the filename — is the caller's `rec.run_id`; it is not read from, or
+/// compared with, the attempt's `governed_turn_acceptance` row.
 pub fn enqueue_terminal(
     conn: &Connection,
     rec: &TerminalRecord,

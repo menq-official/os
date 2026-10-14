@@ -14,8 +14,10 @@
 //!
 //! This crate does NOT re-implement those rules. The three verdicts come from `brops-core`
 //! (`fd_lifecycle::verify_launcher_fd_set`, `privilege_drop::verify_performed_drop`,
-//! `privilege_drop::verify_final_state`) so the launcher and the recorder-side checks share ONE source of
-//! truth. The pure `/proc` parsers are host-independent and unit-tested on any platform (mirroring how
+//! `privilege_drop::verify_final_state`), where they are unit-tested apart from any syscall. This
+//! launcher is their only caller: the recorder (`proof/src/bin/governed_recorder.rs`) builds the
+//! descriptor table it hands over by hand and imports neither module, so nothing on the recorder side
+//! shares them. The pure `/proc` parsers are host-independent and unit-tested on any platform (mirroring how
 //! `fd_lifecycle`/`privilege_drop` keep a pure, tested core). The real
 //! `dup2`/`fcntl`/`setresuid`/`capset`/`fexecve` syscalls are Linux-only and gated behind
 //! `#[cfg(target_os = "linux")]`; on every other host `main` prints the platform-unsupported banner and
@@ -98,8 +100,9 @@ impl From<PrivViolation> for Refusal {
     }
 }
 
-/// The facts the launcher must gather before it may `fexecve`: the observed descriptor table, the planned
-/// drop sequence, and the observed post-drop process state (plus the lease-bound executor identity).
+/// The input of [`evaluate_launch`], which only tests call: an observed descriptor table, a drop
+/// sequence, and a post-drop process state (plus the lease-bound executor identity). The real path
+/// builds no value of this type — it has no "planned" sequence, it has the journal of what it did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchFacts {
     pub observed_fds: Vec<FdFacts>,
@@ -112,10 +115,12 @@ pub struct LaunchFacts {
     pub brops_admin_uid: u32,
 }
 
-/// The pure, host-independent launch gate — the launcher's fail-closed decision core. Composes the three
-/// `brops-core` verdicts in the mandated order (FD set → drop order → final state); the FIRST failure short
-/// circuits, and only an all-clear returns `Ok(())`. This is exactly the predicate that must hold before any
-/// real `fexecve`, and it is fully unit-testable without spawning a process or touching a syscall.
+/// A pure, host-independent composition of three `brops-core` verdicts (FD set → drop order → final
+/// state); the FIRST failure short circuits, and only an all-clear returns `Ok(())`. **Reached only from
+/// tests** (see the module doc). It is NOT the predicate a real launch is held to: `real_main` judges the
+/// order with `verify_performed_drop` over the journal of syscalls it issued, where this takes
+/// `verify_order` over a sequence handed to it, and the real path also checks the lease, the invoker,
+/// the attested request, the store-input digests and the image, none of which is in here.
 pub fn evaluate_launch(f: &LaunchFacts) -> Result<(), Refusal> {
     verify_launcher_fd_set(&f.observed_fds, f.brops_admin_uid)?;
     verify_order(&f.drop_sequence)?;
@@ -232,7 +237,6 @@ pub fn parse_status(content: &str) -> Option<FinalState> {
 // Pure exec-image owner/mode predicate — host-independent so it is unit-testable on any OS. It is fed the
 // `st_mode`/`st_uid` an `fstat` of the OPENED executor fd reports (never a `metadata(path)` re-lookup).
 // ---------------------------------------------------------------------------------------------------
-/// `<sys/stat.h>` mode masks, as host-independent literals so this predicate compiles/tests on any OS.
 /// The uid that — besides `root(0)` — may own a TCB artifact this launcher trusts: the lease, the
 /// executor image, the attested-request config, and the store inputs on fds 3/4/5 (§2.5).
 ///
@@ -253,6 +257,7 @@ pub fn parse_status(content: &str) -> Option<FinalState> {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const TCB_OWNER_BROPS_ADMIN_UID: u32 = 0;
 
+// `<sys/stat.h>` mode masks, as host-independent literals so the predicate below compiles/tests on any OS.
 const S_IFMT_MASK: u32 = 0o170000;
 const S_IFREG_BITS: u32 = 0o100000;
 const GROUP_OTHER_WRITE_BITS: u32 = 0o022;
@@ -270,20 +275,23 @@ pub fn image_owner_mode_ok(st_mode: u32, st_uid: u32, brops_admin_uid: u32) -> b
 
 // ---------------------------------------------------------------------------------------------------
 // The validated lease (§4.3) — the launch parameters the launcher TAKES (never chooses): the recorder
+// principal permitted to invoke it, the unprivileged executor identity to drop to, the executor image
+// hash pin, and the three request-input pins. Parsed from the lease handle (argv[0]). A strict std-only
+// `key=value` body — NO serde in a setuid-root binary (minimal attack surface). Pure + host-independent
+// so it is unit-tested on any OS.
 //
 // PARTIAL vs the spec (audit round 3): §4.3 describes a SIGNED 25-field artifact. What this is, is an
 // unsigned 8-field key=value blob. Its integrity comes from root ownership and file mode — a real
 // property, and a different one from a signature: it survives a hostile non-root principal and does
 // NOT survive anything that can write as root. Cited here because a reader who sees `§4.3` and stops
 // there will assume the signature exists.
-// principal permitted to invoke it, the unprivileged executor identity to drop to, and the executor image
-// hash pin. Parsed from the lease handle (argv[0]). A strict std-only `key=value` body — NO serde in a
-// setuid-root binary (minimal attack surface). Pure + host-independent so it is unit-tested on any OS.
 // ---------------------------------------------------------------------------------------------------
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lease {
     /// The ONLY principal permitted to invoke the setuid launcher — matched against the launcher's REAL
-    /// uid/gid at §2.7 step 1. In production the supervisor issues (and signs) this lease.
+    /// uid/gid at §2.7 step 1. Nothing signs this lease and [`parse_lease`] reads no signature: the
+    /// live kits write it as root (`engine/ci/live/run_live_turn.sh`), and root ownership and mode are
+    /// what the launcher checks. A supervisor-issued, signed lease is the §4.3 design, not this file.
     pub recorder_uid: u32,
     pub recorder_gid: u32,
     /// The unprivileged identity the launcher drops to before `fexecve` (§2.7).
@@ -301,6 +309,12 @@ pub struct Lease {
     pub system_sha256: String,
     pub history_sha256: String,
     pub generation_config_sha256: String,
+}
+
+/// A canonical SHA-256 digest as this launcher accepts one: exactly 64 lowercase-hex characters. The
+/// one definition behind both readers — the lease's `key=value` pins and the attested-request scanner.
+fn is_canonical_sha256_hex(v: &str) -> bool {
+    v.len() == 64 && v.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Parse a strict `key=value` lease body. Fail-closed: EXACTLY the eight required keys, each present once,
@@ -325,10 +339,7 @@ pub fn parse_lease(content: &str) -> Option<Lease> {
     }
 
     fn set_hex(slot: &mut Option<String>, v: &str) -> Option<()> {
-        if slot.is_some()
-            || v.len() != 64
-            || !v.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-        {
+        if slot.is_some() || !is_canonical_sha256_hex(v) {
             return None; // duplicate or non-canonical digest ⇒ fail closed
         }
         *slot = Some(v.to_string());
@@ -447,9 +458,19 @@ pub fn store_input_pins(lease: &Lease) -> [(i32, &str); 3] {
 // `proof/src/bin/governed_recorder.rs`): a COMPILE-TIME path, not an argv flag and not an environment
 // variable, so there is no runtime input by which the broker can redirect it, and a root-owned,
 // non-group/other-writable regular file so a non-TCB principal cannot forge it.
+//
+// WHICH CHAIN THIS BINDS (cockpit read R3-0586). The paragraphs above are true of the DIRECT chain
+// (`proof/src/bin/live_turn.rs`), which takes its three request digests from `resolved.*_sha256` in
+// this file. They are not true of the ladder chain — the only one `brops-broker` serves — where
+// `prepare_governed_turn_v1b` computes each digest from the bytes the turn sends and reads none from
+// config. There this comparison still runs, but against a file the receipt is not attested from: the
+// ladder kit writes `resolved.*` to agree with its one staged turn at provisioning time
+// (`engine/ci/live/run_ladder_turn.sh`), and the turn-time comparison of the turn's own handles with the
+// lease pins is the ladder supervisor's (`engine/ci/live/run_ladder_supervisor.py`), not the launcher's.
 // ---------------------------------------------------------------------------------------------------
 
-/// The deployment's canonical broker config — the file `resolved.*_sha256` is attested from. A compile-time
+/// The deployment's canonical broker config — the file the direct chain attests `resolved.*_sha256`
+/// from (the ladder chain does not; see the note above). A compile-time
 /// constant on purpose (see the module note above); the deployment must place it exactly here.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const ATTESTED_REQUEST_PATH: &str = "/opt/brops-live/config.json";
@@ -483,10 +504,7 @@ fn scan_json_digest(content: &str, key: &str) -> Option<String> {
     if !rest[64..].starts_with('"') {
         return None; // not exactly 64 chars of digest
     }
-    if !value
-        .bytes()
-        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    {
+    if !is_canonical_sha256_hex(value) {
         return None; // non-canonical digest ⇒ fail closed
     }
     Some(value.to_string())
@@ -1475,6 +1493,35 @@ mod tests {
         assert!(!image_owner_mode_ok(DIR | 0o755, 0, ADMIN));
     }
 
+    /// `image_owner_mode_ok` and `brops_core::fd_lifecycle::store_inode_custody_ok` are the same
+    /// rule written twice — regular file, owned by root or `brops-admin`, no group/other write bit —
+    /// one over `(st_mode, st_uid)` and one over an `InodeIdentity` (cockpit read R3-0694/R3-0695).
+    /// They are not merged here; this holds them to one answer over every file type, every
+    /// permission triple and four owners, so the copies cannot drift apart unnoticed.
+    #[test]
+    fn the_image_floor_and_the_store_input_floor_give_one_answer() {
+        use brops_core::fd_lifecycle::store_inode_custody_ok;
+        const ADMIN: u32 = 500;
+        let (mut accepted, mut refused) = (0u32, 0u32);
+        for file_type in [0o100000u32, 0o040000, 0o120000, 0o020000, 0o060000, 0o010000, 0o140000] {
+            for perms in 0..=0o7777u32 {
+                for uid in [0u32, ADMIN, 1000, 5007] {
+                    let mode = file_type | perms;
+                    let id = InodeIdentity { dev: 1, ino: 1, uid, gid: 0, mode, size: 0 };
+                    let image = image_owner_mode_ok(mode, uid, ADMIN);
+                    assert_eq!(
+                        image,
+                        store_inode_custody_ok(&id, ADMIN),
+                        "the two floors disagree on mode {mode:o} uid {uid}"
+                    );
+                    if image { accepted += 1 } else { refused += 1 }
+                }
+            }
+        }
+        // Both answers occur, so the equality above is not two functions that always refuse.
+        assert!(accepted > 0 && refused > 0, "accepted {accepted}, refused {refused}");
+    }
+
     #[test]
     fn gate_refuses_on_a_cloexec_data_fd() {
         let mut f = good_facts();
@@ -1652,11 +1699,22 @@ mod tests {
 
     #[test]
     fn parse_lease_fails_closed_on_missing_dup_unknown_or_bad_fields() {
-        // missing a required key (no executor_gid)
-        let missing = "recorder_uid=5005\nrecorder_gid=5005\nexecutor_uid=5007\n\
-                       executor_executable_sha256=".to_string()
-            + &"ab".repeat(32);
-        assert_eq!(parse_lease(&missing), None);
+        // missing a required key: the good body with EXACTLY that one line removed, for each of the
+        // eight, so each requirement is what refuses. (This case used to be a body lacking four keys
+        // and named for one of them — cockpit read R3-1262.)
+        let keys = [
+            "recorder_uid", "recorder_gid", "executor_uid", "executor_gid",
+            "executor_executable_sha256", "system_sha256", "history_sha256",
+            "generation_config_sha256",
+        ];
+        for key in keys {
+            let prefix = format!("{key}=");
+            let good = good_lease_body();
+            let without: String =
+                good.lines().filter(|l| !l.starts_with(&prefix)).map(|l| format!("{l}\n")).collect();
+            assert_eq!(without.lines().count(), keys.len() - 1, "{key}: exactly one line removed");
+            assert_eq!(parse_lease(&without), None, "a lease without {key} must not parse");
+        }
         // duplicate key
         let dup = format!("{}recorder_uid=6000\n", good_lease_body());
         assert_eq!(parse_lease(&dup), None);

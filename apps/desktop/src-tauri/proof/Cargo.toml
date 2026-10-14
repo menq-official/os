@@ -3,7 +3,7 @@ name = "brops-governed-live"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Wave 3b LIVE production governed-turn kit (LINUX-RUN): the live-turn driver + the §2.7 evidence-recorder helper + the contained executor image. Drives the real broker chain (broker library) against the 3 live Python service servers + the setuid launcher/executor to render a genuine production trusted_verified. Not shipped in the desktop bundle."
+description = "Wave 3b LIVE governed-turn kit (LINUX-RUN), four binaries: live_turn (the direct-chain driver), ladder_turn (the §4.10(g) ladder driver), governed_recorder (the §2.7 evidence-recorder helper) and proof_executor (the fixture executor image). Drives the broker library's chain against the 3 live Python service servers + the setuid launcher/executor under a KIT-generated root anchor, which can never render production_verified=true: a turn it commits is trusted_verified under demonstration custody. Not shipped in the desktop bundle."
 
 [[bin]]
 name = "live_turn"

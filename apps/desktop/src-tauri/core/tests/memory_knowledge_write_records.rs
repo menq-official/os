@@ -156,6 +156,53 @@ fn a_failed_write_records_nothing() {
     assert_eq!(lwr::count(&c).unwrap(), 0, "a refused write must leave no record behind");
 }
 
+/// The other half of the header's same-transaction claim (cockpit read R3-1261): the row write
+/// SUCCEEDS and the record append after it fails, and the row write is rolled back. The test above
+/// only uses writes that fail before any row is touched.
+///
+/// The append is made to fail by a TEMP trigger on `store_write_records` — it exists on this
+/// connection only and is no part of the schema. `RAISE(ABORT)` undoes the one INSERT that fired
+/// it and leaves the transaction open, so what removes the row is the writer's own rollback.
+#[test]
+fn a_failed_record_rolls_the_row_write_back() {
+    let c = conn();
+    let actor = brops_core::repo::audit::Actor::local_operator;
+    let kept = repo::memory::create(&c, new_memory("written while records worked"), actor()).unwrap();
+    let note = repo::knowledge::create(&c, new_note("Kept"), actor()).unwrap();
+    assert_eq!(intact(&c), 2);
+
+    c.execute_batch(
+        "CREATE TEMP TRIGGER refuse_every_record BEFORE INSERT ON store_write_records
+         BEGIN SELECT RAISE(ABORT, 'record refused by the test'); END;",
+    )
+    .unwrap();
+    let rows = |table: &str| -> i64 {
+        c.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+    };
+
+    // create: the INSERT into the table ran, the record did not, and no row is left.
+    assert!(repo::memory::create(&c, new_memory("must not survive"), actor()).is_err());
+    assert_eq!(rows("memory_entries"), 1, "a memory row outlived its refused record");
+    assert!(repo::knowledge::create(&c, new_note("Must not survive"), actor()).is_err());
+    assert_eq!(rows("knowledge_notes"), 1, "a note outlived its refused record");
+
+    // pin: the UPDATE ran, and the entry reads back unpinned.
+    assert!(repo::memory::set_pinned(&c, &kept.id, true, actor()).is_err());
+    assert!(!repo::memory::get(&c, &kept.id).unwrap().pinned, "a pin outlived its refused record");
+
+    // delete: the DELETE ran, and both rows are still there.
+    assert!(repo::memory::delete(&c, &kept.id, actor()).is_err());
+    assert!(repo::knowledge::delete(&c, &note.id, actor()).is_err());
+    assert_eq!((rows("memory_entries"), rows("knowledge_notes")), (1, 1), "a delete outlived its refused record");
+
+    // Nothing was appended, the chain is the two records from before, and the connection is
+    // usable again once the trigger is gone — no transaction was left open behind a refusal.
+    assert_eq!(intact(&c), 2);
+    c.execute_batch("DROP TRIGGER refuse_every_record").unwrap();
+    repo::memory::set_pinned(&c, &kept.id, true, actor()).unwrap();
+    assert_eq!(intact(&c), 3);
+}
+
 #[test]
 fn a_row_written_before_the_ledger_existed_is_unrecorded_not_recorded() {
     let c = conn();

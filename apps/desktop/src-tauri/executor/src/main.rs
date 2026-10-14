@@ -63,8 +63,11 @@ const EXIT_IO_FAILURE: i32 = 1;
 /// Real governed mode is only available on Linux (Model A). Any other host fails closed.
 const EXIT_PLATFORM_UNSUPPORTED: i32 = 2;
 
-/// The version tag prefixing the executor's output binding. Bumping the transform bumps this tag so the
-/// receipt/store side can never silently accept an output produced under a different binding.
+/// The version tag prefixing the executor's output binding: the first line of what [`build_output`]
+/// emits. Nothing reads it: the tag occurs in this file and, as part of an opaque byte literal, in one
+/// engine test fixture (`engine/tests/test_ladder_pull_evidence.py`). No receipt, store or verifier
+/// code compares it, so it does not stop an output produced under another binding from being accepted;
+/// a consumer that refuses on it has yet to be written.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const OUTPUT_BINDING_VERSION: &str = "brops-exec-output.v1";
 

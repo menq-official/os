@@ -1,8 +1,13 @@
 //! Wave 3b-1B — TCB binary & config integrity floor (implements the design-GREEN rev-30 §2.5
 //! "TCB binary & config integrity" P0 code-integrity floor).
 //!
-//! This module is the **pure, side-effect-free verification core** the supervisor runs at start (before
-//! it will issue **any** governed-turn lease). It owns NO filesystem, socket, DB, or clock: every fact
+//! This module is the **pure, side-effect-free verification core** of the floor. rev-30 §2.5 gives
+//! it to the supervisor, to run at start before it issues any governed-turn lease; the supervisor
+//! that runs is Python and calls nothing here. The callers are in the broker crate:
+//! `tcb_probe::verify_broker_tcb` (the broker's own start, before it serves anything but the
+//! blocking executor), `tcb_probe::verify_deployment_tcb` (the live kits' evaluation as root before
+//! any service starts, through `proof/src/tcb_verify.rs`) and `preflight.rs` (a report).
+//! It owns NO filesystem, socket, DB, or clock: every fact
 //! about the on-disk world arrives through the injected [`FsProbe`] trait, so the whole rev-30 §2.5
 //! floor is unit-testable **without** the OS trust chain — tests inject a fake FS.
 //!
@@ -21,8 +26,12 @@
 //!   part of it and does not read ACLs: see [`FileFacts`].) A writable ancestor is treated as writable (a rename/replace vector).
 //! - **Fail-closed.** [`verify_tcb_integrity`] refuses (returns a [`TcbViolation`] naming the failing
 //!   artifact + reason) if ANY artifact or ancestor is **missing**, **wrong-owner**,
-//!   **writable-by-login-or-runtime**, or **hash-mismatched** — never a partial/degraded pass. The
-//!   supervisor maps any `Err` here to "governed real-mode DISABLED" (platform gate §0.1 unsupported).
+//!   **writable-by-login-or-runtime**, or **hash-mismatched** — never a partial/degraded pass. On
+//!   any `Err` the broker keeps serving its blocking executor (`broker/src/main.rs`, "TCB integrity
+//!   floor REFUSED … serving fail-closed") and the kits' root evaluation exits non-zero.
+//!   rev-30 gives that refusal to the platform gate of §0.1, which is PARTIAL here: no function
+//!   named `platform_governed_execution_supported()` exists in the tree, and three separate
+//!   refusals stand where it is specified (`config/spec-conformance.json`, §0.1).
 
 use std::collections::BTreeMap;
 
@@ -141,7 +150,7 @@ pub trait FsProbe {
 }
 
 /// A TCB-integrity floor violation (rev-30 §2.5) — names the failing artifact and the exact reason. Any
-/// value here ⇒ the supervisor DISABLES governed real-mode (fail-closed, never partial).
+/// value here ⇒ the caller refuses (fail-closed, never partial): the broker serves no governed turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TcbViolation {
     /// The pin manifest does not cover the full rev-30 §2.5 EXPANDED `TCB_REQUIRED_ARTIFACTS` set: one or
@@ -602,11 +611,129 @@ mod tests {
     fn modified_challenge_authority_config_hash_mismatch_is_violation() {
         let m = manifest();
         let mut fs = clean_fs();
-        fs.files.get_mut(CA_CFG_PATH).unwrap().sha256 =
-            "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into();
+        let modified = "c".repeat(64);
+        let modified = modified.as_str();
+        // The measured value is itself a well-formed digest, so the refusal below is for a digest
+        // that DIFFERS from the pin and not for a string that is no digest at all (the fixture
+        // was 65 characters long until cockpit read R3-1257).
+        assert!(is_sha256_pin(modified), "the modified-file fixture must be a 64-hex digest");
+        fs.files.get_mut(CA_CFG_PATH).unwrap().sha256 = modified.into();
+        match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err() {
+            TcbViolation::HashMismatch { logical_name, expected_sha256, actual_sha256, .. } => {
+                assert_eq!(logical_name, "desktop-challenge-authority.config");
+                assert_eq!(expected_sha256, CA_CFG_SHA);
+                assert_eq!(actual_sha256, modified);
+            }
+            other => panic!("expected HashMismatch, got {other:?}"),
+        }
+    }
+
+    /// Cockpit read R3-1255. Every fixture in this module set `is_world_or_group_writable` to
+    /// `false`, so the half of the non-writability floor that reads it could be deleted with the
+    /// module green. Here it is the ONLY thing wrong with the artifact.
+    #[test]
+    fn a_group_or_world_writable_artifact_is_refused_on_that_flag_alone() {
+        let m = manifest();
+        let mut fs = clean_fs();
+        fs.files.get_mut(BROKER_PATH).unwrap().is_world_or_group_writable = true;
         let err = verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err();
-        assert!(matches!(err, TcbViolation::HashMismatch { .. }));
-        assert_eq!(err.logical_name(), "desktop-challenge-authority.config");
+        assert!(matches!(err, TcbViolation::WritableByUntrusted { .. }), "{err:?}");
+        assert_eq!(err.logical_name(), "trusted-verifier-broker.bin");
+    }
+
+    /// R3-1255, the ancestor half: a group/world-writable directory above the artifact, with
+    /// `writable_by_login_or_runtime` left `false`.
+    #[test]
+    fn a_group_or_world_writable_ancestor_is_refused_on_that_flag_alone() {
+        let m = manifest();
+        let mut fs = clean_fs();
+        fs.files.get_mut("/opt/brops/bin").unwrap().is_world_or_group_writable = true;
+        match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err() {
+            TcbViolation::AncestorWritable { logical_name, ancestor } => {
+                assert_eq!(logical_name, "trusted-verifier-broker.bin");
+                assert_eq!(ancestor, "/opt/brops/bin");
+            }
+            other => panic!("expected AncestorWritable, got {other:?}"),
+        }
+    }
+
+    /// `manifest()` with `brops_admin` resolved to `uid` — a pin manifest that maps a TCB owner
+    /// onto a principal the floor is measured against. With it, `is_tcb_owner(uid)` is true and
+    /// `expected_uid == uid`, so only the runtime/login-owner clauses are left to refuse.
+    fn manifest_with_admin_as(uid: u32) -> TcbPinManifest {
+        let mut m = manifest();
+        m.owner_uids.insert(TcbOwner::BropsAdmin, uid);
+        m
+    }
+
+    /// The challenge-authority config (the one `brops_admin`-owned artifact) owned by `uid`.
+    fn fs_with_ca_config_owned_by(uid: u32) -> FakeFs {
+        let mut fs = clean_fs();
+        fs.files.get_mut(CA_CFG_PATH).unwrap().owner_uid = uid;
+        fs
+    }
+
+    /// Cockpit read R3-1258. `wrong_owner_runtime_uid_is_violation` gives the file to uid 1001
+    /// while the manifest expects root, so `owner_uid != expected_uid` refuses on its own. Here
+    /// the manifest names a runtime uid as the owner and the file IS owned by it: the owner is
+    /// the expected one, and it is refused because it is a runtime principal.
+    #[test]
+    fn an_artifact_owned_by_its_expected_owner_is_refused_when_that_owner_is_a_runtime_uid() {
+        let m = manifest_with_admin_as(1001);
+        let fs = fs_with_ca_config_owned_by(1001);
+        match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err() {
+            TcbViolation::WrongOwner { logical_name, expected_uid, actual_uid, .. } => {
+                assert_eq!(logical_name, "desktop-challenge-authority.config");
+                assert_eq!((expected_uid, actual_uid), (1001, 1001));
+            }
+            other => panic!("expected WrongOwner, got {other:?}"),
+        }
+    }
+
+    /// R3-1258, the login half of the same clause.
+    #[test]
+    fn an_artifact_owned_by_its_expected_owner_is_refused_when_that_owner_is_the_login_uid() {
+        let m = manifest_with_admin_as(LOGIN);
+        let fs = fs_with_ca_config_owned_by(LOGIN);
+        match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err() {
+            TcbViolation::WrongOwner { logical_name, expected_uid, actual_uid, .. } => {
+                assert_eq!(logical_name, "desktop-challenge-authority.config");
+                assert_eq!((expected_uid, actual_uid), (LOGIN, LOGIN));
+            }
+            other => panic!("expected WrongOwner, got {other:?}"),
+        }
+    }
+
+    /// Cockpit read R3-1256. The ancestor tests use uids 1000 and 1001 against owners {0, 500},
+    /// so `!is_tcb_owner` refuses alone. Here the directory's owner IS a manifest TCB owner and
+    /// is also a runtime uid; the artifact below it is clean and root-owned.
+    #[test]
+    fn an_ancestor_owned_by_a_tcb_owner_that_is_a_runtime_uid_is_refused() {
+        let m = manifest_with_admin_as(1001);
+        let mut fs = clean_fs();
+        fs.good_dir("/opt/brops/bin", 1001);
+        match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err() {
+            TcbViolation::AncestorWrongOwner { logical_name, ancestor, actual_uid } => {
+                assert_eq!(logical_name, "trusted-verifier-broker.bin");
+                assert_eq!((ancestor.as_str(), actual_uid), ("/opt/brops/bin", 1001));
+            }
+            other => panic!("expected AncestorWrongOwner, got {other:?}"),
+        }
+    }
+
+    /// R3-1256, the login half of the ancestor clause.
+    #[test]
+    fn an_ancestor_owned_by_a_tcb_owner_that_is_the_login_uid_is_refused() {
+        let m = manifest_with_admin_as(LOGIN);
+        let mut fs = clean_fs();
+        fs.good_dir("/opt/brops/bin", LOGIN);
+        match verify_tcb_integrity(&m, &fs, &runtime_uids(), LOGIN).unwrap_err() {
+            TcbViolation::AncestorWrongOwner { logical_name, ancestor, actual_uid } => {
+                assert_eq!(logical_name, "trusted-verifier-broker.bin");
+                assert_eq!((ancestor.as_str(), actual_uid), ("/opt/brops/bin", LOGIN));
+            }
+            other => panic!("expected AncestorWrongOwner, got {other:?}"),
+        }
     }
 
     #[test]
