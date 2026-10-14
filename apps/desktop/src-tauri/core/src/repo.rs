@@ -4,8 +4,12 @@ use crate::domain::*;
 use crate::{id, now};
 use rusqlite::{Connection, OptionalExtension, Row};
 
-/// Hard cap applied to list queries so no screen ever materializes an
-/// unbounded table (L-1a).
+/// Hard cap bound into the list queries that page or scan a whole table
+/// (L-1a). It is NOT on every list: `tasks::list_by_project`,
+/// `tasks::list_by_status`, `task_deps::list_for`, `agents::list`,
+/// `chat::list_participants`, `runs::list_steps` and `integrations::list`
+/// each read every matching row with no `LIMIT`. `activity::list` carries
+/// its own literal 200.
 const MAX_PAGE: u32 = 1000;
 /// Page size used when a paginated list is called without an explicit limit.
 const DEFAULT_PAGE: u32 = 500;
@@ -28,8 +32,12 @@ fn page(limit: Option<u32>, offset: Option<u32>) -> (i64, i64) {
 /// commit/rollback.
 /// `pub(crate)` since T-058's §4 slice: `credentials` writes a binding and its
 /// audit row in one transaction, and lives outside this module because a
-/// credential store is not a repository of domain rows. Still crate-internal —
-/// nothing outside this crate opens a transaction.
+/// credential store is not a repository of domain rows. Still crate-internal:
+/// nothing outside this crate can call it. The app crate does open transactions
+/// of its own — `commands.rs` calls `conn.unchecked_transaction()` twice, once
+/// to save a conversation with its two messages and once around `add_step` +
+/// `set_step_requires_approval` — and a repo write called inside one joins it
+/// through the `else` arm below.
 pub(crate) fn atomic<T, F>(conn: &Connection, f: F) -> CoreResult<T>
 where
     F: FnOnce(&Connection) -> CoreResult<T>,
@@ -340,9 +348,10 @@ pub mod audit {
     /// Carrying the pair together is what stops a call site from silently
     /// asserting a human: there is no `Default`, so **every** audited write must
     /// name its actor and the compiler enumerates any that does not. Build one
-    /// with [`Actor::local_operator`], [`Actor::scheduler`], [`Actor::automation`]
-    /// or [`Actor::agent`] rather than assembling the fields, so the trust basis
-    /// for the value is written down beside it.
+    /// with one of the constructors below rather than assembling the fields, so
+    /// the trust basis for the value is written down beside it. No constructor
+    /// mints an `agent` actor: the only writer of that kind is
+    /// [`Actor::from_message`], for a message whose role is `agent`.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct Actor<'a> {
         /// One of [`ACTOR_TYPES`]; [`record`] rejects anything else.
@@ -358,13 +367,16 @@ pub mod audit {
         }
 
         /// The product's own runtime, where no more specific component can be
-        /// named: startup reconciliation of a crashed session's claim
-        /// (`runs::reconcile_abandoned_executions`) and the gate enforcing a
-        /// rejected approval (`runs::fail_step_and_run`). These are the two sites
-        /// that already carried `("system", "system")` before T-052 and they keep
-        /// exactly those values -- naming them `reconciler` or `approval-gate`
-        /// would be a relabel this layer cannot establish, and a more specific
-        /// actor that is guessed is worse than a vague one that is true.
+        /// named. Four writes use it: startup reconciliation of a crashed
+        /// session's claim (`runs::reconcile_abandoned_executions`), the gate
+        /// enforcing a rejected approval (`runs::fail_step_and_run`), recording a
+        /// built bundle (`agent_runs::register`) and settling a flow run a dead
+        /// session left `running` (`agent_runs::reconcile_abandoned`). The first
+        /// two are the sites that already carried `("system", "system")` before
+        /// T-052 and they keep exactly those values -- naming them `reconciler`
+        /// or `approval-gate` would be a relabel this layer cannot establish, and
+        /// a more specific actor that is guessed is worse than a vague one that
+        /// is true.
         pub const fn system() -> Actor<'static> {
             Actor { kind: "system", id: "system" }
         }
@@ -402,12 +414,6 @@ pub mod audit {
         /// can establish anyway.
         pub const fn run_executor() -> Actor<'static> {
             Actor { kind: "system", id: "run-executor" }
-        }
-
-        /// A named agent. `id` must come from trusted context (a server-minted
-        /// author), never from a request body.
-        pub const fn agent(id: &'a str) -> Actor<'a> {
-            Actor { kind: "agent", id }
         }
 
         /// The actor of a posted message.
@@ -477,6 +483,7 @@ pub mod audit {
         Ok(())
     }
 
+    /// Every audit row. `security::summary` reports this number.
     pub fn count(conn: &Connection) -> CoreResult<i64> {
         Ok(conn.query_row("SELECT COUNT(*) FROM audit_events", [], |r| r.get(0))?)
     }
@@ -530,14 +537,16 @@ pub mod approvals {
     pub const RUN_STEP_ENTITY_TYPE: &str = "run_step";
     pub const RUN_STEP_ACTION_TYPE: &str = "Execute run step";
 
-    /// T-052 gating tuples for the three tier-X commands that reached the
-    /// authority layer with no gate at all: `set_integration_auth_ref`,
+    /// Gating tuples for the gated writes other than a run step. T-052 added
+    /// the first three, for the tier-X commands that reached the authority
+    /// layer with no gate at all: `set_integration_auth_ref`,
     /// `set_integration_status` and `set_automation_enabled` were each
     /// `{"tier": "X", "grant": "allow"}` in `command-policy.json` and nothing
     /// else. X is the execution/spend tier: pointing a connector at a credential
     /// locator, declaring a connector connected, and arming an automation that
     /// then fires unattended once a minute are all acts a compromised renderer
-    /// could perform silently.
+    /// could perform silently. Arming an agent bundle and binding an agent
+    /// credential (`credentials.rs`) were added after it, on the same terms.
     ///
     /// They use the SAME mechanism as the run-step gate — `approved_for` +
     /// `consume_for` over the full (entity_id, entity_type, action_type) tuple,
@@ -555,9 +564,17 @@ pub mod approvals {
     pub const CREDENTIAL_BIND_ACTION_TYPE: &str = "Bind agent credential";
 
     /// Verify and spend the grant for a gated write, in the write's own
-    /// transaction. Factored out of `runs::claim_step_execution`'s inline pair so
-    /// the three T-052 gates cannot drift from it: a check that verified without
-    /// consuming would let one approval unlock a command forever.
+    /// transaction. Factored out of `runs::claim_step_for_execution`'s inline
+    /// pair so the gates that call it cannot drift from it: a check that
+    /// verified without consuming would let one approval unlock a command
+    /// forever. It has six call sites: that claim, five more in this file and
+    /// one in `credentials.rs`, one per tuple declared above.
+    ///
+    /// Two run-step paths do NOT call it: `runs::set_step_status` and
+    /// `runs::advance` still write [`approved_for`] and [`consume_for`] as an
+    /// inline pair. `set_step_status` refuses with its own text (field
+    /// `status`), and in `advance` the two calls sit either side of the status
+    /// UPDATE.
     pub fn require_and_consume(
         tx: &Connection,
         entity_id: &str,
@@ -824,8 +841,11 @@ pub mod approvals {
         }
         let id = id();
         super::atomic(conn, |tx| {
-            // An approval may only point at an entity that actually exists — a
-            // grant minted against an arbitrary id must not be creatable (M-2).
+            // A RUN-STEP approval may only point at a step that actually exists
+            // — a grant minted against an arbitrary step id must not be creatable
+            // (M-2). That is the only entity type checked here: an `integration`,
+            // `automation`, `agent_bundle` or `credential_binding` request is
+            // stored with whatever `entity_id` it names.
             if entity_type == Some(RUN_STEP_ENTITY_TYPE) {
                 if let Some(step_id) = entity_id {
                     super::runs::get_step(tx, step_id)?;
@@ -1011,7 +1031,11 @@ pub mod approvals {
         Ok(n > 0)
     }
 
-    /// The most recent still-pending approval for an entity, if any.
+    /// The most recent still-pending approval for an entity, if any. Compiled
+    /// for this crate's tests only: no product path asks it — the run-step
+    /// gate asks [`undecided_for`] — and the tests use it to show what a
+    /// `pending`-only question misses.
+    #[cfg(test)]
     pub fn pending_for(conn: &Connection, entity_id: &str) -> CoreResult<Option<Approval>> {
         Ok(conn
             .query_row(
@@ -1024,7 +1048,7 @@ pub mod approvals {
 
     /// The most recent approval for an entity that is still UNDECIDED: `pending`, or
     /// `escalated` (routed to A3 and never moved since — nothing in this tree decides an
-    /// escalated row). The run-step gate asks this, not [`pending_for`], before it raises a
+    /// escalated row). The run-step gate asks this, not `pending_for`, before it raises a
     /// new request: an escalated row matched none of `approved_for` / `rejected_for` /
     /// `pending_for`, so the gate fell through to `create` and minted a fresh A2 request for
     /// the same step, which undid the escalation without saying so.
@@ -1040,8 +1064,11 @@ pub mod approvals {
     }
 
     /// Reject-only decision path. **Approve does NOT go through here** (T-011): the
-    /// only way to reach `status = 'approved'` is `approve_confirmed`, which records
-    /// the native-confirmation markers that `approved_for` requires. `decide` refuses
+    /// only way a REQUEST reaches `status = 'approved'` is `approve_confirmed`, which
+    /// records the native-confirmation markers that `approved_for` requires. (One row
+    /// is born `approved` without it: `seed` inserts the starter history row 'Publish
+    /// release notes' by raw SQL, with no `entity_id` and no confirmation markers, so
+    /// `approved_for` can never match it.) `decide` refuses
     /// `"approved"` at the authority layer so the invariant cannot be bypassed even if
     /// a command were mis-wired. `decision` must be `"rejected"`.
     pub fn decide(conn: &Connection, id: &str, decision: &str, note: Option<&str>, actor: audit::Actor<'_>) -> CoreResult<Approval> {
@@ -1130,14 +1157,12 @@ pub mod notifications {
     }
 
     pub fn mark_read(conn: &Connection, id: &str) -> CoreResult<Notification> {
-        let changed = conn.execute(
+        // Changes nothing when the row is already read or missing; either way
+        // the answer is the current row, or NotFound.
+        conn.execute(
             "UPDATE notifications SET read_at = ?1 WHERE id = ?2 AND read_at IS NULL",
             rusqlite::params![now(), id],
         )?;
-        if changed == 0 {
-            // already read or missing; return current row if it exists
-            return conn.query_row("SELECT * FROM notifications WHERE id = ?1", [id], map).map_err(not_found(id));
-        }
         conn.query_row("SELECT * FROM notifications WHERE id = ?1", [id], map).map_err(not_found(id))
     }
 }
@@ -1186,7 +1211,9 @@ pub mod activity {
     /// A literal, so the writer and the reader cannot drift apart.
     pub const SEED_SOURCE: &str = r#"{"source":"seed"}"#;
 
-    fn map(r: &Row) -> rusqlite::Result<ActivityEvent> {
+    /// The one `audit_events` row mapper. [`list`] and `security::summary` both
+    /// read through it, so the two surfaces cannot disagree about a row.
+    pub(super) fn map(r: &Row) -> rusqlite::Result<ActivityEvent> {
         let payload: Option<String> = r.get("payload_json")?;
         Ok(ActivityEvent {
             id: r.get("id")?,
@@ -1196,10 +1223,7 @@ pub mod activity {
             entity_type: r.get("entity_type")?,
             entity_id: r.get("entity_id")?,
             // The mark travels to the surface. Marking the row and dropping it
-            // here is the defect `actor_type` already carries a paragraph about,
-            // and BOTH mappers carry it — `activity::map` and
-            // `security::map_event` — or one surface tells the truth and the
-            // other does not.
+            // here is the defect `actor_type` already carries a paragraph about.
             source: crate::repo::activity::source_of(payload.as_deref()),
             created_at: r.get("created_at")?,
         })
@@ -1261,8 +1285,10 @@ mod t057_seeded_rows_say_so {
 
         // The SECOND surface, asserted on ITS OWN rows. Until this existed the
         // test computed the summary, threw it away, and closed on a restatement
-        // of the assertion above -- so `security::map_event` could drop `source`
-        // entirely with every test still green.
+        // of the assertion above -- so the second mapper `security::summary`
+        // had at the time could drop `source` with every test still green. It
+        // reads through `activity::map` now; this still asserts on the
+        // summary's own rows.
         let summary = security::summary(&conn).unwrap();
         assert!(
             !summary.sensitive_events.is_empty(),
@@ -1298,6 +1324,152 @@ mod t057_seeded_rows_say_so {
     }
 }
 
+/// Tests added by the cockpit read of this file (T-145, group rs13).
+#[cfg(test)]
+mod cockpit_read_rs13 {
+    use super::*;
+
+    fn notification(conn: &Connection, id: &str) {
+        conn.execute(
+            "INSERT INTO notifications(id, type, severity, title, body, read_at, created_at)
+             VALUES (?1, 'approval_required', 'warning', 't', 'b', NULL, '1')",
+            [id],
+        )
+        .unwrap();
+    }
+
+    /// `mark_read` had two identical returns behind `if changed == 0`. These
+    /// are the three answers it gives, whichever return produced them.
+    #[test]
+    fn mark_read_stamps_once_and_refuses_a_missing_row() {
+        let conn = crate::db::open_in_memory().unwrap();
+        notification(&conn, "n-1");
+
+        let first = notifications::mark_read(&conn, "n-1").unwrap();
+        let stamp = first.read_at.clone().expect("the first call stamps read_at");
+
+        // Already read: the row comes back and the stamp is the FIRST one.
+        conn.execute("UPDATE notifications SET read_at = 'first' WHERE id = 'n-1'", []).unwrap();
+        let second = notifications::mark_read(&conn, "n-1").unwrap();
+        assert_eq!(second.read_at.as_deref(), Some("first"), "a second call must not re-stamp (was {stamp})");
+
+        match notifications::mark_read(&conn, "absent") {
+            Err(CoreError::NotFound(id)) => assert_eq!(id, "absent"),
+            other => panic!("a missing notification must be NotFound, got {:?}", other.map(|n| n.id)),
+        }
+    }
+
+    /// `security::summary` reports the audit-row count through `audit::count`.
+    #[test]
+    fn the_security_summary_counts_audit_rows_with_audit_count() {
+        let conn = crate::db::open_in_memory().unwrap();
+        for n in 0..3 {
+            audit::record(&conn, "task.created", audit::Actor::local_operator(), "task", &format!("t-{n}")).unwrap();
+        }
+        assert_eq!(audit::count(&conn).unwrap(), 3);
+        assert_eq!(security::summary(&conn).unwrap().audit_events, 3);
+    }
+
+    fn agent_message(conversation_id: &str, role: &str, body: &str) -> NewMessage {
+        NewMessage {
+            conversation_id: conversation_id.to_string(),
+            role: role.to_string(),
+            author: "Bro".to_string(),
+            body: body.to_string(),
+        }
+    }
+
+    fn rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+    }
+
+    /// The badged writer is `post_message` plus one row. Everything
+    /// `post_message` refuses and records, it refuses and records too.
+    #[test]
+    fn the_badged_writer_refuses_and_records_what_post_message_does() {
+        let conn = crate::db::open_in_memory().unwrap();
+        let conv = chat::create_conversation(&conn, "direct", "Bro", audit::Actor::local_operator()).unwrap();
+
+        match chat::post_message_demonstration_verified(&conn, agent_message(&conv.id, "owner", "x")) {
+            Err(CoreError::Invalid { field: "role", value }) => assert_eq!(value, "owner"),
+            _ => panic!("an unknown role must be refused"),
+        }
+        match chat::post_message_demonstration_verified(&conn, agent_message("no-such-conversation", "agent", "x")) {
+            Err(CoreError::NotFound(id)) => assert_eq!(id, "no-such-conversation"),
+            _ => panic!("an unknown conversation must be refused"),
+        }
+        assert_eq!(rows(&conn, "messages"), 0, "a refused post writes no message");
+        assert_eq!(rows(&conn, "demonstration_verified_messages"), 0, "and no badge row");
+
+        let m = chat::post_message_demonstration_verified(&conn, agent_message(&conv.id, "agent", "verified bytes")).unwrap();
+        assert_eq!(m.receipt.as_deref(), Some("demonstration_verified"));
+        let (actor_type, actor_id): (String, String) = conn
+            .query_row(
+                "SELECT actor_type, actor_id FROM audit_events \
+                  WHERE event_type = 'message.posted' AND entity_id = ?1",
+                [&conv.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("exactly one message.posted row for the conversation");
+        assert_eq!((actor_type.as_str(), actor_id.as_str()), ("agent", "Bro"));
+        // The badge row carries the message's own timestamp: one clock reading for both.
+        let (recorded_at, digest): (String, String) = conn
+            .query_row(
+                "SELECT recorded_at, body_sha256 FROM demonstration_verified_messages WHERE message_id = ?1",
+                [&m.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(recorded_at, m.created_at);
+        assert_eq!(digest, crate::governed_message_store::sha256_hex(b"verified bytes"));
+        let bumped: String = conn
+            .query_row("SELECT updated_at FROM conversations WHERE id = ?1", [&conv.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(bumped, m.created_at, "the conversation is bumped to the message's timestamp");
+
+        // And the plain writer paints nothing.
+        let plain = chat::post_message(&conn, agent_message(&conv.id, "agent", "unverified")).unwrap();
+        assert_eq!(plain.receipt, None);
+        assert_eq!(rows(&conn, "demonstration_verified_messages"), 1);
+    }
+
+    /// A seeded knowledge note's `source` is shown to the user as where the
+    /// note comes from. Every one that names a file or directory names one
+    /// that is in the tree, under `apps/desktop` or `apps/desktop/src`.
+    #[test]
+    fn every_seeded_knowledge_source_is_a_path_in_the_tree() {
+        let conn = crate::db::open_in_memory().unwrap();
+        seed(&conn).unwrap();
+        let desktop = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let notes = knowledge::list(&conn).unwrap();
+        assert!(notes.len() >= 4, "the seed writes knowledge notes, or this asserts nothing");
+        let missing: Vec<String> = notes
+            .into_iter()
+            .map(|n| n.source)
+            .filter(|s| !desktop.join(s).exists() && !desktop.join("src").join(s).exists())
+            .collect();
+        assert!(missing.is_empty(), "seeded sources that are not in the tree: {missing:?}");
+    }
+
+    /// The starter rows are fabricated, and read as the product speaking. They
+    /// name no repository and no schema version: both were true once and are
+    /// not facts a seeded row can keep true.
+    #[test]
+    fn no_seeded_text_names_a_repository_or_a_schema_version() {
+        let conn = crate::db::open_in_memory().unwrap();
+        seed(&conn).unwrap();
+        let mut texts: Vec<String> = memory::list(&conn, None).unwrap().into_iter().map(|m| m.content).collect();
+        let mut s = conn.prepare("SELECT body FROM messages").unwrap();
+        texts.extend(s.query_map([], |r| r.get::<_, String>(0)).unwrap().map(Result::unwrap));
+        assert!(texts.len() >= 8, "the seed writes memory and messages, or this asserts nothing");
+        let stale: Vec<&String> = texts
+            .iter()
+            .filter(|t| t.contains("menqstudio/") || t.contains("Schema reached v"))
+            .collect();
+        assert!(stale.is_empty(), "seeded text stating a repository or schema version: {stale:?}");
+    }
+}
+
 pub mod chat {
     use super::*;
 
@@ -1314,8 +1486,9 @@ pub mod chat {
     }
 
     /// The badge string the demonstration arm of [`MESSAGE_TRUST_COLUMNS`] emits and
-    /// [`substantiated_receipt`] gates. Named once so the SQL and the Rust check cannot drift apart
-    /// into a guard that silently matches nothing.
+    /// [`substantiated_receipt`] gates. The SQL spells it again as its own literal — a `const` string
+    /// cannot be spliced into another — so `the_sql_badge_literal_is_the_rust_constant` is what keeps
+    /// the two from drifting apart into a guard that silently matches nothing.
     const DEMONSTRATION_VERIFIED: &str = "demonstration_verified";
 
     /// The two trust columns every message SELECT must project, aliased `receipt` and
@@ -1491,6 +1664,13 @@ pub mod chat {
     /// Append a message to a conversation and bump the conversation's activity
     /// timestamp. Rejects an unknown conversation and invalid role.
     pub fn post_message(conn: &Connection, input: NewMessage) -> CoreResult<Message> {
+        write_message(conn, input, false)
+    }
+
+    /// The one message writer, behind [`post_message`] and
+    /// [`post_message_demonstration_verified`]. `demonstration_verified` adds the badge row for
+    /// the body being written, in the same transaction; nothing else differs between the two.
+    fn write_message(conn: &Connection, input: NewMessage, demonstration_verified: bool) -> CoreResult<Message> {
         if !is_valid(&input.role, MESSAGE_ROLES) {
             return Err(CoreError::Invalid { field: "role", value: input.role });
         }
@@ -1511,6 +1691,11 @@ pub mod chat {
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, input.conversation_id],
             )?;
+            if demonstration_verified {
+                // The digest of the bytes just written, in the SAME transaction as the message — so
+                // the badge and the body it attests can never be recorded apart (migration 0024).
+                insert_demonstration_row(tx, &id, &now, &input.body)?;
+            }
             // The message role doubles as the audit actor type: user messages
             // audit as 'user', agent messages as 'agent' (L-4a).
             super::audit::record(tx, "message.posted", super::audit::Actor::from_message(&input.role, &input.author), "conversation", &input.conversation_id)?;
@@ -1521,11 +1706,36 @@ pub mod chat {
             .map_err(not_found(&id))
     }
 
+    /// The one INSERT into `demonstration_verified_messages`: the row and the SHA-256 of
+    /// `verified_body`. `INSERT OR IGNORE`, so a second row for a message changes nothing.
+    fn insert_demonstration_row(
+        tx: &Connection,
+        message_id: &str,
+        recorded_at: &str,
+        verified_body: &str,
+    ) -> CoreResult<()> {
+        tx.execute(
+            "INSERT OR IGNORE INTO demonstration_verified_messages(message_id, recorded_at, body_sha256) \
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                message_id,
+                recorded_at,
+                crate::governed_message_store::sha256_hex(verified_body.as_bytes())
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Record that a message's reply was produced + verified IN-PROCESS under the DEMONSTRATION anchor, so
     /// [`MESSAGE_TRUST_COLUMNS`] derives its badge to `demonstration_verified`. Idempotent
-    /// (`INSERT OR IGNORE`). This is NEVER production trust — the caller writes it ONLY after the in-process
-    /// governed chain returns trusted_verified for THIS exact message, and this demonstration table is separate
+    /// (`INSERT OR IGNORE`). This is NEVER production trust — this demonstration table is separate
     /// from the CHECK-constrained production trust records (`receipt_verification_attempts`).
+    ///
+    /// **Nothing in the product calls this.** The shipped path is
+    /// [`post_message_demonstration_verified`], which writes the message and the row together; this
+    /// is the seam `core/tests/demonstration_verified.rs` uses to put a row on an EXISTING message,
+    /// which is the only way to give a row a digest earned over other bytes. Both write through
+    /// [`insert_demonstration_row`], so the INSERT the tests exercise is the one that ships.
     ///
     /// `verified_body` is the EXACT reply bytes the chain bound; its SHA-256 is stored with the row and
     /// [`substantiated_receipt`] re-checks it against the persisted body on every read. Passing anything
@@ -1537,57 +1747,43 @@ pub mod chat {
         verified_body: &str,
     ) -> CoreResult<()> {
         let now = now();
-        let digest = crate::governed_message_store::sha256_hex(verified_body.as_bytes());
-        super::atomic(conn, |tx| {
-            tx.execute(
-                "INSERT OR IGNORE INTO demonstration_verified_messages(message_id, recorded_at, body_sha256) \
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![message_id, now, digest],
-            )?;
-            Ok(())
-        })?;
-        Ok(())
+        super::atomic(conn, |tx| insert_demonstration_row(tx, message_id, &now, verified_body))
     }
 
     /// Post an agent message AND record its DEMONSTRATION anchor in ONE transaction, returning the
     /// message with its derived `demonstration_verified` badge. Doing both atomically means the reply
     /// and its badge land together or not at all — a mid-way failure can never leave a verified reply
-    /// persisted as an ordinary un-badged message. Same honesty contract as
-    /// [`record_demonstration_verified`]: the caller invokes this ONLY after the in-process governed
-    /// chain returned trusted_verified for THESE exact body bytes.
+    /// persisted as an ordinary un-badged message. The honesty contract is the caller's
+    /// (`commands.rs`): it invokes this ONLY after the in-process governed chain returned
+    /// trusted_verified for THESE exact body bytes. Nothing here can check that.
     pub fn post_message_demonstration_verified(conn: &Connection, input: NewMessage) -> CoreResult<Message> {
-        if !is_valid(&input.role, MESSAGE_ROLES) {
-            return Err(CoreError::Invalid { field: "role", value: input.role });
+        write_message(conn, input, true)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The SQL arm and the Rust gate each spell the badge. If they differ,
+        /// [`substantiated_receipt`] matches nothing and returns the SQL's
+        /// string untouched — a badge with no digest check behind it.
+        #[test]
+        fn the_sql_badge_literal_is_the_rust_constant() {
+            let arm = format!("(SELECT '{DEMONSTRATION_VERIFIED}' FROM demonstration_verified_messages d");
+            assert!(
+                MESSAGE_TRUST_COLUMNS.contains(&arm),
+                "MESSAGE_TRUST_COLUMNS must emit exactly {DEMONSTRATION_VERIFIED:?} for its demonstration arm"
+            );
+            // Every quoted string in the projection is one the gate or the
+            // production arm knows: nothing else can reach `receipt`.
+            let literals: Vec<&str> = MESSAGE_TRUST_COLUMNS.split('\'').skip(1).step_by(2).collect();
+            for literal in literals {
+                assert!(
+                    [DEMONSTRATION_VERIFIED, "development_untrusted", "trusted_verified"].contains(&literal),
+                    "unexpected literal {literal:?} in MESSAGE_TRUST_COLUMNS"
+                );
+            }
         }
-        let now = now();
-        let id = id();
-        super::atomic(conn, |tx| {
-            get_conversation(tx, &input.conversation_id)?;
-            tx.execute(
-                "INSERT INTO messages(id, conversation_id, role, author, body, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![id, input.conversation_id, input.role, input.author, input.body, now],
-            )?;
-            tx.execute(
-                "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
-                rusqlite::params![now, input.conversation_id],
-            )?;
-            // The digest of the bytes just written, in the SAME transaction as the message — so the
-            // badge and the body it attests can never be recorded apart (migration 0024).
-            tx.execute(
-                "INSERT OR IGNORE INTO demonstration_verified_messages(message_id, recorded_at, body_sha256) \
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![
-                    id,
-                    now,
-                    crate::governed_message_store::sha256_hex(input.body.as_bytes())
-                ],
-            )?;
-            super::audit::record(tx, "message.posted", super::audit::Actor::from_message(&input.role, &input.author), "conversation", &input.conversation_id)?;
-            Ok(())
-        })?;
-        let sql = format!("SELECT m.*, {MESSAGE_TRUST_COLUMNS} FROM messages m WHERE m.id = ?1");
-        conn.query_row(&sql, [id.clone()], map_message).map_err(not_found(&id))
     }
 
     /// Delete a conversation and (via the FK cascade) all of its messages.
@@ -3035,10 +3231,14 @@ pub mod agent_runs {
         regime_label(std::env::var("BRO_ENFORCEMENT").ok().as_deref()).to_string()
     }
 
-    /// The closed set [`enforcement_regime`] writes. Normalised the way the
-    /// engine reads the same variable: trimmed, case-insensitive.
+    /// The closed set [`enforcement_regime`] writes, for the tests that hold
+    /// `regime_label` and the stored rows to it. Nothing else reads it:
+    /// `regime_label` returns its own four literals.
+    #[cfg(test)]
     pub const REGIME_LABELS: &[&str] = &["enforce", "shadow", "not_measured", "unrecognized"];
 
+    /// Normalised the way the engine reads the same variable: trimmed,
+    /// case-insensitive.
     fn regime_label(raw: Option<&str>) -> &'static str {
         match raw.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
             None => "not_measured",
@@ -4992,25 +5192,6 @@ pub mod analytics {
 pub mod security {
     use super::*;
 
-    fn map_event(r: &Row) -> rusqlite::Result<ActivityEvent> {
-        let payload: Option<String> = r.get("payload_json")?;
-        Ok(ActivityEvent {
-            id: r.get("id")?,
-            event_type: r.get("event_type")?,
-            actor_type: r.get("actor_type")?,
-            actor_id: r.get("actor_id")?,
-            entity_type: r.get("entity_type")?,
-            entity_id: r.get("entity_id")?,
-            // The mark travels to the surface. Marking the row and dropping it
-            // here is the defect `actor_type` already carries a paragraph about,
-            // and BOTH mappers carry it — `activity::map` and
-            // `security::map_event` — or one surface tells the truth and the
-            // other does not.
-            source: crate::repo::activity::source_of(payload.as_deref()),
-            created_at: r.get("created_at")?,
-        })
-    }
-
     /// Read-only security posture computed from approvals and the audit log.
     /// "Sensitive" events are approvals, deletions, and status changes.
     pub fn summary(conn: &Connection) -> CoreResult<SecuritySummary> {
@@ -5023,7 +5204,7 @@ pub mod security {
         // (M-2) — they remain decided approvals for posture reporting.
         let decided: i64 = conn.query_row(
             "SELECT COUNT(*) FROM approvals WHERE status IN ('approved','rejected','consumed')", [], |r| r.get(0))?;
-        let audit: i64 = conn.query_row("SELECT COUNT(*) FROM audit_events", [], |r| r.get(0))?;
+        let audit = super::audit::count(conn)?;
 
         let mut s = conn.prepare(
             "SELECT * FROM audit_events \
@@ -5031,7 +5212,7 @@ pub mod security {
                 OR event_type LIKE '%status_changed%' \
              ORDER BY created_at DESC LIMIT 25",
         )?;
-        let rows = s.query_map([], map_event)?;
+        let rows = s.query_map([], super::activity::map)?;
         let sensitive = rows.collect::<rusqlite::Result<Vec<_>>>()?;
 
         Ok(SecuritySummary {
@@ -5274,13 +5455,13 @@ pub fn seed(conn: &Connection) -> CoreResult<()> {
         chat::post_message(conn, NewMessage { conversation_id: direct.id.clone(), role: "agent".into(), author: "Bro".into(), body: "Data core is green and CRUD is wired to real SQLite. Chat is now persisted too.".into() })?;
 
         let room = chat::create_conversation(conn, "group", "Foundation room", audit::Actor::seed())?;
-        chat::post_message(conn, NewMessage { conversation_id: room.id.clone(), role: "agent".into(), author: "Mason".into(), body: "Schema reached v3 — conversations and messages added.".into() })?;
+        chat::post_message(conn, NewMessage { conversation_id: room.id.clone(), role: "agent".into(), author: "Mason".into(), body: "Conversations and messages are in the schema.".into() })?;
         chat::post_message(conn, NewMessage { conversation_id: room.id.clone(), role: "agent".into(), author: "Probe".into(), body: "Chat repository covered by unit tests.".into() })?;
 
         knowledge::create(conn, NewKnowledgeNote { title: "Typed IPC boundary".into(), body: "React reaches SQLite only through #[tauri::command]s; no raw SQL crosses the boundary.".into(), source: "docs/architecture".into(), tags: "architecture,ipc".into() }, audit::Actor::seed())?;
-        knowledge::create(conn, NewKnowledgeNote { title: "Forward-only migrations".into(), body: "Schema advances one numbered migration at a time; runner is idempotent.".into(), source: "src-tauri/core/db.rs".into(), tags: "sqlite,migrations".into() }, audit::Actor::seed())?;
+        knowledge::create(conn, NewKnowledgeNote { title: "Forward-only migrations".into(), body: "Schema advances one numbered migration at a time; runner is idempotent.".into(), source: "src-tauri/core/src/db.rs".into(), tags: "sqlite,migrations".into() }, audit::Actor::seed())?;
 
-        let m = memory::create(conn, NewMemoryEntry { scope: "global".into(), kind: "preference".into(), content: "Respond in Armenian; work only in menqstudio/BroPS.".into() }, audit::Actor::seed())?;
+        let m = memory::create(conn, NewMemoryEntry { scope: "global".into(), kind: "preference".into(), content: "Respond in Armenian.".into() }, audit::Actor::seed())?;
         memory::set_pinned(conn, &m.id, true, audit::Actor::seed())?;
         memory::create(conn, NewMemoryEntry { scope: "global".into(), kind: "fact".into(), content: "Foundation v1 is Locked (D-010).".into() }, audit::Actor::seed())?;
 
@@ -5533,7 +5714,7 @@ pub fn seed(conn: &Connection) -> CoreResult<()> {
         }
 
         // A little more knowledge + memory depth.
-        knowledge::create(conn, NewKnowledgeNote { title: "Fail-closed trust".into(), body: "With no production manifest the store resolves NoTrustedManifest; the UI never shows a verified badge it cannot prove.".into(), source: "core/production_trust.rs".into(), tags: "governance,trust".into() }, audit::Actor::seed())?;
+        knowledge::create(conn, NewKnowledgeNote { title: "Fail-closed trust".into(), body: "With no production manifest the store resolves NoTrustedManifest; the UI never shows a verified badge it cannot prove.".into(), source: "src-tauri/core/src/production_trust.rs".into(), tags: "governance,trust".into() }, audit::Actor::seed())?;
         knowledge::create(conn, NewKnowledgeNote { title: "Ambient layer".into(), body: "Aurora, mesh field, grid, scanline and cursor light render behind every view at negative z-index.".into(), source: "components/Ambient.tsx".into(), tags: "design,ui".into() }, audit::Actor::seed())?;
         memory::create(conn, NewMemoryEntry { scope: "global".into(), kind: "preference".into(), content: "The cockpit must look full and alive, like the aios mockup.".into() }, audit::Actor::seed())?;
 
