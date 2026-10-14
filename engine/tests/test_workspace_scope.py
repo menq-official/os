@@ -150,7 +150,7 @@ class RepositoryReferenceTests(unittest.TestCase):
         for value, expected in (
             ("menq-official/os", "menq-official/os"),
             ("  menq-official/os.git ", "menq-official/os"),
-            ("menqstudio\\OS", "menq-official/os"),
+            ("Menq-Official\\OS", "menq-official/os"),
             ("https://github.com/menq-official/os.git", "github.com/menq-official/os"),
             ("git@github.com:menq-official/os.git", "github.com/menq-official/os"),
             ("https://gitlab.com/menq-official/os", "gitlab.com/menq-official/os"),   # no host is refused

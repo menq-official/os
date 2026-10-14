@@ -1061,10 +1061,10 @@ class TheTwoNamedCommandsRefused(unittest.TestCase):
             self.assertIsNone(decision(other), other)
             self.assertIn("NOT judged", other)
             self.assertEqual(self.calls, [])
-            ours = self.shell(f"gh pr merge 5 -R MenQStudio/os --match-head-commit {SHA}",
+            ours = self.shell(f"gh pr merge 5 -R Menq-Official/os --match-head-commit {SHA}",
                               self.RED)
         self.assertEqual(decision(ours), "deny", ours)
-        self.assertEqual(self.calls[0][1], ["--pr", "5", "--repo", "MenQStudio/os",
+        self.assertEqual(self.calls[0][1], ["--pr", "5", "--repo", "Menq-Official/os",
                                             "--expect-head", SHA])
 
     # --- git push ------------------------------------------------------------------

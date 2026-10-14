@@ -500,6 +500,9 @@
       "docs/design/WINDOWS_BROKER_DESIGN.md",
       "docs/design/WINDOWS_BROKER_IMPL_PLAN.md"
     ],
+    "docs/migration": [
+      "docs/migration/README.md"
+    ],
     "docs/roadmap": [
       "docs/roadmap/phase-0.md",
       "docs/roadmap/phase-1.md",

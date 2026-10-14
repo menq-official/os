@@ -3,7 +3,7 @@
 **Status: `v1.0 · Canonical Execution Authority` — 🔒 Locked (Owner-approved 2026-07-21 · basis HEAD `8888011`)**
 **Կարգավիճակ՝ `v1.0 · Canonical Execution Authority` — 🔒 Locked (Owner-approved 2026-07-21 · basis HEAD `8888011`)**
 
-> This document is the **single execution source** for `menqstudio/OS`. When a Claude (or ChatGPT)
+> This document is the **single execution source** for `menq-official/os`. When a Claude (or ChatGPT)
 > session is told *"go build the next thing"*, it opens this file, finds the current phase, and takes
 > the next **unchecked** task — without needing any chat context. When state changes, this file is
 > updated **in the same commit** as the change.
@@ -23,7 +23,7 @@
 > - **Not every AI entry point is governed yet** (Phase-2.3 work): only the main chat streaming seam runs the governed pipeline today; run-steps / Ask Bro / conversation-reply and other execution surfaces are not yet wired to the governed receipt chain. This is tracked, not done.
 > ---
 >
-> Սա `menqstudio/OS`-ի **միակ կատարման աղբյուրն** է։ Երբ session-ին ասում են «գնա կառուցիր հաջորդը»,
+> Սա `menq-official/os`-ի **միակ կատարման աղբյուրն** է։ Երբ session-ին ասում են «գնա կառուցիր հաջորդը»,
 > ինքը բացում է այս ֆայլը, գտնում ընթացիկ phase-ը, վերցնում հաջորդ **unchecked** task-ը՝ առանց chat
 > context-ի կարիքի։ **🔒 Locked v1.0-ում** (Owner-approved 2026-07-21, basis HEAD `8888011`)։ **Locked ≠
 > սառեցված execution** — phase-երը գնում են, box-երը նշվում են, building-ը շարունակվում ա։ Lock-ը պաշտպանում
@@ -123,6 +123,7 @@ These apply to **every phase**. A phase section never repeats them; it only name
   crash on Windows with a cp1252 `UnicodeEncodeError` and fail-closed-cascade the session. If it wedges:
   set `PYTHONUTF8=1` and relaunch, or rename `settings.json`. Hooks load from the repo **root** only.
 - **Commit identity:** `user.name "MenQ"`, `user.email "menqstudio@gmail.com"`. End every commit
+  message with: —.
 - **Toolchain:** cargo 1.97.1, node 20.20.2, npm 10.8.2. *(This line said cargo 1.96 / node 24 / npm 11 — `tools/check_doc_claims.py` now compares it against the machine.)* Tauri Windows build needs
   `apps/desktop/src-tauri/icons/icon.ico` (already generated).
 

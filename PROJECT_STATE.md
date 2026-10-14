@@ -1,6 +1,6 @@
 # PROJECT_STATE — live status · կենդանի վիճակ
 
-**Last updated · Վերջին թարմացում:** 2026-10-14 — 152 pull requests merged (`#219`–`#371`), `main` at
+**Last updated · Վերջին թարմացում:** 2026-10-15 — 152 pull requests merged (`#219`–`#371`), `main` at
 `354d3ea`: all seven workflows green there. Seven of eleven phases have
 every box ticked (0, 2–7); 97 of 115 rows. Phase 1 waits on 25 prerequisites an installer and an
 administrator provide and the Linux kernel. The broker now reads its root from the floor-pinned
@@ -11,9 +11,9 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **✅ SETTLED as of `main` `75c8d60`.** PR #492 on `ck-m122` records it and merges after: read the live head with `git log -1`. Blocked on whom: `docs/OWNER_ACTION_REQUIRED.md`.
+> **⏭️ CURRENT ACTIVE: PR #1 · branch `migration-settle`** (base `main`, tip `7e21618`, task unstated).
 >
-> **Next:** cockpit read; Owner: L-17/25/26/36; open: K-01/09
+> Settle on menq-official/os
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
@@ -70,7 +70,7 @@ No `v*` tag is compared and `release.yml` has never run. An UNSIGNED `brops-desk
 published by hand, is a DRAFT since 2026-10-08. The tag policy is the Owner's (`T-063`).
 
 **Branch protection is in force again — the repository is public (read live 2026-10-08).**
-All 35 contexts in `config/required-checks.json` are required on `main`, with `strict` and
+All 36 contexts in `config/required-checks.json` are required on `main`, with `strict` and
 `enforce_admins`; `check_repo_state.py` is GREEN. Private from 2026-10-05 it had none (`T-168`):
 on this plan a private repository carries no protection, and going private deletes the rules.
 
