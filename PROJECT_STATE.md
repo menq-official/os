@@ -11,9 +11,9 @@ It answers what `NEXT_CHAT.md` does not: **the state of each part of the product
 is in [`docs/archive/`](docs/archive/SESSION_LOG_2026-07_2026-08.md).
 
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #486 · branch `ck-m116`** (base `main`, tip `a804aca`, task T-145).
+> **⏭️ CURRENT ACTIVE: PR #487 · branch `ck-m117`** (base `main`, tip `6486ad4`, task T-145).
 >
-> cockpit read, Windows live kit library group
+> cockpit read, Windows kit key resolver group
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->

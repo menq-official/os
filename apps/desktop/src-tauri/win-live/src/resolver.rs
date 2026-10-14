@@ -3,7 +3,8 @@
 //! On every turn, BEFORE any hop, this resolver:
 //!   1. verifies the operator-provisioned key manifest against the **TCB-pinned root** ([`crate::tcb`]),
 //!      never a config-supplied root;
-//!   2. runs anti-rollback (`check_and_advance`) AND **persists the advanced floor atomically** (fix P2);
+//!   2. runs anti-rollback (`check_and_advance`) AND **persists the advanced floor** (fix P2) by write +
+//!      rename, unsynced — `persist_floor`'s doc says what that does not give;
 //!   3. resolves the production receipt-signer key + the supervisor-attestation key from the verified
 //!      manifest, and returns the `ResolvedTurn` whose pinned keys `verify_and_accept` then verifies under.
 //!
@@ -24,20 +25,11 @@ use brops_core::key_manifest::{
 
 use crate::{crypto, tcb};
 
-/// The broker-owned per-turn facts the resolver pairs with the manifest-resolved keys.
-#[derive(Clone)]
-pub struct ResolvedFacts {
-    pub workspace_id: String,
-    pub install_id: String,
-    pub system_sha256: String,
-    pub history_sha256: String,
-    pub generation_config_sha256: String,
-    pub requested_at: String,
-    pub run_id: String,
-    pub task_id: String,
-    pub requested_at_ms: i64,
-    pub author: String,
-}
+/// The facts the resolver pairs with the manifest-resolved keys. The broker's own struct, under the
+/// path this kit's two drivers import it by: it was declared a second time here with the same ten
+/// fields in the same order. Both drivers fill it once, before the chain runs — `proof.rs` from its
+/// arguments, `win_live_turn` from the config's `resolved` block.
+pub use brops_broker::manifest_resolver::ResolvedFacts;
 
 pub struct ManifestResolver {
     manifest: KeyManifest,
@@ -110,21 +102,6 @@ impl ManifestResolver {
             last_verifying_key: Mutex::new(None),
         }
     }
-
-    /// The manifest-resolved production signer public key hex (what the envelope is verified under). Exposed
-    /// so the driver classifies the trust state with the SAME key the resolver bound — not a config value.
-    pub fn signer_public_key_hex(&self, now_ms: i64) -> Option<String> {
-        resolve_production_key(&self.manifest, &self.signer_key_id, RECEIPT_ENVELOPE_ARTIFACT_TYPE, now_ms)
-            .ok()
-            .map(|k| k.public_key_hex)
-    }
-
-    pub fn manifest(&self) -> &KeyManifest {
-        &self.manifest
-    }
-    pub fn signer_key_id(&self) -> &str {
-        &self.signer_key_id
-    }
 }
 
 fn now_ms() -> i64 {
@@ -159,8 +136,17 @@ pub fn signed_floor_file(floor: &AntiRollbackFloor) -> Vec<u8> {
     .expect("signed floor serializes")
 }
 
-/// Atomically persist the advanced anti-rollback floor as ONE self-contained TCB-signed file (fix P2 + R1 +
-/// D). A persist failure fails the turn closed.
+/// Persist the advanced anti-rollback floor as ONE self-contained TCB-signed file (fix P2 + R1 + D):
+/// `fs::write` to `path.with_extension("json.tmp")`, then `fs::rename` over `path`. A failure of either
+/// fails the turn closed. (This said "Atomically persist". The rename replaces the file in one step for
+/// a reader; nothing here syncs the file or the directory.)
+///
+/// KNOWN DEFECT (cockpit read R3-0199, R3-0200): the staging name is the same for every caller and
+/// the only serialisation is `ManifestResolver::floor`'s `Mutex`, which is one resolver's. Nothing
+/// locks the file, and `resolve` compares against the floor this resolver holds in memory (the
+/// constructor's, advanced by its own resolves), not the one on disk at this moment.
+/// `brops_core::key_manifest::check_and_persist` locks, re-reads and syncs, but
+/// writes the unsigned form [`load_verified_floor`] refuses (`floor.sig missing`). Not changed here.
 fn persist_floor(path: &PathBuf, floor: &AntiRollbackFloor) -> Result<(), ()> {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, signed_floor_file(floor)).map_err(|_| ())?;
@@ -199,12 +185,6 @@ pub fn load_verified_floor(floor_path: &Path) -> Result<AntiRollbackFloor, Strin
 /// foreign `TurnResolver` directly for `Arc<_>`.
 pub struct SharedResolver(pub std::sync::Arc<ManifestResolver>);
 
-impl SharedResolver {
-    pub fn last_verifying_key(&self) -> Option<[u8; 32]> {
-        self.0.last_verifying_key()
-    }
-}
-
 impl TurnResolver for SharedResolver {
     fn resolve(
         &self,
@@ -228,7 +208,7 @@ impl TurnResolver for ManifestResolver {
         verify_manifest(&self.manifest, &self.root_sig_b64, &self.pinned)
             .map_err(|_| TurnReason::UpstreamBlocked)?;
 
-        // (2) anti-rollback: advance + persist atomically (fix P2).
+        // (2) anti-rollback: advance + persist (fix P2). See `persist_floor` for what the write is.
         {
             let mut floor = self.floor.lock().map_err(|_| TurnReason::UpstreamBlocked)?;
             let advanced =
@@ -297,7 +277,9 @@ mod tests {
         // Adversary resets the epoch to 0 (unsigned body, no valid sig) -> REJECTED (fail-closed).
         std::fs::write(&floor_path, floor_body(&AntiRollbackFloor { highest_epoch: 0, highest_hash: "a".repeat(64) })).unwrap();
         assert!(load_verified_floor(&floor_path).is_err(), "a reset floor.json must be rejected (R1)");
-        // Adversary writes epoch 0 WITH a bogus sig -> REJECTED (cannot forge without the TCB floor key).
+        // Epoch 0 WITH the literal string "bogus" as its sig -> REJECTED. That is a malformed signature,
+        // not a forgery: per the note above this test, a signature recomputed from the public
+        // FLOOR_SEED_HEX verifies, and nothing here tries one.
         std::fs::write(&floor_path, serde_json::to_vec(&serde_json::json!({
             "highest_epoch": 0, "highest_hash": "a".repeat(64), "sig": "bogus"
         })).unwrap()).unwrap();
