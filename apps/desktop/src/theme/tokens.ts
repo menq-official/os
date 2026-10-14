@@ -45,25 +45,6 @@ export const typography = {
   fontSans:
     '"Inter", "Segoe UI", system-ui, -apple-system, "Noto Sans Armenian", sans-serif',
   fontMono: '"JetBrains Mono", "Cascadia Code", ui-monospace, monospace',
-  size: {
-    xs: '12px',
-    sm: '13px',
-    base: '14px',
-    lg: '16px',
-    xl: '20px',
-    '2xl': '28px',
-  },
-  weight: {
-    regular: '400',
-    medium: '500',
-    semibold: '600',
-    bold: '700',
-  },
-  lineHeight: {
-    tight: '1.25',
-    normal: '1.5',
-    relaxed: '1.7',
-  },
 } as const;
 
 export const shadow = {
@@ -234,9 +215,11 @@ const COLOR_VAR: Record<keyof ColorTokens, string> = {
 };
 
 /**
- * Flatten a theme (plus the resolved motion set) into the exact `--menq-*`
- * custom properties tokens.css declares. This projection is what
- * tools/check_token_parity.py reconstructs and compares with the stylesheet.
+ * Flatten a theme (plus the resolved motion set) into the `--menq-*` custom
+ * properties tokens.css declares, plus two it does not: `--menq-motion-slow`
+ * and `--menq-motion-easing`. This projection is what
+ * tools/check_token_parity.py reconstructs and compares with the stylesheet;
+ * the gate lists those two by name as the only allowed extras.
  * <ThemeProvider> would write it onto :root, but that provider is not mounted,
  * so at runtime the stylesheet is the authority and this is its typed mirror.
  */

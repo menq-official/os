@@ -1,7 +1,12 @@
 /* BroPS design tokens — provisional MenQ Studio Design Standards mapping.
-   PROVISIONAL: canonical MenQ token source not available in this repo; these
-   mirror DESIGN_SYSTEM.md and are marked for review (MENQ adoption §9).
-   All component styling MUST resolve through these tokens — no hard-coded colors. */
+   PROVISIONAL: canonical MenQ token source not available in this repo; the
+   mapping is marked for review (MENQ adoption §9). This file is the source of
+   the `--menq-*` values: tokens.ts mirrors it (tools/check_token_parity.py)
+   and the table in docs/DESIGN_SYSTEM.md is a copy of it.
+   Not every color in the app resolves through these tokens: aios.css, loaded
+   after this file, declares a token set of its own and paints some rules from
+   literals (`.v-chat .comp-stop`), ui.css has two literal scrims, and
+   `--brops-accent-text` below is a literal. */
 
 :root {
   /* MenQ foundation scale */
