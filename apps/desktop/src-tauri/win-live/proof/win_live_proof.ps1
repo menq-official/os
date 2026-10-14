@@ -31,8 +31,12 @@
 #                         Nobody holds it (Owner decision #78: no person carries a key; T-131).
 #                         Any other key -> win_provision exits 3.
 #   -RootProvenance       The custody declaration for that anchor: external | kit_generated |
-#                         demonstration. Only `external` can render a production verdict; anything else
-#                         completes the chain and reports demonstration custody, honestly.
+#                         demonstration. Only `external` can render a production verdict; under the
+#                         other two the driver reports demonstration custody. No real run reaches that
+#                         branch either: win_provision compares -RootKey with the one compiled pin
+#                         before it writes anything and exits 3 on any other key, whatever
+#                         provenance is declared (win_provision.rs, the `root_signing` block). The
+#                         non-external arms below are driven by -SelfTest only.
 #   elevated PowerShell   `win_provision` creates its custody files with an Administrators owner and a
 #                         protected DACL (CreateFileW, no icacls); `win_tcb_pin` still sets the pin
 #                         manifest's ACL and owner by spawning icacls. Both need elevation.
@@ -83,10 +87,14 @@ $ErrorActionPreference = "Stop"
 #
 # win_live_turn prints exactly one line —
 #   RESULT: <trust_state> production_verified=<bool> bound=<bool> root_anchor=<provenance>
-# — and exits 0 only when production_verified AND bound; every refusal path prints
+# — and exits 0 only when production_verified AND bound; a refusal that goes through the driver's
+# `blocked()` prints
 #   RESULT: blocked reason=<why> production_verified=false bound=false
-# and exits 1. Both halves are checked here: a RESULT line that disagrees with the exit code means the
-# driver is not the thing it claims to be, and neither is this proof.
+# and exits 1. Two exits print NO RESULT line (win_live_turn.rs): a missing --config exits 2, and a
+# replay ledger that will not open exits 1 with a message on stderr only. Both are judged below as
+# "no RESULT line", a failure of either case. Both halves are checked here: a RESULT line that
+# disagrees with the exit code means the driver is not the thing it claims to be, and neither is
+# this proof.
 # ---------------------------------------------------------------------------------------------------
 function Test-TurnResult {
   param(

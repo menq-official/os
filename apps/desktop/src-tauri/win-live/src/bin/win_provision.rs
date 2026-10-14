@@ -1,4 +1,6 @@
-//! Provision a Windows live-kit deployment to disk: four ed25519 keypairs, the content-addressed store, the
+//! Provision a Windows live-kit deployment to disk: three generated ed25519 keypairs (challenge,
+//! supervisor attestation, signer — the root is NOT generated here, it comes in through `--root-key` and
+//! its private half is not written), the content-addressed store, the
 //! root-signed production key manifest + anti-rollback floor, and the shared `config.json`. The Windows twin
 //! of `engine/ci/live/provision_keys.py`. Run once before starting the servers + driver.
 //!
@@ -6,6 +8,13 @@
 //!                 --challenge-account <acct> --supervisor-account <acct> --signer-account <acct>
 //!                 --root-key <file> --root-provenance <external|kit_generated|demonstration>
 //!                 [--executor-path <exe>] [--pipe-prefix <p>]
+//!
+//! `--root-provenance` takes whatever `RootProvenance::parse` accepts, and that is four values, not the
+//! three listed here and in the message below: `install_minted` parses too and is written to
+//! `config.json` as given.
+//!
+//! `--executor-path` is optional to this tool and not to the deployment: see the comment at
+//! `executor_sha`.
 //!
 //! ## Custody (remediation round 3 — findings P1s-1 / P1s-2 / P1s-3)
 //!
@@ -146,6 +155,10 @@ fn main() {
     // off airgapped media or was generated on this box thirty seconds ago — the arithmetic is identical
     // either way. So the operator declares it, explicitly, with no default: an unstated provenance would
     // otherwise silently become "external" and the whole production claim would rest on an omission.
+    //
+    // The message below names three values. `RootProvenance::parse` (core/src/key_manifest.rs) accepts a
+    // fourth, `install_minted`, and this passes any value that parses straight into `config.json`
+    // (cockpit read R3-1090). Left as it is: the text is what an operator and a script see.
     let root_provenance = arg(&args, "--root-provenance")
         .and_then(|s| RootProvenance::parse(&s).map(|_| s))
         .unwrap_or_else(|| {
@@ -257,6 +270,12 @@ fn main() {
     // was kept. They are gone now, along with the nine dead `Facts` fields that carried them.
 
     let launcher_sha = crypto::sha256_hex(b"brops-windows-launcher-v1");
+    // KNOWN DEFECT, not fixed here (cockpit read R3-0193): `--executor-path` omitted is the empty
+    // string, and an empty or unreadable path does not stop provisioning — the digest below falls back
+    // to the hash of a literal no image has, and `RESULT: provisioned` is printed all the same. The
+    // deployment then refuses every turn: `execution::executor_image_binding` answers
+    // `executor_image_unmeasured` when the image cannot be read and `executor_image_digest_mismatch`
+    // when it can. Fail-closed, but the refusal arrives at the first turn instead of here.
     let executor_sha = std::fs::read(&executor_path)
         .map(|b| crypto::sha256_hex(&b))
         .unwrap_or_else(|_| crypto::sha256_hex(b"brops-windows-executor-v1"));

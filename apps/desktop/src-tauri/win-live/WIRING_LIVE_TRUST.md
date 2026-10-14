@@ -13,14 +13,22 @@ it is replaced by an install-minted root (`T-131`).
   brops-win-live` on any host — it uses the demonstration anchor, so it reports demonstration
   custody, never production). The named-pipe path (`bin/win_live_turn.rs` +
   `win_authority`/`win_supervisor`/`win_signer`) is **built but not reproducibly proven from
-  this tree**: `proof/win_live_proof.ps1` needs the private half of the compiled pin, which
-  nobody holds, and no CI workflow runs any of it. See
+  this tree**: a real run of `proof/win_live_proof.ps1` needs the private half of the compiled
+  pin, which nobody holds, so no workflow runs a governed turn over the pipes. What CI does run,
+  in the `windows-broker` job of `.github/workflows/ci.yml` on `windows-latest`: the crate's
+  tests (`cargo test -p brops-win-live`, which there include the `cfg(windows)` pipe-DACL and
+  probe tests) and `win_live_proof.ps1 -SelfTest`, which drives the script's verdict functions
+  with synthetic driver output and starts no server. See
   [`proof/CROSS_ACCOUNT_PROOF.md`](./proof/CROSS_ACCOUNT_PROOF.md).
 - Production **custody** is not reachable: nobody holds the private half of
   `tcb::ROOT_PUBLIC_KEY_HEX`. Nothing in-tree can forge a production manifest either.
-- **Live chat still runs fail-closed**: the app uses the ungoverned `claude-cli` provider,
-  which emits raw text with no signed receipt, so `resolve_trust_state` returns
-  `NoTrustedManifest`. The UI never shows a production green for a live turn. Good.
+- **Live chat still runs fail-closed**: with nothing set, `ai.rs::resolve_provider` picks no
+  provider and returns an error. The ungoverned `claude-cli` provider is reached only under
+  `BROPS_ALLOW_UNGOVERNED=1` (which the non-default `dev-ungoverned` build sets at startup,
+  `src/lib.rs`), and it emits raw text with no signed receipt. The governed branch hands the
+  receipt store the `NoTrustedManifest` authority (`commands.rs`), which blocks every turn.
+  `resolve_trust_state` is not on the chat path: nothing under `src-tauri/src` calls it. The UI
+  never shows a production green for a live turn. Good.
 
 ## The one honest gap left: WIRING
 

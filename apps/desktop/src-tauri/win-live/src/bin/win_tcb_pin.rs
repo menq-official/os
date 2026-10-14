@@ -157,7 +157,10 @@ fn main() {
     // Self-verify: run the SAME floor the servers will run, against the manifest just written. A pin
     // manifest that the floor rejects is worthless — every server would exit 5 — and the operator should
     // learn that here, from the tool that can explain it, rather than from three services dying at start.
-    // This is also the only place the real `WindowsFsProbe` is exercised outside a live deployment.
+    // This is the only place a whole provisioned deployment is run through the floor outside a serving
+    // start. It is not the only place the real `WindowsFsProbe` runs (this said it was): `tcb_floor`'s
+    // `real_probe` tests and `provision_custody`'s tests call `WindowsFsProbe.stat` on real files, in
+    // the `windows-broker` CI job (`cargo test -p brops-win-live` on `windows-latest`).
     match brops_win_live::tcb_floor::verify_deployment_tcb(Some(&out)) {
         Ok(()) => println!(
             "RESULT: pinned {} artifacts (owner {owner_sid}) -> {out}  [floor self-check: PASS]",
@@ -178,5 +181,11 @@ fn main() {
             std::process::exit(6);
         }
     }
+    // KNOWN DEFECT in the advice printed below, not fixed here (cockpit read R3-0196): only the
+    // environment-variable half of it can be followed after this tool has run. `config.json` is itself
+    // one of the artifacts just pinned (`kit.config` in the mapping above, by sha256), so editing
+    // `config.tcb_pin_manifest` now changes the measured bytes and the floor refuses the deployment
+    // until it is pinned again. No harm when `--out` is the path `win_provision` already wrote there
+    // (`<root>\tcb-pin.json`); for any other `--out`, the variable is the one that works.
     println!("  point config.tcb_pin_manifest (or BROPS_WIN_TCB_PIN_MANIFEST) at it before starting the kit.");
 }

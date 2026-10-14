@@ -1,10 +1,13 @@
 //! The Windows LIVE governed-turn driver — assembles ONE real governed turn over named pipes and prints a
-//! single `RESULT: <trust_state> production_verified=<bool> bound=<bool>` line. The Windows twin of
+//! single `RESULT: <trust_state> production_verified=<bool> bound=<bool> root_anchor=<provenance>` line
+//! (a refusal prints `RESULT: blocked reason=<why> production_verified=false bound=false`). The Windows twin of
 //! `proof/src/bin/live_turn.rs`: the SAME `brops_broker` chain + `run_governed_turn` + `verify_and_accept`,
 //! but the transport is the named-pipe `WindowsHopConnector` (peer-SID authed at each server) and the
-//! execution spawns the executor + drives the supervisor `attest-run` over its pipe. Trust anchors (pinned
-//! root, root-signed manifest, anti-rollback floor, the broker's OWN Expected facts) come from the config —
-//! never a hop reply. Any refusal / mismatch / manifest failure ⇒ `blocked`. Windows-only.
+//! execution spawns the executor + drives the supervisor `attest-run` over its pipe. The pinned root is
+//! compiled in (`tcb::ROOT_KEY_ID` / `tcb::root_public_key_hex()`), never read from the config: a config
+//! root that disagrees with it blocks the turn. The other trust anchors (the root-signed manifest and the
+//! anti-rollback floor, by path, and the broker's OWN Expected facts) come from the config — never a hop
+//! reply. Any refusal / mismatch / manifest failure ⇒ `blocked`. Windows-only.
 
 fn main() {
     #[cfg(not(windows))]
@@ -130,7 +133,7 @@ mod win {
 
         // ---- (0) §2.5 TCB integrity floor (audit R2) ----
         // Before ANY trust anchor is read. The manifest/floor/config this driver is about to pin its whole
-        // verdict on are themselves pinned artifacts; if they or the four binaries have moved since the
+        // verdict on are themselves pinned artifacts; if they or the five binaries have moved since the
         // deployment was measured, the turn is `blocked`, not `trusted_verified`. Fail-closed: an
         // unconfigured or unreadable pin manifest blocks too.
         if let Err(why) =

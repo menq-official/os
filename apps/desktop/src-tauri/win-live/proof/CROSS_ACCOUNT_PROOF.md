@@ -31,6 +31,8 @@
 > The reproducible-on-any-host part of this kit remains `cargo test -p brops-win-live`, which proves
 > the crypto chain, the §2.5 floor decision, and the pipe-DACL plan without Windows. Note that this
 > command still runs in **no CI workflow** — that gap is unfixed and is an open finding.
+>
+> **Builder's note, 2026-10-14 (cockpit read R3-1093) — the sentence above, and the caveat under "Crypto chain" at the end of this file, were false in the commit that wrote them.** `git grep -n "brops-win-live" 153a32f -- .github/workflows/` prints `ci.yml:70` (the Linux crates job, added the day before in `e81f50c`) and `ci.yml:163` (`cargo test -p brops-win-live` on `windows-latest`, added in `153a32f` itself). Today those are `ci.yml:115` and `ci.yml:794`. The text above is left as written.
 
 This records the CROSS-ACCOUNT machine-proof: one full governed turn reaching production
 `trusted_verified` with the three trusted principals running as **distinct dedicated Windows

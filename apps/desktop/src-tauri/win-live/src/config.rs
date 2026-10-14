@@ -57,6 +57,10 @@ pub struct Keys {
     pub challenge_seed: String,
     pub attest_seed: String,
     pub signer_seed: String,
+    /// Written and never read (cockpit read R3-0392): `win_provision` always writes the empty string
+    /// (no root private on the serving box) and nothing in the workspace reads the field. It is still
+    /// a REQUIRED key — there is no `#[serde(default)]` — so a `config.json` without it does not
+    /// parse; removing it would change what the parser accepts and what `win_provision` writes.
     pub root_seed: String,
 }
 
@@ -65,6 +69,9 @@ pub struct KeyIds {
     pub challenge: String,
     pub sup_attest: String,
     pub signer: String,
+    /// Written and never read (cockpit read R3-0393): the readers of `key_ids` take `challenge`,
+    /// `sup_attest` and `signer` only. The root id that IS checked is `trust.root_key_id`
+    /// ([`verify_and_bind_pubs`]). Required all the same — no `#[serde(default)]`.
     pub root: String,
 }
 
@@ -96,8 +103,11 @@ pub struct Trust {
     pub floor_path: String,
     pub root_key_id: String,
     pub root_pub_hex: String,
-    /// CUSTODY provenance the OPERATOR declared for the root anchor at provisioning time — one of
-    /// `external` / `kit_generated` / `demonstration`. It is a declaration, not a proof: no code can
+    /// CUSTODY provenance the OPERATOR declared for the root anchor at provisioning time — one of the
+    /// four values `RootProvenance::parse` accepts: `external` / `install_minted` / `kit_generated` /
+    /// `demonstration`. (This listed three. `win_provision` and the driver both take whatever parses,
+    /// so `install_minted` goes through too; `production_trust` renders it as demonstration custody
+    /// while `INSTALL_MINTED_CUSTODY_ACCEPTED` is `false`.) It is a declaration, not a proof: no code can
     /// tell where the private key `win_provision --root-key` was handed came from, so the operator
     /// states it and the driver carries it into the trust verdict. `#[serde(default)]` keeps older
     /// configs parseable; an empty or unrecognised value makes the driver refuse (`blocked`), never
@@ -174,8 +184,9 @@ pub fn production_pinned_root() -> PinnedRoot {
 /// Bind the config-carried public keys to the root-signed key manifest, and refuse if any of them
 /// disagrees.
 ///
-/// Pure over bytes and plain structs so the whole decision is unit-tested on the Linux CI runner (this
-/// kit's Windows-only code has no CI coverage at all, which is its own audit finding). `pinned` is a
+/// Pure over bytes and plain structs so the whole decision is unit-tested on the Linux CI runner. (This
+/// said the kit's Windows-only code "has no CI coverage at all". It has: the `windows-broker` job runs
+/// `cargo test -p brops-win-live` on `windows-latest`.) `pinned` is a
 /// parameter for the same reason [`crate::resolver::ManifestResolver::with_pinned_root`] takes one: a
 /// test can exercise the real verification path under a key it generated, while [`Config::load`] — the
 /// only production caller — always passes [`production_pinned_root`].

@@ -6,6 +6,8 @@
 use std::io::Write;
 
 fn main() {
+    // These bytes are written a second time in `brops_win_live::proof::in_process_turn` (src/proof.rs),
+    // with no shared constant: the in-process proof does not spawn this image, it passes its own copy.
     let out = b"BROPS windows governed output v1";
     let mut stdout = std::io::stdout();
     stdout.write_all(out).expect("write output");
