@@ -26,7 +26,7 @@ import { parseTrigger } from './automationsGovernance';
 import { parseTimestamp } from './timestamps';
 import type { Approval, Automation, Conversation } from '../domain/entities';
 import {
-  APPROVAL_ACTIONS, DENIED_DECIDE_COMMAND, WITHHELD_MARKERS, bucketSum, classifyApproval,
+  APPROVAL_ACTIONS, DENIED_DECIDE_COMMAND, WITHHELD_MARKERS, bucketSum, canAct, classifyApproval,
   countQueue, missingGrantMarkers, readRejection, readReply,
 } from './approvalsAuthority';
 
@@ -250,6 +250,15 @@ describe('Approvals — a row claims only what its record establishes', () => {
     setup([{ ...PENDING, status: 'expired' }, { ...PENDING, id: 'ap-2', status: 'reviewing' }]);
     await waitFor(() => expect(pillOf()).toBe('Unknown status · expired'));
     expect(screen.getAllByText('Unknown status · reviewing').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Deny — reject this action' })).toBeDisabled();
+  });
+
+  it('the raw string `denied` has no arm either — a rejection is written as `rejected`', async () => {
+    expect(classifyApproval({ ...PENDING, status: 'rejected' }).state).toBe('denied');
+    expect(classifyApproval({ ...PENDING, status: 'denied' }))
+      .toMatchObject({ state: 'unknown', authorized: false, actionable: false });
+    setup([{ ...PENDING, status: 'denied' }]);
+    await waitFor(() => expect(pillOf()).toBe('Unknown status · denied'));
     expect(screen.getByRole('button', { name: 'Deny — reject this action' })).toBeDisabled();
   });
 
@@ -497,7 +506,17 @@ describe('approvalsAuthority — what counts as a grant', () => {
     expect(readReply(null)).toEqual({ kind: 'unreadable' });
     expect(readReply('approved')).toEqual({ kind: 'unreadable' });
     expect(readRejection(new Error('approval was not confirmed')).kind).toBe('cancelled');
+    expect(readRejection('approval was not confirmed').kind).toBe('cancelled');
     expect(readRejection(new Error('approval is not pending')).kind).toBe('refused');
+    // The one string the backend has for a dismissed dialog is the only one read as a
+    // non-decision. Two more spellings were matched that nothing in src-tauri emits; an error
+    // carrying either is a refusal this build cannot explain away.
+    const commands = readFileSync(resolve(process.cwd(), 'src-tauri/src/commands.rs'), 'utf8');
+    expect(commands).toContain('Err("approval was not confirmed".to_string())');
+    for (const never of ['cancelled by user', 'canceled by the user', 'dialog dismissed']) {
+      expect(commands.toLowerCase(), never).not.toContain(never);
+      expect(readRejection(new Error(never)).kind, never).toBe('refused');
+    }
   });
 
   it('names the enforcement tokens the renderer never receives', () => {
@@ -550,8 +569,16 @@ describe('approvalsAuthority — the page is wired to the commands it names, and
       expect(service, action.command).toContain(`'${action.command}'`);
       expect(capabilities, action.command).toContain(`"allow-${kebab(action.command)}"`);
       expect(page, action.command).toContain(`desktop.${camel(action.command)}(`);
-      expect(action.granted).toBe(true);
+      // The table carried `granted: true` on every entry and `canAct` read it: a condition that
+      // could not be false. The capability file two lines up is the only thing that says it.
+      expect(action).not.toHaveProperty('granted');
     }
+    // So whether a row can be acted on is whether it is pending, and nothing else.
+    expect(canAct(classifyApproval(PENDING))).toBe(true);
+    for (const status of ['approved', 'rejected', 'escalated', 'consumed', 'weird']) {
+      expect(canAct(classifyApproval({ ...PENDING, status })), status).toBe(false);
+    }
+    expect(canAct(classifyApproval(GRANTED))).toBe(false);
     // Privilege moves towards the agent on exactly one path, and that path is natively confirmed.
     const granting = Object.values(APPROVAL_ACTIONS).filter((a) => a.grantsPrivilege);
     expect(granting.map((a) => a.command)).toEqual(['confirm_approval']);

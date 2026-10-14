@@ -54,15 +54,16 @@ export type ApprovalState =
   | 'granted'
   /** Says `approved`, but the native-confirmation provenance is absent or wrong. */
   | 'unconfirmed'
-  /** Rejected through the fail-safe reject path. */
+  /** Rejected through the fail-safe reject path — the backend's `rejected`. */
   | 'denied'
   /** Routed to A3 review. Not a verdict: authorises nothing. */
   | 'escalated'
   /** A grant that has already been spent against its gating tuple. */
   | 'consumed'
-  /** A status string this build does not know. Rendered verbatim, toneless. `expired` and
-   *  `reviewing` are among them: both had a state of their own here, and no approval writer in
-   *  repo.rs produces either string. */
+  /** A status string this build does not know. Rendered verbatim, toneless. `expired`,
+   *  `reviewing` and the raw string `denied` are among them: each had an arm of its own here,
+   *  and no approval writer in repo.rs produces any of the three (a rejection is written as
+   *  `rejected`). */
   | 'unknown';
 
 export interface Classification {
@@ -108,7 +109,7 @@ export function classifyApproval(a: Approval): Classification {
       : { state: 'unconfirmed', raw, missing, authorized: false, actionable: false };
   }
   if (s === 'pending') return { state: 'pending', raw, missing: none, authorized: false, actionable: true };
-  if (s === 'rejected' || s === 'denied') return { state: 'denied', raw, missing: none, authorized: false, actionable: false };
+  if (s === 'rejected') return { state: 'denied', raw, missing: none, authorized: false, actionable: false };
   if (s === 'escalated') return { state: 'escalated', raw, missing: none, authorized: false, actionable: false };
   if (s === 'consumed') return { state: 'consumed', raw, missing: none, authorized: false, actionable: false };
   return { state: 'unknown', raw, missing: none, authorized: false, actionable: false };
@@ -175,8 +176,6 @@ export interface ActionCapability {
   kind: ActionKind;
   /** The real backend command this action sends. */
   command: string;
-  /** Granted by the window capability set (`src-tauri/capabilities/default.json`). */
-  granted: boolean;
   /** The backend adjudicates it behind a native OS dialog the webview cannot forge. */
   nativeConfirmed: boolean;
   /** It moves privilege TOWARDS the agent (grant) rather than away from it. */
@@ -184,7 +183,10 @@ export interface ActionCapability {
 }
 
 /**
- * The three actions this page offers, each pinned to the real command behind it.
+ * The three actions this page offers, each pinned to the real command behind it. The page does
+ * not read this table — it calls `desktop.confirmApproval` / `rejectApproval` /
+ * `escalateApproval` directly; `Approvals.test.tsx` holds the two together, failing when a
+ * command named here is not granted to the window or not the one the page calls.
  *
  * The deliberate asymmetry: the generic approve verb `decide_approval` is DENIED, while
  * `reject_approval` is GRANTED — privilege can always be taken away, and is only ever
@@ -195,15 +197,15 @@ export interface ActionCapability {
 export const APPROVAL_ACTIONS: Readonly<Record<ActionKind, ActionCapability>> = {
   grant: {
     kind: 'grant', command: 'confirm_approval',
-    granted: true, nativeConfirmed: true, grantsPrivilege: true,
+    nativeConfirmed: true, grantsPrivilege: true,
   },
   deny: {
     kind: 'deny', command: 'reject_approval',
-    granted: true, nativeConfirmed: false, grantsPrivilege: false,
+    nativeConfirmed: false, grantsPrivilege: false,
   },
   escalate: {
     kind: 'escalate', command: 'escalate_approval',
-    granted: true, nativeConfirmed: false, grantsPrivilege: false,
+    nativeConfirmed: false, grantsPrivilege: false,
   },
 };
 
@@ -211,9 +213,12 @@ export const APPROVAL_ACTIONS: Readonly<Record<ActionKind, ActionCapability>> = 
  *  test can assert no control on this page is ever wired to it. */
 export const DENIED_DECIDE_COMMAND = 'decide_approval';
 
-/** Can this row take this action? Only pending rows, and only granted commands. */
-export function canAct(kind: ActionKind, c: Classification): boolean {
-  return APPROVAL_ACTIONS[kind].granted && c.actionable;
+/** Can this row take an action? Only a pending row. Whether the COMMAND behind an action is
+ *  granted is not asked here: this used to read a `granted: true` written three times in the
+ *  table above, which could not be false. The capability file is what says it, and
+ *  `Approvals.test.tsx` reads that file for each command in the table. */
+export function canAct(c: Classification): boolean {
+  return c.actionable;
 }
 
 // ── outcome of a real command reply ──────────────────────────────────────────
@@ -245,6 +250,11 @@ export function readReply(reply: unknown): Outcome {
   return { kind: 'recorded', state: classifyApproval(reply).state };
 }
 
+/** What `commands::confirm_approval` rejects with when the native dialog was dismissed — the
+ *  one string the backend has for it. Two more spellings were matched here ("cancelled by
+ *  user", "dialog dismissed") that nothing in src-tauri emits. */
+const NOT_CONFIRMED = 'approval was not confirmed';
+
 /**
  * A REJECTED command. `confirm_approval` returns "approval was not confirmed" when the
  * owner dismisses the native dialog — that is a non-decision, not a failure, and must not
@@ -252,7 +262,7 @@ export function readReply(reply: unknown): Outcome {
  */
 export function readRejection(error: unknown): Outcome {
   const reason = error instanceof Error ? error.message : String(error);
-  if (/was not confirmed|cancell?ed by (the )?user|dialog dismissed/i.test(reason)) {
+  if (reason.includes(NOT_CONFIRMED)) {
     return { kind: 'cancelled', reason };
   }
   return { kind: 'refused', reason };

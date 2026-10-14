@@ -118,11 +118,13 @@ export function Settings() {
 
   // ── Governance posture, derived from the REAL ai_status ───────────────────────────
   // This row used to print "Fail-closed, verified-receipt-mandatory" unconditionally,
-  // which the shipped default contradicts: when the resolved provider is not the
-  // governed engine, the command layer falls through to the ungoverned streaming path
-  // and NOTHING about the reply is leased, receipted or verified. So the row now
-  // reports what the backend actually resolved — including an explicit "unknown" when
-  // there is no signal to read, which is honest, rather than a reassuring constant.
+  // which is false in two of the states `ai_status` can report: with no provider resolved
+  // (`none` — the shipped default, where `ai.rs::resolve_provider` returns Err) there is no
+  // reply to verify, and under the development opt-in (`BROPS_ALLOW_UNGOVERNED`) the command
+  // layer falls through to the ungoverned streaming path and NOTHING about the reply is
+  // leased, receipted or verified. So the row now reports what the backend actually
+  // resolved — including an explicit "unknown" when there is no signal to read, which is
+  // honest, rather than a reassuring constant.
   const governance: { value: string; note: string; tone: string } =
     !hasBackend()
       ? { value: L('govUnknown'), note: L('govUnknownNote'), tone: 'off' }
@@ -131,9 +133,10 @@ export function Settings() {
         : ai.error || !data
           ? { value: L('govUnknown'), note: L('govUnavailableNote'), tone: 'warn' }
           : isNone
+            // The default shipped configuration lands here: nothing set, nothing resolved.
             ? { value: L('govNoProvider'), note: L('govNoProviderNote'), tone: 'warn' }
             : !isGoverned
-              // The default shipped configuration lands here.
+              // The development opt-in (`BROPS_ALLOW_UNGOVERNED`) lands here.
               ? { value: L('govUngoverned'), note: L('govUngovernedNote'), tone: 'warn' }
               : ready
                 ? { value: L('govGoverned'), note: L('govGovernedNote'), tone: 'live' }
@@ -169,10 +172,6 @@ export function Settings() {
   return (
     <div className={`v-settings${engineDown ? ' engine-down' : ''}`}>
       <style>{`
-        .v-settings .set-sr-only {
-          position:absolute; width:1px; height:1px; padding:0; margin:-1px;
-          overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
-        }
         .v-settings .set-toggle { display:flex; align-items:center; justify-content:space-between; gap:var(--s4); margin-top:var(--s4); }
         .v-settings .set-toggle > span:first-child { font-size:13px; color:var(--ink); }
         /* The state word, visible next to the control. A switch's shape alone cannot show
@@ -229,7 +228,7 @@ export function Settings() {
       </header>
 
       {/* Polite live region: announces an applied preference change without stealing focus. */}
-      <div className="set-sr-only" role="status" aria-live="polite">{announce}</div>
+      <div className="sr-only" role="status" aria-live="polite">{announce}</div>
 
       {/* ═══ HERO · ENGINE BAY — the real AI runtime the backend resolved (read-only) ═══ */}
       <section className="set-bay surface soft lg hud reveal" aria-label={t('settings.aiProvider')}>
@@ -383,7 +382,7 @@ export function Settings() {
             aria-labelledby="settings-theme-label"
             aria-describedby="settings-theme-desc"
           >
-            <span id="settings-theme-label" className="set-sr-only">{t('settings.theme')}</span>
+            <span id="settings-theme-label" className="sr-only">{t('settings.theme')}</span>
             <button
               type="button"
               className={`ttile tt-dark${theme === 'dark' ? ' on' : ''}`}

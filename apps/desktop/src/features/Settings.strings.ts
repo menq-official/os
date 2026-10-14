@@ -165,9 +165,11 @@ export const STR = {
   statusUnknown: { en: 'Unknown', hy: 'Անհայտ', ru: 'Неизвестно' },
 
   // — governance posture (finding: this row used to state "Fail-closed, verified-
-  //   receipt-mandatory" UNCONDITIONALLY, while the shipped default resolves an
-  //   ungoverned provider and every reply streams ungoverned. The row now reports the
-  //   ACTUAL runtime state from ai_status, including an explicit unknown.) —
+  //   receipt-mandatory" UNCONDITIONALLY. It is false whenever the resolved provider is
+  //   not the governed engine: under the development opt-in (BROPS_ALLOW_UNGOVERNED) every
+  //   reply streams ungoverned, and the shipped default resolves no provider at all
+  //   (`ai.rs::resolve_provider` returns Err, `ai_status` answers `none`). The row now
+  //   reports the ACTUAL runtime state from ai_status, including an explicit unknown.) —
   govUnknown: {
     en: 'Unknown — not verified here',
     hy: 'Անհայտ — այստեղ չի ստուգվում',

@@ -222,7 +222,7 @@ export function Approvals() {
   // command the desktop cannot forge — there is no local-only, made-up outcome.
   const runAction = useCallback((id: string, kind: ActionKind) => {
     const item = (data ?? []).find((a) => a.id === id);
-    if (!item || !canAct(kind, classifyApproval(item))) return; // only pending items are actionable
+    if (!item || !canAct(classifyApproval(item))) return; // only pending items are actionable
     const label = item.target;
     // The announcement is read off the RECORD the command returned, never off the click. A
     // `confirm_approval` that comes back without its native-confirmation provenance is not

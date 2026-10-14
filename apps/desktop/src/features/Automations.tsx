@@ -108,14 +108,10 @@ const EVIDENCE_STR: Record<EvidenceItem['id'], keyof typeof STR> = {
 
 const ACTOR_STR: Record<RunContract['actor'], keyof typeof STR> = {
   owner: 'actorOwner',
-  scheduler: 'actorScheduler',
-  unrecorded: 'actorUnrecorded',
 };
 
 const ROLE_STR: Record<RunContract['roleId'], keyof typeof STR> = {
   'desktop-owner': 'roleDesktopOwner',
-  'local-scheduler': 'roleLocalScheduler',
-  none: 'roleNone',
 };
 
 const KIND_STR: Record<LedgerEntry['kind'], keyof typeof STR> = {
@@ -255,7 +251,7 @@ function NewRuleForm({ onClose, onCreated }: { onClose: () => void; onCreated: (
     id: 'draft', name: name.trim(), trigger: trigger.trim(), action: action.trim(),
     enabled: true, createdAt: '', updatedAt: '',
   };
-  const assessment = assessRun(draft, 'owner');
+  const assessment = assessRun(draft);
   const triggerRead = describeTrigger(trigger, L);
 
   const submit = () => {
@@ -380,7 +376,7 @@ export function Automations() {
    * `automation_disabled` is excluded because "off" is already its own honest state.
    */
   const sealReason = (a: Automation): RefusalReason | null => {
-    const { refusal } = assessRun(a, 'owner');
+    const { refusal } = assessRun(a);
     return refusal !== null && refusal !== 'automation_disabled' ? refusal : null;
   };
 
@@ -559,7 +555,7 @@ export function Automations() {
    * thing that lets the history say, truthfully, under whose authority that run happened.
    */
   const runNow = (a: Automation) => {
-    const assessment = assessRun(a, 'owner');
+    const assessment = assessRun(a);
     if (assessment.refusal !== null) {
       const reason = assessment.refusal;
       const message = L(REFUSAL_STR[reason]);
@@ -798,7 +794,7 @@ export function Automations() {
     const err = actionError && actionError.id === a.id ? actionError : null;
     const denial = err ? err.message : null;
     // The contract this conduit runs under, and the standing refusal (if any) that seals it.
-    const assessment = assessRun(a, 'owner');
+    const assessment = assessRun(a);
     const seal = sealReason(a);
 
     return (

@@ -12,7 +12,8 @@
 // `run_automation`, and the honest reader that turns the run log into a history that says what
 // is actually known. It answers, for one automation:
 //
-//   who      — `actor` (owner of this session · the local scheduler · not recorded)
+//   who      — `actor`: the owner of this session, the only actor a contract is built for here
+//              (a scheduler fire happens in the backend, and a stored row records no actor)
 //   role     — `roleId`, the authority the actor acts under
 //   scope    — the exact IPC command plus the store rows the action may write
 //   risk     — `risk` + the real `riskFactors` it was derived from
@@ -28,8 +29,9 @@
 // FAIL-CLOSED. Every unknown is a refusal, never an allowance: an unknown command is treated as
 // denied, an unparseable action is refused, an unknown run outcome is never counted as executed.
 // The roadmap's Phase-8 rule — "an automation that would need ungoverned execution is refused at
-// authoring time" — is implemented here as `assessAction`, used by BOTH the authoring form and
-// the run path, so a rule that cannot run governed cannot be created and cannot be fired.
+// authoring time" — is implemented here as `parseAction`, the one vocabulary BOTH gates read:
+// `assessAction` (the authoring form) and `assessRun` (the run path) each call it, so a rule
+// that cannot run governed cannot be created and cannot be fired.
 
 import type { Automation, AutomationRun } from '../domain/entities';
 import type { RiskLevel } from '../domain/enums';
@@ -243,9 +245,12 @@ export type RiskFactor =
   | 'unattended_schedule'    // an interval trigger fires it with no human present
   | 'reaches_model';         // would leave the local store — needs a lease this page cannot get
 
-/** Who a run acts as. `unrecorded` is the honest value for every row read back from the store. */
-export type RunActor = 'owner' | 'scheduler' | 'unrecorded';
-export type RoleId = 'desktop-owner' | 'local-scheduler' | 'none';
+/** Who a contracted run acts as, and under which role. One value each, because one actor ever
+ *  gets a contract: the owner pressing "Run now" on this page. The scheduler fires in the
+ *  backend, where this module is not consulted, and a row read back from the store records no
+ *  actor at all — `LedgerEntry.contract` is `null` for it, which is how "not recorded" is said. */
+export type RunActor = 'owner';
+export type RoleId = 'desktop-owner';
 
 /** One thing a governed run is supposed to leave behind, and whether THIS page can see it. */
 export interface EvidenceItem {
@@ -294,22 +299,13 @@ const EFFECT_SCOPE: Record<ActionEffect, { scope: string; removable: boolean }> 
   knowledge_note: { scope: 'knowledge:create', removable: false },
 };
 
-/** The role an actor acts under. `unrecorded` gets `none`: we refuse to name a role we did not
- *  observe, which is the entire complaint about the stored rows. */
-function roleOf(actor: RunActor): RoleId {
-  if (actor === 'owner') return 'desktop-owner';
-  if (actor === 'scheduler') return 'local-scheduler';
-  return 'none';
-}
-
 /**
- * Assess ONE prospective run of `automation` by `actor`, returning the contract it would carry
- * and any refusal. This is the single gate: the page must call it before `run_automation` and
- * must not invoke when `refusal !== null`.
+ * Assess ONE prospective run of `automation` by the owner of this session, returning the
+ * contract it would carry and any refusal. This is the single gate: the page must call it before
+ * `run_automation` and must not invoke when `refusal !== null`.
  */
 export function assessRun(
   automation: Automation,
-  actor: 'owner' | 'scheduler',
   policy: Readonly<Record<string, CommandPolicyEntry>> = COMMAND_POLICY,
 ): ContractAssessment {
   const parsed = parseAction(automation.action);
@@ -342,8 +338,8 @@ export function assessRun(
   const contract: RunContract = {
     automationId: automation.id,
     automationName: automation.name,
-    actor,
-    roleId: roleOf(actor),
+    actor: 'owner',
+    roleId: 'desktop-owner',
     command: 'run_automation',
     tier,
     grant,
@@ -373,6 +369,12 @@ export function assessRun(
   if (!parsed.ok) {
     return { contract, refusal: parsed.reason, offending: parsed.offending };
   }
+  // UNREACHABLE TODAY, and kept (R3-0438). Risk is `high` only through `reaches_model`, which is
+  // pushed only when the action did not parse, and that returned two lines up; a parsed action is
+  // `low` or `medium`, never above the ceiling. This is the arm that refuses if an `ok` action is
+  // ever given a risk above `medium`: a fail-closed ceiling, not a path to delete. No test can
+  // drive `assessRun` into it without changing this function; `riskExceeds` and the ceiling are
+  // held directly in `Automations.governance.test.ts`.
   if (riskExceeds(risk, LOCAL_RISK_CEILING)) {
     return { contract, refusal: 'risk_above_local_ceiling', offending: risk };
   }
@@ -380,11 +382,6 @@ export function assessRun(
     return { contract, refusal: 'automation_disabled', offending: automation.name };
   }
   return { contract, refusal: null, offending: '' };
-}
-
-/** True only for an assessment with no refusal. */
-export function isAllowed(assessment: ContractAssessment): boolean {
-  return assessment.refusal === null;
 }
 
 /**

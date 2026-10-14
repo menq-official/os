@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // Mock the Tauri IPC boundary. Security mirrors engine truth: it reads a real
 // summary (get_security_summary) and the real evidence chain (read_evidence_chain),
@@ -15,6 +17,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import { Security } from './Security';
+import { STR as SEC_STR } from './Security.strings';
 
 function setup() {
   invokeMock.mockImplementation((cmd: string) => {
@@ -67,6 +70,29 @@ describe('Security — the integrity pulse is bound to state, not decorative', (
     await waitFor(() => expect(instrument()).toBeTruthy());
     expect(instrument()!.className).toContain('sec-int--checking');
     expect(instrument()!.className).toContain('sigbreathe');
+  });
+
+  // The in-flight pill read "Verifying…" on a page whose own rule is that this read can verify
+  // nothing (`Integrity` has no `verified` value). It is a read, and the pill says so.
+  it('the in-flight pill says the chain is being READ, in no language that it is being verified', async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_security_summary')
+        return Promise.resolve({ pendingApprovals: 0, decidedApprovals: 0, auditEvents: 0, sensitiveEvents: [] });
+      if (cmd === 'read_evidence_chain') return new Promise(() => {});
+      return Promise.resolve(null);
+    });
+    render(<AppProvider><ToastProvider><Security /></ToastProvider></AppProvider>);
+    await waitFor(() => expect(instrument()?.className).toContain('sec-int--checking'));
+    const pills = Array.from(document.querySelectorAll('.pageHead .right .pill, .mc-read .pill'))
+      .map((el) => el.textContent);
+    expect(pills).toEqual(['Reading…', 'Reading…']);
+    expect(Object.keys(SEC_STR)).not.toContain('verifying');
+    for (const lang of ['en', 'hy', 'ru'] as const) {
+      // The pill is the short form of the detail line under it, word for word.
+      const pill = (SEC_STR as Record<string, Record<string, string>>).reading?.[lang] ?? '';
+      expect(pill, lang).toMatch(/…$/);
+      expect(SEC_STR.readingChain[lang].startsWith(pill.replace(/…$/, '')), lang).toBe(true);
+    }
   });
 
   it('is STILL once the read settles blocked — nothing is established, so nothing breathes', async () => {
@@ -200,5 +226,33 @@ describe('Security — a failed chain read can be retried where it is reported',
     render(<AppProvider><ToastProvider><Security /></ToastProvider></AppProvider>);
     await waitFor(() => expect(screen.getByText(/engine refused the evidence-chain read/i)).toBeInTheDocument());
     expect(document.querySelector('.mc-read button')).toBeNull();
+  });
+});
+
+// The five residual names are a hand-kept copy of the inventory. `tools/check_residual_items.py`
+// holds the SEVERITIES identical across the documents and never read this file, so an item added,
+// dropped or renamed there left the page listing something else. The list is read here against
+// `docs/SECURITY_MODEL.md` §4, the same lines that gate reads.
+describe('Security — the residual list is the inventory\'s, by id and by name', () => {
+  it('lists exactly the items SECURITY_MODEL §4 names, under the names it gives them', async () => {
+    const model = readFileSync(resolve(process.cwd(), '../../docs/SECURITY_MODEL.md'), 'utf8');
+    const inventory = new Map<string, string>();
+    for (const m of model.matchAll(/^- \*\*(O-\d+) \((?:HIGH|MED|LOW)\)\*\* — ([^:]+):/gm)) {
+      inventory.set(m[1], m[2].trim().toLowerCase());
+    }
+    // The parse found the section: a pattern that matched nothing would agree with any page.
+    expect(inventory.size).toBeGreaterThanOrEqual(5);
+
+    setup();
+    await waitFor(() => expect(document.querySelectorAll('.sec-residual-item').length).toBeGreaterThan(0));
+    const shown = new Map(Array.from(document.querySelectorAll('.sec-residual-item')).map((li) => [
+      li.querySelector('.tag')!.textContent ?? '',
+      (li.querySelector('.sec-residual-name')!.textContent ?? '').toLowerCase(),
+    ]));
+    expect([...shown.keys()]).toEqual([...inventory.keys()]);
+    for (const [id, name] of inventory) expect(shown.get(id), id).toBe(name);
+    // And the catalog carries no residual the page does not list.
+    expect(Object.keys(SEC_STR).filter((k) => k.startsWith('residual.')).map((k) => k.slice('residual.'.length)))
+      .toEqual([...inventory.keys()]);
   });
 });

@@ -24,8 +24,6 @@
  *  a YES and, under a unanimity rule, it blocks the decision. */
 export type Stance = 'yes' | 'no' | 'abstain';
 
-export const STANCES: readonly Stance[] = ['yes', 'no', 'abstain'];
-
 /** The decision rules a round may state. The rule is chosen when the round is
  *  OPENED and is recorded in the transcript, so it can never be picked after the
  *  positions are known. */

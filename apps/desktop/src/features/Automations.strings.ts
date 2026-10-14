@@ -101,11 +101,8 @@ export const STR = {
   contractSchedule: { en: 'Schedule', hy: 'ԺԱՄԱՆԱԿԱՑՈՒՅՑ', ru: 'Расписание' },
 
   actorOwner: { en: 'You — this session', hy: 'Դու — այս session-ը', ru: 'Вы — эта сессия' },
-  actorScheduler: { en: 'Local scheduler — unattended', hy: 'Տեղական պլանավորիչ — առանց հսկողության', ru: 'Локальный планировщик — без присмотра' },
   actorUnrecorded: { en: 'Not recorded', hy: 'Գրանցված չէ', ru: 'Не записано' },
   roleDesktopOwner: { en: 'desktop-owner', hy: 'desktop-owner', ru: 'desktop-owner' },
-  roleLocalScheduler: { en: 'local-scheduler', hy: 'local-scheduler', ru: 'local-scheduler' },
-  roleNone: { en: 'none', hy: 'չկա', ru: 'нет' },
 
   tierLabel: { en: 'tier', hy: 'աստիճան', ru: 'уровень' },
   grantAllow: { en: 'granted', hy: 'թույլատրված', ru: 'разрешено' },

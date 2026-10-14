@@ -43,8 +43,10 @@ describe('a held answer is described by what produced it', () => {
   });
 
   it('every key these functions can return actually exists, in all three languages', () => {
-    // A label that resolves to a missing key renders the key name at the user. The i18n parity
-    // gate covers `src/i18n/`, not the per-feature strings tables, so this is where it is checked.
+    // A label that resolves to a missing key renders the key name at the user. That every key
+    // PRESENT in a per-feature table is trilingual is `i18n/strings.parity.test.ts`'s check (it
+    // globs `**/*.strings.ts`); what only this test checks is that a key the labeller RETURNS is
+    // in the table at all.
     const keys = new Set<string>();
     for (const p of ['trusted_verified', 'development_untrusted', 'ungoverned', 'unknown']) {
       keys.add(heldLabel(p).key);

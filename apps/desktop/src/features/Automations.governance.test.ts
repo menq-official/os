@@ -10,7 +10,7 @@ const fromDesktopRoot = (p: string) => readFileSync(resolve(process.cwd(), p), '
 
 import {
   COMMAND_POLICY, DELETE_NOT_CONFIRMED_PREFIX, LOCAL_RISK_CEILING, assessAction, assessRun,
-  bindReceipt, buildLedger, classifyRun, commandPolicy, isAllowed, isContractEnforced,
+  bindReceipt, buildLedger, classifyRun, commandPolicy, isContractEnforced,
   isDeleteNotConfirmed, isEngineVerified, parseAction,
   parseIntervalMs, parseTrigger, riskExceeds, summarise,
   type RunContract, type SessionRefusal,
@@ -178,8 +178,8 @@ describe('parseIntervalMs — the truth about what the scheduler will fire', () 
 
 describe('assessRun — every run carries who / role / scope / risk / evidence', () => {
   it('builds the full contract for an allowed owner-initiated run', () => {
-    const a = assessRun(automation(), 'owner');
-    expect(isAllowed(a)).toBe(true);
+    const a = assessRun(automation());
+    expect(a.refusal).toBeNull();
     expect(a.contract).toMatchObject({
       actor: 'owner',
       roleId: 'desktop-owner',
@@ -195,16 +195,18 @@ describe('assessRun — every run carries who / role / scope / risk / evidence',
     expect(a.contract.evidence.map((e) => e.id)).toEqual(['run_row', 'audit_event', 'engine_receipt']);
   });
 
-  it('an unattended (interval) fire is the scheduler’s, at a higher risk, and says why', () => {
-    const a = assessRun(automation({ trigger: 'every: 15m' }), 'scheduler');
-    expect(a.contract).toMatchObject({ actor: 'scheduler', roleId: 'local-scheduler', risk: 'medium', unattended: true });
+  it('a rule on an interval carries a higher risk, says why, and is still the owner’s to run', () => {
+    // The contract is the owner's: this page builds one for "Run now" and for nothing else. The
+    // scheduler's own fires happen in the backend and never pass through `assessRun`.
+    const a = assessRun(automation({ trigger: 'every: 15m' }));
+    expect(a.contract).toMatchObject({ actor: 'owner', roleId: 'desktop-owner', risk: 'medium', unattended: true });
     expect(a.contract.riskFactors).toContain('unattended_schedule');
     expect(riskExceeds(a.contract.risk, LOCAL_RISK_CEILING)).toBe(false);
-    expect(isAllowed(a)).toBe(true);
+    expect(a.refusal).toBeNull();
   });
 
   it('refuses a model-reaching action instead of running it ungoverned', () => {
-    const a = assessRun(automation({ action: 'ask: summarise my inbox' }), 'owner');
+    const a = assessRun(automation({ action: 'ask: summarise my inbox' }));
     expect(a.refusal).toBe('action_reaches_model');
     // The contract is still built, so the page can show the shape that was not satisfiable.
     expect(a.contract.risk).toBe('high');
@@ -212,15 +214,30 @@ describe('assessRun — every run carries who / role / scope / risk / evidence',
     expect(riskExceeds(a.contract.risk, LOCAL_RISK_CEILING)).toBe(true);
   });
 
+  // R3-0438. The ceiling refusal in `assessRun` cannot be reached today — a parsed action is
+  // never above `medium` — so what is held here is the comparison it rests on: the order of the
+  // four levels, and where the ceiling sits in it.
+  it('the local ceiling is `medium`, and only what is above it exceeds it', () => {
+    expect(LOCAL_RISK_CEILING).toBe('medium');
+    const exceeds = (['low', 'medium', 'high', 'critical'] as const)
+      .map((risk) => [risk, riskExceeds(risk, LOCAL_RISK_CEILING)]);
+    expect(exceeds).toEqual([['low', false], ['medium', false], ['high', true], ['critical', true]]);
+    // The order itself, not only its cut at the ceiling.
+    expect(riskExceeds('critical', 'high')).toBe(true);
+    expect(riskExceeds('high', 'critical')).toBe(false);
+    expect(riskExceeds('medium', 'low')).toBe(true);
+    expect(riskExceeds('low', 'low')).toBe(false);
+  });
+
   it('refuses a disabled automation, and reports a broken rule ahead of merely being off', () => {
-    expect(assessRun(automation({ enabled: false }), 'owner').refusal).toBe('automation_disabled');
+    expect(assessRun(automation({ enabled: false })).refusal).toBe('automation_disabled');
     // Off AND unrunnable: the rule problem is the one worth reporting.
-    expect(assessRun(automation({ enabled: false, action: 'backup' }), 'owner').refusal).toBe('action_malformed');
+    expect(assessRun(automation({ enabled: false, action: 'backup' })).refusal).toBe('action_malformed');
   });
 
   it('refuses when the capability policy denies the command, whatever the action says', () => {
     const denied = { run_automation: { tier: 'X', grant: 'deny' } } as const;
-    const a = assessRun(automation(), 'owner', denied);
+    const a = assessRun(automation(), denied);
     expect(a.refusal).toBe('command_denied');
     expect(a.contract.grant).toBe('deny');
   });
@@ -271,7 +288,7 @@ describe('classifyRun — a stored row is read, never flattered', () => {
 });
 
 describe('buildLedger — the history says only what is known', () => {
-  const contract = (): RunContract => assessRun(automation(), 'owner').contract;
+  const contract = (): RunContract => assessRun(automation()).contract;
 
   it('a stored run with no session binding is UNATTRIBUTED', () => {
     const [entry] = buildLedger([run()], [], {});
@@ -331,7 +348,7 @@ describe('buildLedger — the history says only what is known', () => {
 
 describe('nothing is ever presented as engine-verified', () => {
   it('no ledger entry this module can build is engine-verified', () => {
-    const c = assessRun(automation(), 'owner').contract;
+    const c = assessRun(automation()).contract;
     const entries = [
       ...buildLedger([run(), run({ id: 'r-2', outcome: 'failed', detail: 'boom' })], [], { 'r-1': bindReceipt(c, run()) }),
       ...buildLedger([], [{ key: 'k', at: '1', reason: null, detail: 'd', contract: c, origin: 'store' }], {}),
@@ -341,7 +358,7 @@ describe('nothing is ever presented as engine-verified', () => {
   });
 
   it('binding the returned row never marks the engine receipt observed', () => {
-    const bound = bindReceipt(assessRun(automation(), 'owner').contract, run());
+    const bound = bindReceipt(assessRun(automation()).contract, run());
     expect(bound.evidence.find((e) => e.id === 'engine_receipt')?.observed).toBe(false);
     expect(bound.evidence.find((e) => e.id === 'audit_event')?.observed).toBe(false);
     expect(bound.evidence.find((e) => e.id === 'run_row')?.observed).toBe(true);

@@ -71,8 +71,10 @@ function statusLabel(L: Localize, status: string): string {
 //     challenge, no receipt; the `ready` event says so in `provenance`, and the badge is the
 //     worst-case one.
 //
-// The held id is why saving is a backend command taking the id — the app window never receives
-// the text, so it cannot save something the backend did not produce (P1-6).
+// The held id is why saving is a backend command taking the id, so what is saved is what the
+// backend held and never text from this window (P1-6). On the governed path the window is not
+// sent the text at all. On the ungoverned development path the backend does send it, as `delta`
+// events; this page drops them (see `start`).
 /** What `commands::save_ask_to_knowledge` answers when the id was never held or was already
  *  claimed — the one save refusal after which no answer is left to save. */
 const RESULT_ID_GONE = 'unknown or already-saved result id';
@@ -356,7 +358,6 @@ export function Research() {
   const [deleting, setDeleting] = useState<ResearchItem | null>(null);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
 
   const items = s.data ?? [];
 
@@ -439,7 +440,7 @@ export function Research() {
 
   const renderList = () => {
     if (loading) return <Skeleton rows={5} />;
-    if (s.error) return <ErrorState message={s.error || L('loadFailed')} onRetry={s.reload} retryLabel={t('action.retry')} />;
+    if (s.error) return <ErrorState message={s.error} onRetry={s.reload} retryLabel={t('action.retry')} />;
     if (filtered.length === 0) {
       return isFiltering ? (
         <div>
@@ -454,7 +455,6 @@ export function Research() {
     }
     return (
       <div
-        ref={listRef}
         className="rsx-list"
         role="listbox"
         aria-label={L('listPanel')}

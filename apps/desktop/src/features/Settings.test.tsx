@@ -65,9 +65,10 @@ describe('Settings — reflects the real ai_status, never a fabricated posture',
 });
 
 // The System panel's Governance row used to print "Fail-closed, verified-receipt-
-// mandatory" unconditionally, while the shipped default resolves an ungoverned
-// provider and every reply streams on the ungoverned path (commands.rs falls through
-// on `Ok(false)`). The row must report the ACTUAL runtime state instead.
+// mandatory" unconditionally. Under the development opt-in (BROPS_ALLOW_UNGOVERNED) the
+// resolved provider is ungoverned and every reply streams on the ungoverned path
+// (commands.rs falls through on `Ok(false)`); with nothing configured `provider_is_governed()`
+// is `Err` and no reply is produced at all. The row must report the ACTUAL runtime state.
 describe('Settings — the Governance row reports the real runtime posture', () => {
   it('says replies are NOT verified when the resolved provider is ungoverned', async () => {
     mount(UNGOVERNED);
@@ -298,5 +299,20 @@ describe('Settings — the System panel is a region with its own name', () => {
     setup();
     expect(await screen.findByRole('region', { name: 'System' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Settings' })).toBeNull();
+  });
+});
+
+// `.set-sr-only` was a page-local copy of the shared visually-hidden rule (`.sr-only`,
+// components/ui.css), declared in this page's own <style> block.
+describe('Settings — the page ships no copy of the shared visually-hidden rule', () => {
+  it('the announcer and the theme group label are `sr-only`, and no `.set-sr-only` is declared', async () => {
+    setup();
+    await waitFor(() => expect(called('ai_status')).toBe(true));
+    const live = document.querySelector('.v-settings > [role="status"][aria-live="polite"]')!;
+    expect(live).not.toBeNull();
+    expect(live.classList.contains('sr-only')).toBe(true);
+    expect(document.getElementById('settings-theme-label')!.classList.contains('sr-only')).toBe(true);
+    expect(document.querySelector('.v-settings > style')!.textContent).not.toMatch(/sr-only/);
+    expect(document.querySelector('.set-sr-only')).toBeNull();
   });
 });

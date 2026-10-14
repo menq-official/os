@@ -12,7 +12,7 @@ import type { Lang, Tone } from '../domain/enums';
 import { statusLabel, priorityLabel } from '../domain/statusLabels';
 import type { Agent, Task } from '../domain/entities';
 import type { DictKey } from '../i18n';
-import { STR } from './Tasks.strings';
+import { STR, type StrKey } from './Tasks.strings';
 import {
   CAPABILITY_TIERS, MODES, RISKS, TIER_TOOLS,
   CONTRACT_SCHEMA_SOURCE, DISPATCH_REQUIREMENT,
@@ -21,7 +21,6 @@ import {
   type Assignment, type CapabilityTier, type DispatchOutcome, type Mode, type Risk,
 } from '../services/agentsDispatch';
 
-type StrKey = keyof typeof STR;
 type Lstr = (k: StrKey) => string;
 
 // Mission board — the brops-aios "Առաքելություն" reskin. Lanes group tasks by
@@ -662,7 +661,7 @@ export function Tasks() {
         actions={<Button variant="primary" onClick={() => setCreating(true)}>{t('action.new')}</Button>}
       />
 
-      <div className="t-sr-only" role="status" aria-live="polite">{announce}</div>
+      <div className="sr-only" role="status" aria-live="polite">{announce}</div>
 
       {creating && (
         <NewTaskForm
@@ -805,11 +804,9 @@ export function Tasks() {
 
 // Local styles — scoped under `.v-tasks`; the board/lane/mtask/mission classes
 // themselves live in the global aios theme. These only fill the small gaps the
-// reskin needs: the sr-only live region, the per-card status control, the
-// keyboard focus ring and the empty-lane hint. No shared file is touched.
+// reskin needs: the per-card status control, the keyboard focus ring and the
+// empty-lane hint. The live region is hidden by the shared `.sr-only` (components/ui.css).
 const TASKS_CSS = `
-.v-tasks .t-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .v-tasks .mtask { cursor: pointer; }
 .v-tasks .mtask:focus-visible { outline: none; border-color: var(--cyan);
   box-shadow: 0 0 0 2px rgb(var(--cyan-rgb)/.4); }

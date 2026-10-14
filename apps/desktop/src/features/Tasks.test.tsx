@@ -107,7 +107,7 @@ describe('Tasks — Enter on a card\'s own button is that button\'s', () => {
     });
     return render(<AppProvider><ToastProvider><Toaster /><Tasks /></ToastProvider></AppProvider>);
   }
-  const live = () => document.querySelector('.t-sr-only')?.textContent ?? '';
+  const live = () => document.querySelector('.v-tasks > .sr-only[role="status"]')?.textContent ?? '';
 
   it('Enter on Dispatch or Release is not swallowed and does not open the edit modal', async () => {
     mount();
@@ -176,5 +176,19 @@ describe('Tasks — a priority is named the same where it is chosen as where it 
     await screen.findByRole('dialog');
     expect(optionTexts()).toEqual(expect.arrayContaining(['Low', 'Normal', 'High', 'Critical']));
     expect(optionTexts()).not.toContain('high');
+  });
+});
+
+// `.t-sr-only` was a page-local copy of the shared visually-hidden rule (`.sr-only`,
+// components/ui.css) — in a file that already used the shared class for its empty lanes.
+describe('Tasks — the page ships no copy of the shared visually-hidden rule', () => {
+  it('the announcer is `sr-only`, and no `.t-sr-only` is declared', async () => {
+    setup();
+    await screen.findByText('Draft the specification');
+    const live = document.querySelector('.v-tasks > [role="status"][aria-live="polite"]')!;
+    expect(live).not.toBeNull();
+    expect(live.classList.contains('sr-only')).toBe(true);
+    expect(document.querySelector('.v-tasks style')!.textContent).not.toMatch(/sr-only\s*\{/);
+    expect(document.querySelector('.t-sr-only')).toBeNull();
   });
 });

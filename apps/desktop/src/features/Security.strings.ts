@@ -6,7 +6,9 @@
 export const STR = {
   // Honest posture / integrity labels
   blocked: { en: 'Blocked', hy: 'Արգելափակված', ru: 'Заблокировано' },
-  verifying: { en: 'Verifying…', hy: 'Ստուգվում է…', ru: 'Проверка…' },
+  // The in-flight pill: the short form of `readingChain`. It read "Verifying…", on a page whose
+  // read can verify nothing.
+  reading: { en: 'Reading…', hy: 'Կարդում ենք…', ru: 'Чтение…' },
   chainReadFailed: {
     en: 'Chain read failed',
     hy: 'Շղթայի ընթերցումը ձախողվեց',

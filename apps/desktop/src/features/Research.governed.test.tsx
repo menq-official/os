@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 
 // The IPC boundary. `stream_ask` is a CHANNEL command: the Rust side pushes events, so the mock
 // has to hand the caller's channel back to the test rather than resolve a value.
@@ -37,10 +37,12 @@ const ITEM = {
  * None of it existed. This page was a local CRUD list with no run, no receipt and no refusal —
  * the one page in Phase 5 whose entire point is that it crosses the wall.
  *
- * The run goes through `stream_ask`, the same governed path chat uses: buffered, verified
- * desktop-side, and the answer HELD server-side under a one-time id rather than streamed into
- * the window. That is why saving is a backend command taking the id: the window never receives
- * the text, so it cannot save something the engine did not produce.
+ * The run goes through `stream_ask`, the command chat's ask uses; the resolved provider decides
+ * the path (see the "does not promise a governed path" block below). On the governed path the
+ * turn is buffered, verified desktop-side, and the answer HELD server-side under a one-time id
+ * rather than streamed into the window. On the ungoverned development path the backend does
+ * send `delta` events with the text; the page ignores them. Saving is a backend command taking
+ * the id on every path, so what is saved is what the backend held, never text from this window.
  */
 function emit(ev: unknown) {
   act(() => { lastChannel?.onmessage?.(ev); });
@@ -62,7 +64,7 @@ async function openRecord() {
 
 beforeEach(() => { invokeMock.mockReset(); lastChannel = null; });
 
-describe('Research — the run goes through the governed wall', () => {
+describe('Research — the run goes through stream_ask; the provider decides the path', () => {
   it('runs the record’s question through stream_ask, not a local shortcut', async () => {
     fireEvent.click(await openRecord());
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
@@ -91,7 +93,10 @@ describe('Research — the run goes through the governed wall', () => {
 
   it('a verified answer is HELD, and saving passes the id — never a body', async () => {
     fireEvent.click(await openRecord());
-    emit({ type: 'ready', resultId: 'one-time-42' });
+    // A `ready` with no provenance is the UNRECOGNISED outcome, not a verified one — this test
+    // was titled "verified" and emitted that.
+    emit({ type: 'ready', resultId: 'one-time-42', provenance: 'trusted_verified' });
+    expect(await screen.findByText(/Verified · held/)).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: /Save to knowledge/ }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
@@ -102,6 +107,35 @@ describe('Research — the run goes through the governed wall', () => {
       expect(JSON.stringify(args ?? {})).not.toContain('held body');
     }
     expect(await screen.findByText(/Saved to knowledge/)).toBeInTheDocument();
+  });
+
+  // The badge on the mounted page. `Research.provenance.test.ts` pins the labeller; nothing
+  // pinned that the page passes it the provenance the event carried and draws what it answers.
+  it('the held badge and its note are the ones the event’s provenance names', async () => {
+    const cases: Array<[string | undefined, 'heldVerified' | 'heldDevelopment' | 'heldUngoverned' | 'heldUnknown', string]> = [
+      ['trusted_verified', 'heldVerified', 'success'],
+      ['development_untrusted', 'heldDevelopment', 'warn'],
+      ['ungoverned', 'heldUngoverned', 'bad'],
+      ['a-provenance-from-the-future', 'heldUnknown', 'bad'],
+      [undefined, 'heldUnknown', 'bad'],
+    ];
+    for (const [provenance, key, tone] of cases) {
+      fireEvent.click(await openRecord());
+      emit(provenance === undefined
+        ? { type: 'ready', resultId: 'one-time-42' }
+        : { type: 'ready', resultId: 'one-time-42', provenance });
+      await screen.findByRole('button', { name: /Save to knowledge/ });
+      const panel = screen.getByRole('region', { name: 'RUN THE QUESTION' });
+      const pill = panel.querySelector('.sec-head .pill')!;
+      expect(pill.textContent, String(provenance)).toContain(RSX_STR[key].en);
+      expect(pill.classList.contains(tone), `${provenance} tone`).toBe(true);
+      expect(panel.querySelector('.rsx-run-out[role="status"]')!.textContent, String(provenance))
+        .toBe(RSX_STR[`${key}Note`].en);
+      // Only the trusted outcome is ever called verified.
+      expect(/Verified · held/.test(panel.textContent ?? ''), String(provenance))
+        .toBe(provenance === 'trusted_verified');
+      cleanup();
+    }
   });
 
   it('deltas are ignored — a governed ask is buffered, and unverified text is not shown', async () => {

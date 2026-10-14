@@ -98,11 +98,6 @@ export const STR = {
     hy: 'Թարմացված',
     ru: 'Обновлено',
   },
-  loadFailed: {
-    en: 'Couldn’t load research.',
-    hy: 'Չհաջողվեց բեռնել հետազոտումը։',
-    ru: 'Не удалось загрузить исследования.',
-  },
   newTitle: {
     en: 'New research record',
     hy: 'Նոր հետազոտման գրառում',

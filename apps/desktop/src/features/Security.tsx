@@ -182,7 +182,7 @@ export function Security() {
 
   // --- Honest posture labels (live region text) --------------------------------------
   const integrityLabel = integrity === 'checking'
-    ? L('verifying')
+    ? L('reading')
     : integrity === 'broken'
       ? L('chainReadFailed')
       : L('integrityUnverified');
