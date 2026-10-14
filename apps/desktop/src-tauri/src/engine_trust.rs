@@ -23,10 +23,10 @@
 //! Read the precedence rule, the six refusals, and why each is a refusal rather than an order, in
 //! [`brops_core::engine_trust`]'s module docs. Nothing about that decision changed in the move.
 
-pub use brops_core::engine_trust::{
-    apply, resolve, TrustEnvironment, NOT_PROVISIONED, RAW_CI_FLOOR, RAW_CI_PIN, SELF_OWNED_ACK,
-    SELF_OWNED_ACK_FILE,
-};
+// The two names something reaches THROUGH this module: `apply` (`ai::governed_sidecar_call`) and
+// `resolve` (`tests/o3_conductor_session.rs`). Six more were re-exported here and had no consumer;
+// whoever needs one of them names `brops_core::engine_trust`, where they are defined.
+pub use brops_core::engine_trust::{apply, resolve};
 
 /// Record what first-launch provisioning produced. Called once, from startup.
 ///

@@ -172,6 +172,13 @@ fn is_sensitive(path: &Path) -> bool {
     }
     if let Some(raw) = path.file_name().and_then(|n| n.to_str()) {
         let name = raw.to_ascii_lowercase();
+        // Eight of these names, and one extension, can never decide the answer: a broader rule
+        // in the expression below already refuses them. `credentials` and `credentials.json`
+        // contain "credential"; `id_rsa`, `id_ed25519`, `id_ecdsa` and `id_dsa` start with
+        // "id_"; `terraform.tfstate` contains ".tfstate", as anything ending in the `.tfstate`
+        // extension does; `terraform.tfvars` ends in ".tfvars". They are left in (cockpit read
+        // R3-0387): this is the denylist, and an entry here is only redundant for as long as
+        // the broader rule beside it stays exactly as broad.
         const DENY_FILES: &[&str] = &[
             ".bashrc", ".bash_profile", ".bash_login", ".bash_history", ".profile",
             ".zshrc", ".zprofile", ".zshenv", ".zsh_history", ".netrc", ".pgpass",
@@ -200,10 +207,6 @@ fn is_sensitive(path: &Path) -> bool {
     false
 }
 
-/// Canonicalize `raw` (which must already exist) and confirm it lies inside
-/// `root` after resolving `..` and symlinks — rejecting path-traversal and
-/// symlink escapes. An empty `raw` resolves to the root itself. Split out from
-/// [`confine`] so tests can pass an explicit root without touching env vars.
 /// The ONE refusal a path can earn from the confinement gate.
 ///
 /// Every reason a path is refused — it does not exist, it exists but cannot be
@@ -222,6 +225,10 @@ fn is_sensitive(path: &Path) -> bool {
 /// nothing it could not already know.
 const PATH_REFUSED: &str = "path is not accessible in this workspace";
 
+/// Canonicalize `raw` (which must already exist) and confirm it lies inside
+/// `root` after resolving `..` and symlinks — rejecting path-traversal and
+/// symlink escapes. An empty `raw` resolves to the root itself. Split out from
+/// [`confine`] so tests can pass an explicit root without touching env vars.
 fn confine_in(root: &Path, raw: &str) -> Result<PathBuf, String> {
     if raw.is_empty() {
         return Ok(root.to_path_buf());
@@ -760,6 +767,29 @@ mod tests {
         fs::write(base.join("b.bin"), [0xff_u8, 0xfe, 0x00, 0x01]).unwrap();
         assert!(read_text(&base.join("b.bin")).unwrap().readonly);
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Cockpit read R3-1275. `write_text` promises "a 0600 secret stays 0600 (and a 0644 file
+    /// isn't needlessly tightened)" and nothing read a mode back: with the `set_permissions`
+    /// call gone every test in this file passed. The file that says so is the one that is NOT
+    /// 0600 — the temporary is created 0600, so without the copy a 0640 file comes back 0600,
+    /// while a 0600 one comes back 0600 either way. Each mode is set explicitly, because the
+    /// mode `fs::write` gives a new file is the umask's choice and differs between machines.
+    #[cfg(unix)]
+    #[test]
+    fn a_written_file_keeps_the_mode_it_had() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = scratch("write-mode");
+        for mode in [0o600_u32, 0o640, 0o664] {
+            let f = base.join(format!("mode-{mode:o}.txt"));
+            fs::write(&f, b"orig").unwrap();
+            fs::set_permissions(&f, fs::Permissions::from_mode(mode)).unwrap();
+            write_text(&f, "updated").unwrap();
+            assert_eq!(fs::read_to_string(&f).unwrap(), "updated");
+            let after = fs::metadata(&f).unwrap().permissions().mode() & 0o7777;
+            assert_eq!(after, mode, "a {mode:o} file came back {after:o} after a write");
+        }
         let _ = fs::remove_dir_all(&base);
     }
 

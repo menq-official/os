@@ -113,9 +113,15 @@ fn secure_db_files(db_path: &std::path::Path) -> std::io::Result<()> {
 /// has run it on a sealed box; that run is the Owner's to order, and its answer decides which of
 /// the two texts is wrong.
 fn retire_orphaned_anchor(machine_root: &std::path::Path, app_data_dir: &std::path::Path) {
-    let anchor_dir = machine_root.join("trust-anchor");
-    let store_dir = app_data_dir.join("trust");
-    let has_anchor = anchor_dir.join("PROVISIONING.json").is_file();
+    // The layout is `brops_provision`'s and is named there once; this function used to spell the
+    // three names out as literals of its own. The tests below still spell them out, on purpose:
+    // if they took the constants too, a constant that changed would move this function and its
+    // tests together, and nothing would say the directory on disk now has another name.
+    use brops_provision::anchor::ANCHOR_DIR_NAME;
+    use brops_provision::{MANIFEST_FILE, TRUST_DIR};
+    let anchor_dir = brops_provision::anchor::anchor_dir(machine_root);
+    let store_dir = app_data_dir.join(TRUST_DIR);
+    let has_anchor = anchor_dir.join(MANIFEST_FILE).is_file();
     let has_store = store_dir.exists();
 
     // Both present, or both absent: nothing to reconcile. Both present is the normal case and
@@ -133,13 +139,13 @@ fn retire_orphaned_anchor(machine_root: &std::path::Path, app_data_dir: &std::pa
     let (from, to, why) = if has_anchor {
         (
             anchor_dir.clone(),
-            machine_root.join(format!("trust-anchor.orphaned-{stamp}")),
+            machine_root.join(format!("{ANCHOR_DIR_NAME}.orphaned-{stamp}")),
             "named a key store that no longer exists",
         )
     } else {
         (
             store_dir.clone(),
-            app_data_dir.join(format!("trust.orphaned-{stamp}")),
+            app_data_dir.join(format!("{TRUST_DIR}.orphaned-{stamp}")),
             "has no anchor to verify it against",
         )
     };
@@ -278,6 +284,15 @@ fn dev_config_dir() -> Option<std::path::PathBuf> {
 /// `apps/desktop/SECURITY.md`). Using it means the agent's reach and the file browser's reach are
 /// the same folder, which is one thing to reason about rather than two, and it is a directory the
 /// app made rather than one that already had somebody's work in it.
+///
+/// **The same folder when the machine has one home, which is not every machine.** The two
+/// defaults are computed twice and do not ask in the same order: this function reads
+/// `USERPROFILE` and then `HOME`, `files::home_dir` reads `HOME` and then `USERPROFILE`. With
+/// one of the two set, or both naming one directory, they agree. With both set and different — a
+/// Windows machine whose shell exports `HOME` — the agent is rooted in `%USERPROFILE%\BroPS` and
+/// the Files surface in `$HOME/BroPS`. Left as it is (cockpit read R3-0733): making them one
+/// changes which directory a turn runs in, and no test in the default build compiles this
+/// function to see it.
 ///
 /// The value is written to `project-dir.txt` on first use, so it is visible and editable: point that
 /// line anywhere else and the app follows it. `BROPS_PROJECT_DIR` still overrides both.

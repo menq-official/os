@@ -1,6 +1,9 @@
 //! Wave 3b-1B — the renderer→broker thin-proxy Tauri command (design-GREEN rev-30 §4.10(g)).
 //!
-//! `governed_turn_execute` is the ONE frontend-exposed governed command. It is a THIN PROXY: it carries
+//! `governed_turn_execute` is the ONE frontend-exposed command that reaches the BROKER — not the
+//! one governed command, which is what this line said. The chat commands in `commands.rs` take
+//! a second governed path that stays in the app crate: `commands::run_governed_turn` (four call
+//! sites), through `ai::governed_turn` to the engine sidecar. This one is a THIN PROXY: it carries
 //! the renderer's closed request frame (`{conversation_id, agent?, client_request_id}`) to the trusted
 //! broker SERVICE over the platform IPC (AF_UNIX on Linux) and returns the broker's committed/blocked
 //! reply verbatim. It owns NO key, DB, manifest, prepared object, hash, nonce, or verification verdict —
@@ -26,6 +29,20 @@ const MAX_REPLY_BYTES: u64 = (brops_core::ipc_framing::MAX_FRAME_PAYLOAD_BYTES a
 /// Per-read/write deadline on the broker socket (audit F-32/F-36). A governed turn is buffered by
 /// design and can legitimately take a while upstream, but a silent socket must eventually surface as
 /// a transport failure the renderer renders as `blocked` — never as a wedged command.
+///
+/// **What this value does today is less than that (cockpit read R3-0389, R3-0184).**
+/// `connect_broker` arms it on the new socket, read and write, and it never governs an operation:
+/// `send_all` re-arms the write timeout with what is left of [`EXCHANGE_BUDGET_MS`] before the one
+/// write, and `read_bounded` re-arms the read timeout the same way before every read. What the two
+/// calls in `connect_broker` still do is fail the connect, by name, on a socket whose timeouts
+/// cannot be set. They are left as they are: no test here gets past the `connect` in front of them.
+///
+/// And "never a wedged command" has one step neither bound covers — the `connect` itself.
+/// `UnixStream::connect` is called blocking, with no deadline, and the budget's clock starts only
+/// when it returns (`UnixBrokerConn::new`). A listener that exists and does not accept is waited
+/// on for as long as the kernel waits. Not reproduced, and not changed: `std` has no connect
+/// timeout for AF_UNIX, so a bound means a non-blocking connect — a change to this command's
+/// transport that wants a test with a listener that never accepts, and there is none yet.
 ///
 /// "Buffered by design" is a settled decision rather than an accident of this slice, and as of
 /// 2026-08-09 the roadmap agrees with it: MASTER_EXECUTION_ROADMAP Phase 1 **descopes** governed
@@ -220,6 +237,12 @@ const BROKER_SOCKET_PATH_DISPLAY: &str = "<no broker socket on this platform>";
 /// exchange failed), or a malformed request/reply. A broker that was reached and REFUSED returns
 /// `Ok(reply)` carrying the broker's own blocked verdict — which is why it must never share a string
 /// with any of these.
+///
+/// **A synchronous command, for up to the whole budget (cockpit read R3-0183).** It is declared
+/// `#[tauri::command]` on a plain `fn`, with no `async`, and it does not return until the exchange
+/// ends or [`EXCHANGE_BUDGET_MS`] runs out — 120 s. Tauri's documentation says a command without
+/// `async` runs on the main thread; nothing in this repository measures that, and no test here
+/// can. Moving it off that thread changes how a broker command runs, and is not done here.
 #[tauri::command]
 pub fn governed_turn_execute(request: serde_json::Value) -> Result<serde_json::Value, String> {
     governed_turn_execute_at(BROKER_SOCKET_PATH_DISPLAY, request)
@@ -471,8 +494,9 @@ mod tests {
         assert_eq!(next_io_timeout(budget, budget), None, "a spent budget must refuse, not arm 0");
         assert_eq!(next_io_timeout(budget + Duration::from_secs(1), budget), None);
         for spent_ms in [0u64, 1, EXCHANGE_BUDGET_MS / 2, EXCHANGE_BUDGET_MS - 1] {
+            // `expect` takes a plain `&str`: it printed the braces, not the value that failed.
             let left = next_io_timeout(Duration::from_millis(spent_ms), budget)
-                .expect("budget remains at {spent_ms}ms spent");
+                .unwrap_or_else(|| panic!("budget remains at {spent_ms}ms spent"));
             assert!(!left.is_zero(), "armed a zero timeout at {spent_ms}ms spent");
         }
         let mut armed_zero = false;

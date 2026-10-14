@@ -16,12 +16,17 @@
 //!   * caches NOTHING. The reply is validated and returned; no key or lease is ever
 //!     stored (there is nowhere to store one — see above).
 //!   * is FAIL-CLOSED. A command NEVER throws to the renderer and NEVER fabricates
-//!     data. Any unreachable engine, non-governed configuration, non-zero exit,
+//!     data. Any unreachable engine, unprovisioned mirror (`BROPS_GOVERNANCE_STATE_DIR`
+//!     unset or not a directory), refused trust environment, non-zero exit,
 //!     malformed reply, engine refusal, or schema-invalid record becomes a typed
 //!     [`GovernanceRead::Unreachable`] or [`GovernanceRead::Blocked`] — the honest
-//!     blocked state the Phase-2 DoD requires. A `trusted`/`verified` mirror is only
-//!     ever produced from a well-formed, schema-valid engine reply; the desktop
-//!     itself never mints one.
+//!     blocked state the Phase-2 DoD requires. An `ok` mirror is only ever produced
+//!     from a well-formed, schema-valid engine reply, and it is never a trusted or a
+//!     verified one: every `Ok` carries `authenticated = false` (next section). This
+//!     bullet spoke of "a `trusted`/`verified` mirror", which nothing here produces,
+//!     and listed a "non-governed configuration" among the causes — the read stopped
+//!     depending on the selected AI provider when [`crate::ai::governed_sidecar_read`]
+//!     was gated on the mirror's own state directory instead.
 //!   * validates engine JSON against the existing engine schemas
 //!     (`engine/schemas/verifier-receipt.schema.json`,
 //!     `engine/schemas/evidence-event.schema.json`) and rejects anything that does
@@ -78,8 +83,14 @@
 //! and all three had moved.
 //!
 //! What is still true is narrower and is the part that matters: a **shipped** install
-//! reaches `Blocked`, because the engine refuses the read until
-//! `BROPS_GOVERNANCE_STATE_DIR` names a provisioned mirror and nothing in the app sets it.
+//! reaches `Unreachable`, and the engine is never asked. The window may invoke all four reads
+//! (`build.rs` lists them and `capabilities/default.json` allows them, since 2026-10-09), so
+//! the call arrives here; [`crate::ai::governed_sidecar_read`] then refuses before it starts
+//! anything while `BROPS_GOVERNANCE_STATE_DIR` is unset or names no directory, nothing in the
+//! app sets it, and [`classify`] turns that `Err` into `Unreachable` carrying the desktop's own
+//! sentence ("the governance mirror is not provisioned: …"). This paragraph said `Blocked`,
+//! "because the engine refuses the read": `Blocked` is what an `ok:false` REPLY produces, and
+//! there is no reply from a sidecar that was not started.
 //! So the steady state is unchanged; the REASON for it is a deployment input, not a
 //! missing endpoint, and a page that says "the engine has not been built yet" would now be
 //! telling the owner the wrong thing.
@@ -96,7 +107,8 @@
 //!   * `engine/schemas/approval-request.schema.json` (the 22nd schema): an UNSIGNED ask the
 //!     engine records and does not act on;
 //!   * [`request_engine_approval`] below, the desktop→engine command, manifest-declared and
-//!     capability-gated (unlike the four reads);
+//!     capability-gated — as the four reads are too since 2026-10-09 (this said "unlike the
+//!     four reads", which were outside the manifest until the Owner granted them);
 //!   * `bridge/engine_sidecar.py::_op_approval_request` — "THE ONLY WRITE IN THIS TABLE", one
 //!     line to one append-only log.
 //!
@@ -897,18 +909,25 @@ mod tests {
         assert!(parse_verifier_receipt(&r).is_ok());
     }
 
+    // Each rejection below names the field it is about (cockpit read R3-1276). They ended in a
+    // bare `is_err()`, which a fixture refused for ANY reason satisfies: with an extra key added
+    // to `valid_receipt()` and `valid_event()` all of them passed, on the unknown-key refusal,
+    // without one of the checks they are named for having run.
+
     #[test]
     fn rejects_non_green_verdict() {
         let mut r = valid_receipt();
         r["verdict"] = json!("RED");
-        assert!(parse_verifier_receipt(&r).is_err());
+        let err = parse_verifier_receipt(&r).expect_err("a RED verdict is not a receipt");
+        assert!(err.contains("verdict must be 'GREEN', got 'RED'"), "{err}");
     }
 
     #[test]
     fn rejects_bad_schema_version() {
         let mut r = valid_receipt();
         r["schema"] = json!(2);
-        assert!(parse_verifier_receipt(&r).is_err());
+        let err = parse_verifier_receipt(&r).expect_err("schema 2 is not a v1 receipt");
+        assert_eq!(err, "verifier-receipt: schema must be 1");
     }
 
     /// The other mirror's discriminator — sixth independent audit, `A-02`.
@@ -932,45 +951,49 @@ mod tests {
     fn rejects_bad_evidence_schema_version() {
         let mut ev = valid_event();
         ev["schema"] = json!(2);
-        assert!(
-            parse_evidence_event(&ev).is_err(),
-            "an evidence event declaring schema 2 must be refused, not parsed as v1"
-        );
+        let err = parse_evidence_event(&ev)
+            .expect_err("an evidence event declaring schema 2 must be refused, not parsed as v1");
+        assert_eq!(err, "evidence-event: schema must be 1");
     }
 
     #[test]
     fn rejects_wrong_artifact_type() {
         let mut r = valid_receipt();
         r["artifact_type"] = json!("something-else");
-        assert!(parse_verifier_receipt(&r).is_err());
+        let err = parse_verifier_receipt(&r).expect_err("another artifact is not a receipt");
+        assert!(err.contains("artifact_type must be 'verifier-receipt'"), "{err}");
     }
 
     #[test]
     fn rejects_short_candidate_head_hash() {
         let mut r = valid_receipt();
         r["candidate_head"] = json!("abc");
-        assert!(parse_verifier_receipt(&r).is_err());
+        let err = parse_verifier_receipt(&r).expect_err("three characters are not a commit id");
+        assert!(err.contains("candidate_head must be 40 lowercase hex chars"), "{err}");
     }
 
     #[test]
     fn rejects_empty_evidence_list() {
         let mut r = valid_receipt();
         r["evidence_event_ids"] = json!([]);
-        assert!(parse_verifier_receipt(&r).is_err());
+        let err = parse_verifier_receipt(&r).expect_err("a receipt resting on no evidence");
+        assert!(err.contains("evidence_event_ids must have at least one entry"), "{err}");
     }
 
     #[test]
     fn rejects_bad_agent_id() {
         let mut r = valid_receipt();
         r["verifier_agent_id"] = json!("agt-1-2");
-        assert!(parse_verifier_receipt(&r).is_err());
+        let err = parse_verifier_receipt(&r).expect_err("`agt-1-2` is not an agent id");
+        assert!(err.contains("agent id does not match the agent pattern"), "{err}");
     }
 
     #[test]
     fn rejects_evidence_event_with_bad_payload_hash() {
         let mut ev = valid_event();
         ev["payload_hash"] = json!("nothex");
-        assert!(parse_evidence_event(&ev).is_err());
+        let err = parse_evidence_event(&ev).expect_err("`nothex` is not a sha256");
+        assert!(err.contains("payload_hash must be 64 lowercase hex chars"), "{err}");
     }
 
     #[test]

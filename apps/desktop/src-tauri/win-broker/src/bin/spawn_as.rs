@@ -402,6 +402,11 @@ mod tests {
         assert_eq!(inv.exe, "C:/brops/signer.exe");
         assert_eq!(inv.child_args, &args[4..]);
         // Nothing in the parsed invocation is a secret, and nothing in argv was one.
+        //
+        // The line below does not show that (cockpit read R3-1280): it searches `args`, the six
+        // strings this test wrote out above, for one that was never among them. It cannot fail
+        // and it says nothing about `parse_args`. What the test establishes is the three
+        // `assert_eq!` above it; the refusal of a password in argv is the previous test's.
         assert!(!args.iter().any(|a| a == "hunter2"));
     }
 

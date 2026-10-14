@@ -61,9 +61,12 @@ the whole broker rests on, and it is the honest place the guarantee lives.
    why (3) exists. (This changes the deployment format and requires re-provisioning + re-running the
    `win_live_turn` proof to re-verify `trusted_verified`; do it as a verified step, not a blind edit.)
 3. **TPM / hardware monotonic counter (full-admin-compromise case).** Anchor `highest_epoch` to a TPM NV
-   monotonic counter so even a same-principal / admin compromise cannot roll the floor back. This is the
-   roadmap item `windows_production_isolation → TPM/monotonic anti-rollback` and is required for the strongest
-   posture.
+   monotonic counter so even a same-principal / admin compromise cannot roll the floor back. It is required
+   for the strongest posture, and **no roadmap item tracks it**. *(This called it "the roadmap item
+   `windows_production_isolation → TPM/monotonic anti-rollback`". `windows_production_isolation` is one
+   string in `config/current_state.json` with no sub-item, and "TPM" appears in neither
+   `MASTER_EXECUTION_ROADMAP.md`, `docs/roadmap/` nor `TASKS.md`. This list is the only place it is
+   written down.)*
 4. **Broker (Linux) path.** Once (2) lands, `broker/src/main.rs` should verify the floor under the
    per-deployment key too (today it does not verify — protected only by (1)).
 

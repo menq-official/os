@@ -7,6 +7,11 @@
 //! `trusted_verified`). It exists so the owner can SEE the trust machinery work
 //! end-to-end and get a genuine `trusted_verified` receipt — never a faked boolean.
 //!
+//! Read "`trusted_verified`" above as the name of the chain's last step, not as what this command
+//! reports. The run commits its row as `demonstration_custody`, which is what `trust_state`
+//! carries; the kit's own string is `trusted_verified(demonstration_custody key=… …)`; and
+//! `production_verified` is `false` on every run. The fields below say which is which.
+//!
 //! HONESTY — read carefully. This does NOT flip live AI turns to "verified": those
 //! still run under `NoTrustedManifest` and stay fail-closed (blocked / development-
 //! untrusted). And the root of trust here is the compiled-in TCB *demonstration*
@@ -30,19 +35,25 @@ use serde::Serialize;
 pub struct TrustSelftest {
     /// True where the in-process kit ran. It is compiled on every platform since 2026-10-09.
     pub available: bool,
-    /// The committed message's trust state: `"trusted_verified"` on a bound run, else empty.
+    /// The label the chain wrote on the committed row, on a bound run; empty otherwise. It is
+    /// `"demonstration_custody"` here, not `"trusted_verified"` — the self-test always runs under
+    /// the demonstration anchor, and `runs_everywhere` below pins the value.
     pub trust_state: String,
-    /// The resolved receipt key's `trust_class` is Production. AUDIT NOTE (dim-1 P2): this alone does NOT
-    /// mean a real production ROOT signed the manifest — the in-process self-test ALWAYS runs under the
-    /// compiled-in DEMONSTRATION anchor, so this is Production-CLASS crypto at demonstration custody. A
-    /// consumer MUST NOT render this as real production trust while `demonstration_custody` is true.
+    /// `ProofOutcome::production_verified`: true only for a manifest anchored by a root whose
+    /// custody is EXTERNAL to the kit. The in-process self-test signs with the compiled-in
+    /// DEMONSTRATION root, so this is `false` on every run of this command (the test below
+    /// asserts it). This doc described it as "the resolved receipt key's `trust_class` is
+    /// Production … Production-CLASS crypto at demonstration custody", i.e. as a value that can be
+    /// true here; that property is `chain_bound`. A consumer reads `chain_bound` and `bound` for
+    /// a pass, and must not wait for this one.
     pub production_verified: bool,
     /// True when the root of trust is the compiled-in DEMONSTRATION anchor (a public constant), NOT a
     /// manifest verified under an install-minted root. The in-process self-test always uses the demonstration
     /// anchor, so this is ALWAYS true for this command — it is the explicit, un-missable flag that pairs with
     /// `production_verified` so the boolean can never be read as production trust on its own.
     pub demonstration_custody: bool,
-    /// The committed body read back as `trusted_verified`.
+    /// The committed row's binding verified when it was read back
+    /// (`governed_message_store::verify_committed_binding`).
     pub bound: bool,
     /// The whole challenge→lease→attest→sign→verify chain ran and resolved a key under a verified
     /// anchor (`ProofOutcome::chain_bound`). THIS is what a self-test pass means, together with
@@ -50,7 +61,10 @@ pub struct TrustSelftest {
     /// The panel gated its PASSED verdict on `production_verified`, so a good run rendered nothing
     /// at all for as long as the panel existed; this field is what it reads now.
     pub chain_bound: bool,
-    /// The kit's own trust string (e.g. `trusted_verified(production key=… epoch=…)`).
+    /// The kit's own trust string. From this command it is
+    /// `trusted_verified(demonstration_custody key=… epoch=… root=… root_provenance=…)`; the
+    /// `trusted_verified(production key=…` form this doc gave as its example is the kit's string
+    /// for a custody this command never runs under.
     pub detail: String,
     /// The reply the chain's executor produced INSIDE the governed turn and which the receipt then bound +
     /// verified — the honest end-to-end artifact. It is the built-in placeholder: this command runs
@@ -150,6 +164,11 @@ pub fn governed_trust_selftest() -> Result<TrustSelftest, String> {
         let source = std::cell::Cell::new(AnswerSource::BuiltinPlaceholderNoModelConfigured);
         let produce = || -> Result<Vec<u8>, ()> {
             let (out, from) = selftest_answer();
+            // Cannot fire as the code stands: `selftest_answer` returns only the non-empty
+            // `SELFTEST_DEMO_OUTPUT`. It dates from when a model's stdout could arrive here
+            // empty. Left in (cockpit read R3-0388) — it is the one thing between this closure
+            // and a receipt bound over zero bytes if an answer ever has a second source again,
+            // and no test can reach the line to show that removing it changes nothing.
             if out.is_empty() {
                 return Err(());
             }

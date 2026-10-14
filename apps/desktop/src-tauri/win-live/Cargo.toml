@@ -3,7 +3,7 @@ name = "brops-win-live"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Windows (§0.W) LIVE governed-turn kit — the Rust twin of the Linux engine/ci/live Python servers: challenge-authority / governed-supervisor / isolated-signer over named pipes with peer-SID auth, reusing the SAME brops-core crypto + brops-broker chain that verify_and_accept trusts. The whole crypto chain is proven cross-platform by an in-process integration test; the Windows bins swap only the transport (named pipes + session-0 isolation)."
+description = "Windows (§0.W) LIVE governed-turn kit — the Rust twin of the Linux engine/ci/live Python servers: challenge-authority / governed-supervisor / isolated-signer over named pipes with peer-SID auth, reusing the SAME brops-core crypto + brops-broker chain that verify_and_accept trusts. The whole crypto chain is proven cross-platform by an in-process integration test; the Windows bins swap only the transport (named pipes). Session-0 isolation is not part of this crate."
 
 [lib]
 name = "brops_win_live"
@@ -19,8 +19,11 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 getrandom = "0.2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
-# The named-pipe transport + session-0 launcher are Windows-only; on every other host the crate is the
+# The named-pipe transport is Windows-only; on every other host the crate is the
 # pure server cores + the in-process chain proof, so the workspace still builds/tests on the Linux CI runner.
+# (This said "named-pipe transport + session-0 launcher". The crate has no session-0 launcher: the only
+# processes it starts are the executor, which `win_live_turn` starts with a plain `Command::new`, and
+# `icacls` in `win_tcb_pin`. The kit's own mode string says session-0 containment is "proven separately".)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
     "Win32_Foundation",

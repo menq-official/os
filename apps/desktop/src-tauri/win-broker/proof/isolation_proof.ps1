@@ -1,5 +1,10 @@
 # Windows broker machine-proof — cross-account named-pipe peer-SID isolation (the Windows analogue of the
-# Linux engine/ci/isolation_proof.sh). PROVEN 2026-08-02 on real service accounts.
+# Linux engine/ci/isolation_proof.sh). Run on real service accounts and read by the operator on
+# 2026-08-02. This line said "PROVEN 2026-08-02", and that is more than the run can carry: on that
+# date the script exited 0 whatever the pipe answered (first AUDIT note below), so what existed was a
+# transcript a person judged, not a verdict the script reached. The version that decides could not
+# print PASS until 2026-08-10 (second AUDIT note), no output of either run is kept beside this file,
+# and this header records no run since the verdict logic existed.
 #
 # Model (Gev-approved "right path"): principals run in SESSION 0 (no interactive window station/desktop, so
 # no STATUS_DLL_INIT_FAILED 0xC0000142). The lightest session-0 launch is a scheduled task whose principal is
