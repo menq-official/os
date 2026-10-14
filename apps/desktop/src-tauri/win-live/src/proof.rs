@@ -39,9 +39,14 @@ struct ProofCustody {
     verified_root: brops_core::key_manifest::VerifiedManifestRoot,
     signer_key_id: String,
     resolver: std::sync::Arc<ManifestResolver>,
-    /// This proof run's fixed clock. Unlike the live drivers, `in_process_turn` is given its `now_ms`
-    /// by the caller so a test can pin the manifest token window; reading the real clock here would
-    /// make the custody verdict disagree with the rest of the run.
+    /// The `now_ms` the caller gave `in_process_turn_produce`, and the clock THIS verdict evaluates
+    /// the signer key's validity window against. It is not the run's only clock. The resolver the
+    /// same chain drives evaluates that same window against its own reading of the system clock
+    /// (`ManifestResolver::resolve`, `resolver.rs`: `let now = now_ms();`), and the acceptance step
+    /// reads `SystemWallClock`. (Cockpit read R3-0606: this used to say that reading the real clock
+    /// here "would make the custody verdict disagree with the rest of the run" — the rest of the
+    /// run reads it.) The two lookups give the same answer while both readings fall inside the
+    /// window the manifest below declares (`valid_from_ms` 1, `valid_to_ms` 9999999999999).
     now_ms: i64,
 }
 
@@ -105,7 +110,8 @@ impl ProofOutcome {
     /// **Read the field this returns, not [`production_verified`](Self::production_verified).**
     /// `production_verified` is `true` only under a root whose custody is EXTERNAL to this kit,
     /// and every path into this module signs with the compiled-in DEMONSTRATION root, so it is
-    /// **always** `false` here — asserted by `produce_drives_the_chain_output`. A caller that
+    /// **always** `false` here — asserted by
+    /// `produce_is_invoked_inside_the_chain_and_its_output_is_verified`. A caller that
     /// gated on it therefore had a command that could not succeed on any input, which is exactly
     /// what happened: `commands::demonstration_verified_reply` required
     /// `outcome.bound && outcome.production_verified` and so always returned the
@@ -161,7 +167,9 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
 }
 
 /// Run one full governed turn in-process over a fresh content-addressed store at `store_dir`, using `now_ms`
-/// as the single wall-clock for every core, with a fixed demonstration output. Self-test entry point.
+/// as the single wall-clock for every core, with a fixed demonstration output. Its only callers are this
+/// module's tests: the app's self-test (`governed_selftest`) and the demonstration chat command both
+/// call [`in_process_turn_produce`]. (This line used to end "Self-test entry point.")
 pub fn in_process_turn(store_dir: &Path, now_ms: i64) -> Result<ProofOutcome, String> {
     in_process_turn_output(store_dir, now_ms, b"BROPS windows governed output v1")
 }
@@ -491,6 +499,35 @@ mod tests {
         SystemWallClock.now_ms().expect("this host must have a readable wall clock")
     }
 
+    /// The error `in_process_turn_produce` returns for a turn THE CHAIN refused. `run_governed_turn`
+    /// reports this one reason for a failed producer, a refused hop and a refused acceptance alike,
+    /// so the string tells "the chain ran and refused" apart from a failure before the chain ran
+    /// (`store dir:`, `manifest_build:`, `key_resolution:`, `db_open:` …) and from nothing else.
+    /// Where in the chain is read off [`left_in_store`].
+    const CHAIN_BLOCKED: &str = "chain:UpstreamBlocked";
+
+    /// The content-addressed blobs `in_process_turn_produce` seeds BEFORE the chain runs: system
+    /// prompt, history, generation config, policy bundle.
+    const SEEDED_BLOBS: usize = 4;
+
+    /// What a run left under its store directory: `(content-addressed blobs, per-run evidence
+    /// chains)`. A blob is a file named by 64 lowercase hex characters; the evidence chains are the
+    /// `*.evidence.json` files `execute` writes under `run-evidence/` after the producer returned.
+    fn left_in_store(dir: &Path) -> (usize, usize) {
+        let is_handle = |name: &str| {
+            name.len() == 64 && name.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        };
+        let names = |d: &Path| -> Vec<String> {
+            std::fs::read_dir(d)
+                .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+                .unwrap_or_default()
+        };
+        let blobs = names(dir).iter().filter(|n| is_handle(n)).count();
+        let chains =
+            names(&dir.join("run-evidence")).iter().filter(|n| n.ends_with(".evidence.json")).count();
+        (blobs, chains)
+    }
+
     #[test]
     fn full_governed_turn_reaches_trusted_verified_in_process() {
         let dir = std::env::temp_dir().join(format!("brops-winlive-proof-{}", brops_core::id()));
@@ -533,24 +570,72 @@ mod tests {
     /// core, so a caller can stamp the whole turn with any time it likes — but the acceptance clock is
     /// the broker's own [`SystemWallClock`], not that argument. A run declaring a clock the host does
     /// not agree with therefore cannot commit, in either direction.
+    ///
+    /// What this pins, and what it cannot (cockpit read R3-1284 / R3-1285 — it used to assert
+    /// `is_err()` and nothing else, so a turn that died creating its store directory passed as "the
+    /// clock was refused"). The chain reports ONE reason for every refusal inside it, so the freshness
+    /// step cannot be named from here. What can be read is where the turn stopped: the error is the
+    /// chain's, and the store holds everything a committed turn's store holds — the output, the
+    /// containment report, the supervisor's documents, the evidence chain. So the turn was executed and
+    /// reported, and was refused after that, where the attestation, the signer and the acceptance clock
+    /// are. Which of those three refused is `brops-broker`'s own freshness tests' to say
+    /// (`chain_executor.rs`), not this harness's; the control shows the only input that differs is the
+    /// clock.
     #[test]
     fn a_turn_run_under_a_fabricated_clock_cannot_commit() {
         const TEN_YEARS_MS: i64 = 10 * 365 * 24 * 60 * 60 * 1000;
+        // The control: the same turn under this host's clock commits, and this is what it leaves.
+        let dir = std::env::temp_dir().join(format!("brops-winlive-clock-{}", brops_core::id()));
+        let control = in_process_turn(&dir, now());
+        let committed = left_in_store(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(control.is_ok(), "control: the same turn under the real clock must commit: {:?}", control.err());
+        assert_eq!(committed.1, 1, "control: a committed turn writes one evidence chain");
         for (name, now) in [("far future", now() + TEN_YEARS_MS), ("far past", now() - TEN_YEARS_MS)] {
             let dir = std::env::temp_dir().join(format!("brops-winlive-clock-{}", brops_core::id()));
             let r = in_process_turn(&dir, now);
+            let left = left_in_store(&dir);
             let _ = std::fs::remove_dir_all(&dir);
-            assert!(r.is_err(), "{name}: a fabricated wall clock must not produce a committed turn");
+            assert_eq!(
+                r.err().as_deref(),
+                Some(CHAIN_BLOCKED),
+                "{name}: a fabricated wall clock must be refused BY THE CHAIN, not commit and not fail \
+                 before the chain ran"
+            );
+            assert_eq!(
+                left, committed,
+                "{name}: the turn must have been executed and reported like a committed one — the \
+                 refusal belongs after the execution step, not before it"
+            );
         }
     }
 
+    /// (Cockpit read R3-1286: this asserted `is_err()` only.) The control is the same call with one
+    /// byte of output, which commits — so the chain in front of the producer works, and the empty
+    /// buffer is the only difference. The refusal is the chain's, and nothing past the four blobs
+    /// seeded before the chain was written: no output, no containment report, no evidence chain.
+    ///
+    /// Not shown here: WHICH empty-output guard refused. `in_process_turn_output`'s closure turns an
+    /// empty buffer into `Err(())` before `execute` can look at the length, so the length check in
+    /// `execution.rs` is never reached from this test. That check has its own test there.
     #[test]
     fn empty_live_output_fails_closed() {
-        let dir = std::env::temp_dir().join(format!("brops-winlive-empty-{}", brops_core::id()));
         let now = now();
-        let r = in_process_turn_output(&dir, now, b"");
+        let dir = std::env::temp_dir().join(format!("brops-winlive-empty-{}", brops_core::id()));
+        let control = in_process_turn_output(&dir, now, b"x");
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(r.is_err(), "an empty output must never produce a committed/verified turn");
+        assert!(control.is_ok(), "control: one byte of output must commit: {:?}", control.err());
+
+        let dir = std::env::temp_dir().join(format!("brops-winlive-empty-{}", brops_core::id()));
+        let r = in_process_turn_output(&dir, now, b"");
+        let left = left_in_store(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            r.err().as_deref(),
+            Some(CHAIN_BLOCKED),
+            "an empty output must be refused by the chain, not commit and not fail before the chain ran"
+        );
+        assert_eq!(left, (SEEDED_BLOBS, 0), "an empty output must leave nothing of a run in the store");
     }
 
     #[test]
@@ -625,10 +710,26 @@ mod tests {
     #[test]
     fn produce_failure_fails_closed() {
         // If the executor closure fails (e.g. the model invocation errored), the turn must NOT commit.
+        //
+        // (Cockpit read R3-1287: this asserted `is_err()` only, which a turn that never reached the
+        // producer satisfies.) The closure must have been CALLED, the refusal must be the chain's,
+        // and nothing of a run may be in the store.
+        use std::sync::atomic::{AtomicBool, Ordering};
         let dir = std::env::temp_dir().join(format!("brops-winlive-pfail-{}", brops_core::id()));
         let now = now();
-        let r = in_process_turn_produce(&dir, now, || Err(()));
+        let called = AtomicBool::new(false);
+        let r = in_process_turn_produce(&dir, now, || {
+            called.store(true, Ordering::SeqCst);
+            Err(())
+        });
+        let left = left_in_store(&dir);
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(r.is_err(), "a failed produce must never yield a committed/verified turn");
+        assert!(called.load(Ordering::SeqCst), "the turn must have reached the producer for this to be its failure");
+        assert_eq!(
+            r.err().as_deref(),
+            Some(CHAIN_BLOCKED),
+            "a failed produce must be refused by the chain, not commit and not fail before the chain ran"
+        );
+        assert_eq!(left, (SEEDED_BLOBS, 0), "a failed produce must leave nothing of a run in the store");
     }
 }

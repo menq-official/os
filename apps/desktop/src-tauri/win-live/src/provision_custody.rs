@@ -266,8 +266,12 @@ pub fn check_root_custody(path: &str, facts: Option<&WinFileFacts>) -> Result<()
 }
 
 /// Operator-facing text for a refusal: what is wrong and the exact command that fixes it. The
-/// remediation matches the one `win_tcb_pin` prints for the same condition, so an operator does not
-/// get two different stories about the same directory.
+/// `icacls` grant arguments are the ones `win_tcb_pin` prints when its floor self-check fails, so an
+/// operator does not get two different stories about the same directory. They are two hand-typed
+/// copies (cockpit read R3-0751); what holds them equal is the test
+/// `the_icacls_grant_printed_here_is_the_one_win_tcb_pin_prints`, which reads that binary's source.
+/// The owner is where the two differ in form: this text prints a second `icacls /setowner` command,
+/// `win_tcb_pin` says "set its owner to Administrators" in words.
 pub fn explain_root_refusal(r: &RootRefusal) -> String {
     let (path, why) = match r {
         RootRefusal::Unmeasurable { path } => (
@@ -295,6 +299,14 @@ pub fn explain_root_refusal(r: &RootRefusal) -> String {
             ),
         ),
     };
+    // KNOWN DEFECT (cockpit read R3-1098): "(or delete it and let win_provision create it)" below
+    // holds only under a parent whose DACL is already TCB-only. `verify_or_create_deployment_root`
+    // creates the root with whatever DACL the parent hands down, measures it like any other, and
+    // removes it again when the measurement refuses. This module's own test
+    // `a_root_readable_by_a_world_group_is_refused` calls a read-only `BUILTIN\Users` ACE "the default
+    // a directory under C:\ProgramData inherits" and requires it refused — so under such a parent the
+    // advice leads back to this same refusal. Read in the code, not run on Windows. The sentence is
+    // an operator-facing refusal text and is left as it was written.
     format!(
         "win_provision: REFUSING to provision into {path}\n  {why}\n  \
          This provisioner does NOT repair the directory: a root someone else created is evidence, not \
@@ -877,6 +889,41 @@ mod tests {
             }
         );
         assert!(explain_root_refusal(&e).contains("not a TCB principal"));
+    }
+
+    /// Cockpit read R3-0751. [`explain_root_refusal`]'s doc says its remediation is the one
+    /// `win_tcb_pin` prints, and the two are typed out by hand in two files with nothing between
+    /// them. This reads the binary's SOURCE (as `provision/tests/source_copies.rs` does for
+    /// `looks_like_sid`) and requires the `icacls` arguments after the path to be the same text in
+    /// both, and to name the two TCB SIDs this module's constants name.
+    #[test]
+    fn the_icacls_grant_printed_here_is_the_one_win_tcb_pin_prints() {
+        let text =
+            explain_root_refusal(&RootRefusal::Unmeasurable { path: "C:\\deploy".to_string() });
+        let here: Vec<&str> = text
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("icacls \"C:\\deploy\" "))
+            .filter(|args| args.contains("/grant"))
+            .collect();
+        assert_eq!(here.len(), 1, "one icacls grant command in the refusal text: {text}");
+
+        let pin_source = include_str!("bin/win_tcb_pin.rs");
+        let there: Vec<&str> = pin_source
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("`icacls <dir> "))
+            .filter_map(|rest| rest.split('`').next())
+            .collect();
+        assert_eq!(there.len(), 1, "one icacls remediation line in win_tcb_pin.rs");
+
+        assert_eq!(here[0], there[0], "the two remediations must give the same icacls arguments");
+        for sid in [SID_LOCAL_SYSTEM, SID_ADMINISTRATORS] {
+            assert!(
+                here[0].contains(&format!("/grant:r *{sid}:(OI)(CI)F")),
+                "the remediation must grant full control, inherited, to {sid}: {}",
+                here[0]
+            );
+        }
+        assert!(here[0].starts_with("/inheritance:r "), "inherited ACEs must be removed first: {}", here[0]);
     }
 
     #[test]

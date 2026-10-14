@@ -445,7 +445,10 @@ impl brops_broker::chain_executor::HopConnector for WindowsHopConnector {
     }
 }
 
-/// One framed request→reply roundtrip to a pipe (used by the execution's `attest-run` hop to the supervisor).
+/// One framed request→reply roundtrip to a pipe. Two callers: `win_live_turn`'s `supervisor_op`, which
+/// sends ALL THREE lifecycle ops through it (`execution-started`, `complete-run`, `attest-run` — this
+/// line used to name the last one only), and the audit-signer shim's `roundtrip`
+/// (`audit-signer/src/win.rs`).
 pub fn hop_once(pipe_name: &str, req: &Value) -> Result<Value, ()> {
     let handle = open_client(pipe_name)?;
     let result = (|| unsafe {

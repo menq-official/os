@@ -3,7 +3,10 @@
 //! Given the lease-authorized plan it: (1) obtains the executor's exact output bytes (via an injected
 //! producer — a spawned executor on Windows, a fixed buffer in the in-process proof), (2) content-addresses
 //! them into the isolated-signer's protected store so the signer RE-DERIVES `output_sha256`/`output_bytes`,
-//! (3) builds the 28 §4.9 run facts, (4) drives the supervisor `attest-run` (via an injected attester — a
+//! (3) reports to the supervisor ONLY what the run produced — `complete-run` carries the output handle, the
+//! containment-evidence handle and the completion time; the 28 §4.9 run facts are not built here, the
+//! supervisor builds them (`ATTEST_INPUT_FIELDS` in `servers.rs`; this line used to say this module did),
+//! (4) drives the supervisor `attest-run` (via an injected attester — a
 //! named-pipe hop on Windows, a direct core call in the proof), and (5) assembles the `sign-request`. It
 //! returns exactly the [`ExecutionArtifacts`] the pure `GovernedChain` hands the isolated-signer + the final
 //! `verify_and_accept`. It never fabricates output or an attestation — a producer/attester failure is a
@@ -598,6 +601,64 @@ mod tests {
         };
         assert!(core.execute(&plan).is_err());
         assert!(!*ran.lock().unwrap(), "the executor ran after the supervisor refused the start");
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// An executor that returns NO bytes stops the run at step (1): nothing is content-addressed,
+    /// and the supervisor hears neither `complete-run` nor `attest-run`.
+    ///
+    /// (Cockpit read R3-1286.) `proof::tests::empty_live_output_fails_closed` cannot reach this
+    /// check: `in_process_turn_output` turns an empty buffer into `Err(())` in its own closure, so
+    /// the producer has already refused when `execute` looks at the length. Here the producer
+    /// SUCCEEDS with an empty reply, which is the only way to arrive at the length check itself.
+    ///
+    /// The check carries more than it looks: with it AND the proof wrapper's guard both removed,
+    /// the in-process proof COMMITTED a turn with an empty output (measured while writing this
+    /// test) — no step after this one refused it.
+    #[test]
+    fn an_executor_that_returns_no_bytes_stops_the_run_before_anything_is_reported() {
+        let store = tmp("store");
+        let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let plog = log.clone();
+        let produce = move |_p: &ExecutionPlan| -> Result<Vec<u8>, ()> {
+            plog.lock().unwrap().push("PRODUCE".into());
+            Ok(Vec::new())
+        };
+        let slog = log.clone();
+        let supervisor = move |req: &Value| -> Result<Value, ()> {
+            let op = req.get("op").and_then(Value::as_str).unwrap_or("?").to_string();
+            slog.lock().unwrap().push(op);
+            Ok(json!({ "ok": true }))
+        };
+        let params = ExecutionParams {
+            store_dir: store.clone(),
+            containment_mode: PROOF_MODE.to_string(),
+            evidence_dir: store.join("run-evidence"),
+            head_sequence: 1,
+        };
+        let core = GovernedExecutionCore::new(params, produce, supervisor, 1_700_000_050_000);
+        let req = request();
+        let res = resolved();
+        let l = lease(&"22".repeat(32));
+        let plan = ExecutionPlan {
+            req: &req,
+            broker_turn_id: "bt-1",
+            request_nonce: "nonce-1",
+            resolved: &res,
+            lease: &l,
+        };
+        let out = core.execute(&plan);
+        assert!(matches!(out, Err(TurnReason::UpstreamBlocked)), "an empty reply must Block");
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["execution-started", "PRODUCE"],
+            "the producer ran and nothing was reported after it"
+        );
+        assert_eq!(
+            std::fs::read_dir(&store).unwrap().count(),
+            0,
+            "an empty reply must leave nothing in the store"
+        );
         let _ = std::fs::remove_dir_all(&store);
     }
 

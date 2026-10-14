@@ -183,6 +183,10 @@ pub fn pipe_dacl_plan(server_sid: &str, allowed_broker_sid: &str) -> Result<Pipe
 
 /// Which trustees in `aces` are granted [`FILE_CREATE_PIPE_INSTANCE`] — i.e. who can stand up another
 /// instance of this pipe name and race for the next connection.
+///
+/// Compiled for tests only (cockpit read R3-0394): its callers are this module's tests and the
+/// Windows read-back test in `crate::pipe` (`win_pipe_tests`). Nothing outside a test module asks.
+#[cfg(test)]
 pub fn create_instance_grantees(aces: &[PipeAce]) -> Vec<&str> {
     aces.iter()
         .filter(|a| a.mask & FILE_CREATE_PIPE_INSTANCE != 0)
@@ -243,11 +247,19 @@ mod tests {
     #[test]
     fn the_client_mask_omits_the_create_instance_bit_but_keeps_duplex_io() {
         // If someone "fixes" a client access-denied by switching back to GENERIC_READ|GENERIC_WRITE,
-        // the generic mapping re-adds 0x4 and the restriction is gone. Pin the exact mask.
+        // the generic mapping re-adds 0x4 and the restriction is gone.
         assert_eq!(PIPE_CLIENT_ACCESS_MASK & FILE_CREATE_PIPE_INSTANCE, 0);
         for needed in [FILE_READ_DATA, FILE_WRITE_DATA, SYNCHRONIZE] {
             assert_ne!(PIPE_CLIENT_ACCESS_MASK & needed, 0, "client still needs {needed:#x}");
         }
+        // Pin the exact mask, as a number. (Cockpit read R3-1283: the comment above said this and
+        // the assertions did not — they named one absent bit and three present ones, and every
+        // other comparison in the crate is the constant against itself, so adding `WRITE_DAC` to
+        // the constant failed nothing.) 0x0010_0183 is read/write data, read/write attributes and
+        // SYNCHRONIZE, and no other bit.
+        assert_eq!(PIPE_CLIENT_ACCESS_MASK, 0x0010_0183, "{PIPE_CLIENT_ACCESS_MASK:#010x}");
+        // Said separately: the standard rights that delete the object, rewrite its DACL or take it.
+        assert_eq!(PIPE_CLIENT_ACCESS_MASK & (DELETE | WRITE_DAC | WRITE_OWNER), 0);
     }
 
     #[test]

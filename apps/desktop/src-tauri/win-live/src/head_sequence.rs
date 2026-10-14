@@ -135,11 +135,19 @@ fn write_hint(path: &Path, n: i64) -> Result<(), String> {
         .map_err(|e| format!("head-sequence counter not replaceable at {}: {e}", path.display()))
 }
 
-/// Allocate the next head sequence for this install, durably.
+/// Allocate the next head sequence for this install, from the state directory on disk.
 ///
 /// Returns a value strictly greater than every value this state directory has ever returned, for as
 /// long as its claim markers survive. The first call against a fresh directory returns `1`
 /// (`evidence_floor_cas` refuses `head_sequence < 1`, so 0 is not a legal head).
+///
+/// KNOWN DEFECT (cockpit read R3-0198): the first line used to end "durably", and nothing here is
+/// synced. The claim marker's handle is dropped as soon as `create_new` returns, [`write_hint`] is
+/// `fs::write` + `rename`, and the directory is never fsynced. "Survive" above therefore includes
+/// surviving in the file system's cache: after a power loss a marker, the hint, or both can be gone,
+/// and a later call can return a number this directory already returned. What refuses a head at or
+/// below the one the supervisor recorded is the supervisor's own floor (`evidence_floor_cas`:
+/// `StaleEvidence` / `EvidenceFork`), not this function.
 ///
 /// `create_dir_all` is deliberate: this function establishes allocation, not custody (see the module
 /// docs). The directory's ACL would be `win_provision`'s job, and `win_provision` does not do it —
@@ -199,17 +207,45 @@ mod tests {
 
     /// And the property an in-process counter could not have: it survives the process.
     ///
-    /// There is no process to restart in a unit test, so this asserts what a restart depends on —
-    /// that the number is reconstructed from the DIRECTORY and not from anything held in memory.
+    /// There is no process to restart in a unit test, so this hands the function a state directory
+    /// it has never been called on in this process — markers and hint written by the test, the way
+    /// an earlier process would have left them — and requires the next number to continue from the
+    /// DIRECTORY and not from anything held in memory.
+    ///
+    /// (Cockpit read R3-1282: this test used to make the same three calls as
+    /// `the_counter_advances_across_calls` and add one `exists()` on the hint. A counter kept in a
+    /// static that also wrote the hint file passed it.)
     #[test]
     fn the_counter_is_reconstructed_from_disk_not_from_memory() {
+        // What "another process" left behind: sequences 1..=3 claimed, the hint at 3.
         let d = tmp("durable");
-        assert_eq!(next_head_sequence(&d).unwrap(), 1);
-        assert_eq!(next_head_sequence(&d).unwrap(), 2);
-        // A second, entirely independent caller — the moral equivalent of a restarted recorder.
-        assert_eq!(next_head_sequence(&d).unwrap(), 3);
-        assert!(d.join(COUNTER_FILE).exists(), "the hint must be durable, not in-process");
+        for n in 1..=3 {
+            std::fs::write(marker(&d, n), b"").unwrap();
+        }
+        std::fs::write(d.join(COUNTER_FILE), br#"{"head_sequence":3}"#).unwrap();
+        assert_eq!(
+            next_head_sequence(&d).unwrap(),
+            4,
+            "the first call in this process must continue from what the directory holds"
+        );
+        // ...and it leaves behind what the NEXT process needs: its own claim marker, and the hint.
+        assert!(marker(&d, 4).is_file(), "the allocation must be claimed by a marker on disk");
+        assert_eq!(
+            std::fs::read(d.join(COUNTER_FILE)).unwrap(),
+            br#"{"head_sequence":4}"#,
+            "the hint on disk must name the number just returned"
+        );
+        // The state is the directory and nothing else: a file-for-file copy of it, at a path this
+        // process has never allocated from, continues from the same number as the original.
+        let copy = tmp("durable-copy");
+        for entry in std::fs::read_dir(&d).unwrap() {
+            let entry = entry.unwrap();
+            std::fs::copy(entry.path(), copy.join(entry.file_name())).unwrap();
+        }
+        assert_eq!(next_head_sequence(&copy).unwrap(), 5);
+        assert_eq!(next_head_sequence(&d).unwrap(), 5);
         let _ = std::fs::remove_dir_all(&d);
+        let _ = std::fs::remove_dir_all(&copy);
     }
 
     /// A damaged counter REFUSES. It must not read as "no counter yet", which would restart the
