@@ -14,7 +14,7 @@
 // Those nine are a subset of this list, so a page guard can never be narrower than it.
 //
 // THE ARMENIAN AND RUSSIAN HALVES ARE PER CONCEPT, AND SAY WHERE THEY STOP. The English half
-// names nine patterns over five concepts; the other two languages used to cover two stems
+// names nine patterns over six concepts; the other two languages used to cover two stems
 // each (signed, verified), so a Russian `доверенный` or an Armenian `վստահելի` in a catalog
 // passed. Each concept now has a stem in each language where one exists that cannot collide
 // with honest copy. `custody` is the exception: Russian renders it with `хранение`, which

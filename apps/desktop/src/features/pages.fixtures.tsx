@@ -1,4 +1,5 @@
 import type React from 'react';
+import { waitFor } from '@testing-library/react';
 
 /**
  * The page list and the command fixtures both browser projects mount — extracted 2026-08-29.
@@ -6,7 +7,8 @@ import type React from 'react';
  * They lived inside `pages.browser.spec.tsx`, which was fine while it was the only spec that
  * needed them. `pages.axe.browser.spec.tsx` needs the same 23 pages and the same `POPULATED`
  * table, and copying them would have made a THIRD copy of the page list (the jsdom a11y spec
- * carries the second) and a second copy of ~250 lines of fixtures. A fixture set that exists
+ * carried the second then; it imports this one now) and a second copy of ~250 lines of
+ * fixtures. A fixture set that exists
  * twice is a fixture set that will disagree with itself, which is the failure `T-036` recorded
  * from the other end: *"the fixtures must come from the real command shapes or they measure a
  * page the app never renders."*
@@ -30,8 +32,6 @@ import type {
   RiskLevel, RunStatus, Severity, TaskStatus,
 } from '../domain/enums';
 import { INTEGRATION_STATUSES } from '../domain/enums';
-import { AppProvider } from '../app/store';
-import { ToastProvider } from '../components/toast';
 import { Home } from './Home';
 import { Settings } from './Settings';
 import { Approvals } from './Approvals';
@@ -62,7 +62,6 @@ import { Tasks } from './Tasks';
 export const OBJECT_SHAPED: Record<string, unknown> = {
   get_security_summary: { pendingApprovals: 0, decidedApprovals: 0, auditEvents: 0, sensitiveEvents: [] },
   list_dir: { path: '/', parent: null, entries: [] },
-  read_file: { path: '/', content: '', readonly: true },
 };
 
 /**
@@ -128,6 +127,8 @@ const T1 = String(Date.UTC(2026, 7, 19, 10, 30, 0));
 // (`new Date(when).toISOString()` in Calendar) and a task's due date.
 const ISO0 = '2026-08-19T09:00:00Z';
 const ISO1 = '2026-08-19T10:30:00Z';
+/** Every timestamp a fixture row carries. None of them is a row's own words. */
+export const TIMESTAMPS: ReadonlySet<string> = new Set([T0, T1, ISO0, ISO1]);
 
 const PROJECTS: Project[] = [
   { id: 'pr-1', workspaceId: null, name: 'Bridge hardening', description: 'Close the receipt seam.',
@@ -240,14 +241,16 @@ const RUNS: Run[] = [
  * `list_run_steps` and `list_task_dependencies` have NO fixture here, deliberately.
  *
  * Both are selection-gated: nothing invokes them until a run or a task is selected, and this
- * arrangement only mounts pages. The liveness test below measures that from behaviour and refused
- * the first draft, which carried fixtures for both — a fixture for a state the suite cannot reach
- * is a fixture nobody can be wrong about, which is worse than an absence somebody can see.
+ * arrangement only mounts pages. The liveness test — `no fixture in either table is dead`, in
+ * `pages.browser.spec.tsx` — measures that from behaviour and refused the first draft, which
+ * carried fixtures for both — a fixture for a state the suite cannot reach is a fixture nobody
+ * can be wrong about, which is worse than an absence somebody can see.
  *
  * They are the next slice, and they need driving a selection, not another table entry. `T-036`.
  *
- * `read_file` is out for the same reason, and `get_ai_status` for a different one: **no command of
- * that name exists.** `services/desktop.ts` invokes `ai_status`. The liveness test found it in the
+ * `read_file` is out of both tables for the same reason (it sat in `OBJECT_SHAPED` until that
+ * test was pointed at that table too), and `get_ai_status` for a different one: **no command of
+ * that name exists.** `services/desktop.ts` invokes `ai_status`. That test found it in the
  * first draft of this table. `OBJECT_SHAPED` above carried the same phantom key from the day it
  * was written — answering a command nothing calls — and so did the jsdom a11y spec's private copy
  * of that table; the key is gone from the one table that is left.
@@ -376,6 +379,53 @@ export function arrange(invokeMock: MockLike, state: State) {
   }
   invokeMock.mockImplementation((cmd: string) =>
     Promise.resolve(cmd in OBJECT_SHAPED ? OBJECT_SHAPED[cmd] : []));
+}
+
+/**
+ * The fixture's own words a page that invoked `commands` could be showing: every string of the
+ * first row of each row-shaped fixture, long enough to be that row's words rather than a status
+ * token every page shows, and not a timestamp — a page prints a date formatted, so the raw value
+ * on screen would be a defect, not evidence the row arrived.
+ */
+export function fixtureValuesFor(commands: Iterable<string>): string[] {
+  const wanted: string[] = [];
+  for (const cmd of new Set(commands)) {
+    const rows = POPULATED[cmd];
+    if (!Array.isArray(rows) || rows.length === 0) continue;
+    for (const value of Object.values(rows[0] as Record<string, unknown>)) {
+      if (typeof value === 'string' && value.length >= 8 && !TIMESTAMPS.has(value)) wanted.push(value);
+    }
+  }
+  return wanted;
+}
+
+/** The half of a spec's `vi.fn()` that {@link rowsOnScreen} reads. */
+export type CallLog = { mock: { calls: unknown[][] } };
+
+/**
+ * The settle for the `populated` state, shared by the three page sweeps: wait until a value from
+ * the fixtures the page asked for is on the screen.
+ *
+ * Waiting for the first `invoke` and one microtask turn is not that — a page that asks for
+ * several commands has recorded a row-bearing one before its rows reach the DOM, and a sweep
+ * that samples there measures the page without its rows under the name `populated`.
+ * `pages.browser.spec.tsx` met it as a failure on `main` (1 of 40 runs); the two axe sweeps had
+ * the same settle and would have met it as a pass.
+ *
+ * Polled, so a late invoke is included and a late render is awaited. A page that never shows one
+ * of its own fixture values rejects, with the list. A page that asked for no row-shaped fixture
+ * has nothing to wait for and resolves at once.
+ */
+export async function rowsOnScreen(invokeMock: CallLog, container: Element, name: string) {
+  await waitFor(() => {
+    const wanted = fixtureValuesFor(invokeMock.mock.calls.map((c) => String(c[0])));
+    if (wanted.length === 0) return;
+    const shown = container.textContent ?? '';
+    if (!wanted.some((v) => shown.includes(v))) {
+      throw new Error(`${name} asked for rows and none of their values is on the screen. `
+        + `Looked for any of: ${wanted.slice(0, 6).join(' | ')}`);
+    }
+  });
 }
 
 

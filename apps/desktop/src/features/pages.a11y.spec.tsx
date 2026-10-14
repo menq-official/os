@@ -19,15 +19,16 @@ import { CommandPalette } from '../components/CommandPalette';
 // copy of both — a second `PAGES`, a second `OBJECT_SHAPED` — which is the duplication
 // `pages.fixtures.tsx` was extracted to end, and its own header names this spec as the place the
 // second copy lived.
-import { PAGES, arrange } from './pages.fixtures';
+import { PAGES, arrange, rowsOnScreen } from './pages.fixtures';
 
 /**
  * Accessibility (axe) coverage for the SURFACES, not just the primitives.
  *
- * The fifth independent audit's §E named this gap precisely: the only `*.a11y.spec.tsx` files in
- * this repository covered `ui.tsx` and the shared primitives, so *"the modal this round rebuilt
- * for accessibility is not in the axe pass, and neither is Security, Approvals, or any of the 23
- * pages."* A component library can be perfectly accessible while every page composed from it is
+ * The gap, as this file recorded it from the fifth independent audit's §E — that report was never
+ * filed (`AUDIT_LEDGER.md`, `A-06`), so its wording cannot be checked and is not quoted here: the
+ * only `*.a11y.spec.tsx` files in this repository covered `ui.tsx` and the shared primitives, and
+ * neither the rebuilt modal nor Security, Approvals or any other of the 23 pages was in the axe
+ * pass. A component library can be perfectly accessible while every page composed from it is
  * not — the violations that matter (a heading level skipped, two elements sharing an id, a live
  * region with no accessible name, a control labelled only by an icon) are properties of the
  * composition, and the composition was untested.
@@ -52,10 +53,18 @@ function mount(node: React.ReactNode) {
   return render(<AppProvider><ToastProvider>{node}</ToastProvider></AppProvider>);
 }
 
-/** Let the page's `useAsync` reads settle before axe looks at the DOM. */
-async function settled() {
+/**
+ * Let the page's `useAsync` reads settle before axe looks at the DOM.
+ *
+ * The first invoke and one microtask turn are enough for the empty and the unreachable state. They
+ * are not enough for `populated`: the rows can still be on their way, and axe would pass a page
+ * without them under the name "with data". That state passes `rows`, and waits for a fixture value
+ * to be on the screen.
+ */
+async function settled(rows?: { container: Element; name: string }) {
   await waitFor(() => expect(invokeMock).toHaveBeenCalled());
   await act(async () => { await Promise.resolve(); });
+  if (rows) await rowsOnScreen(invokeMock, rows.container, rows.name);
 }
 
 beforeEach(() => invokeMock.mockReset());
@@ -65,8 +74,8 @@ beforeEach(() => invokeMock.mockReset());
 afterEach(() => { cleanup(); invokeMock.mockReset(); });
 
 // EVERY routed feature page, not a sample — `PAGES` is the list the browser sweeps mount too. The
-// first version of this file covered six, which was the six the fifth audit's §E named plus the
-// ones nearest them — and a sample is how a page ends up being the one nobody checked. `Chat` and
+// first version of this file covered six — and a sample is how a page ends up being the one nobody
+// checked. `Chat` and
 // `GroupChat` both render `Conversations`, so the shared surface is covered through them.
 describe('accessibility (axe) — the pages, in the state a reader actually meets', () => {
   for (const [name, page] of PAGES) {
@@ -84,7 +93,7 @@ describe('accessibility (axe) — the pages, in the state a reader actually meet
       // page's markup only exists in this state.
       arrange(invokeMock, 'populated');
       const { container } = mount(<main>{page()}</main>);
-      await settled();
+      await settled({ container, name });
       expect(await axe(container)).toHaveNoViolations();
     });
 
@@ -97,6 +106,45 @@ describe('accessibility (axe) — the pages, in the state a reader actually meet
       expect(await axe(container)).toHaveNoViolations();
     });
   }
+});
+
+describe('accessibility (axe) — this pass can give its other answer', () => {
+  const projects = PAGES.find(([name]) => name === 'projects')![1];
+
+  it('the "with data" settle waits for rows a backend delivers late', async () => {
+    // Every answer one macrotask late: the first invoke is recorded and a microtask turn passes
+    // long before a row exists. The settle this replaced returned there, and axe then read the
+    // page without its rows.
+    arrange(invokeMock, 'populated');
+    const answer = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((...args: unknown[]) =>
+      new Promise((done) => { setTimeout(() => done(answer(...args)), 20); }));
+    const { container } = mount(<main>{projects()}</main>);
+    await settled({ container, name: 'projects' });
+    expect(container.textContent).toContain('Bridge hardening');
+  });
+
+  it('a planted violation IS reported — the pass is not vacuous', async () => {
+    // Every other assertion in the three jsdom axe specs is `toHaveNoViolations()`, and a runner
+    // that reports nothing satisfies all of them. An image with no text alternative and a button
+    // with no name, planted in a real page, are structural defects of the kind this pass is for.
+    arrange(invokeMock, 'settled');
+    const { container } = mount(<main>{projects()}</main>);
+    await settled();
+    expect(await axe(container)).toHaveNoViolations();
+
+    const image = document.createElement('img');
+    image.setAttribute('src', 'planted.png');
+    container.append(image, document.createElement('button'));
+    const results = await axe(container);
+    expect(results.violations.map((v) => v.id).sort()).toEqual(['button-name', 'image-alt']);
+    expect(() => expect(results).toHaveNoViolations()).toThrow();
+    // And what the docstring above says this pass cannot do, measured: `color-contrast` is in
+    // none of axe's four lists here. The rule is not run at all — it is not "incomplete".
+    const filed = (['passes', 'violations', 'incomplete', 'inapplicable'] as const)
+      .filter((list) => results[list].some((rule) => rule.id === 'color-contrast'));
+    expect(filed).toEqual([]);
+  });
 });
 
 describe('accessibility (axe) — the shell and its modal', () => {

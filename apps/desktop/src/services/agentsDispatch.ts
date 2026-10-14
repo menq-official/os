@@ -626,6 +626,11 @@ export type IdGen = () => string;
 
 const UUIDV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/** A `client_request_id` this module will send: a lowercase UUIDv4. */
+export function isUuidV4(v: string): boolean {
+  return UUIDV4.test(v);
+}
+
 function rec(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
@@ -710,7 +715,7 @@ export async function attemptDispatch(
   if (problems.length > 0) return { state: 'invalid', problems };
 
   const clientRequestId = genId();
-  if (!UUIDV4.test(clientRequestId)) {
+  if (!isUuidV4(clientRequestId)) {
     return { state: 'unreachable', reason: 'client_request_id must be a lowercase UUIDv4' };
   }
 

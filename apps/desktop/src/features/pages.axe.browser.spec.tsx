@@ -10,9 +10,11 @@ import axe from 'axe-core';
  *
  *   * `pages.a11y.spec.tsx` runs axe over all 23 route components — in **jsdom**, with
  *     `css: false`. Its own docstring says what that costs: *"axe's `color-contrast` rule cannot
- *     execute here and does not."* Under jsdom that rule is reported **incomplete**, never as a
- *     violation, so a page could ship unreadable text and the gate would stay green.
- *   * `tools/check_contrast.py` checks **56 declared token pairs**. That is a different claim from
+ *     execute here and does not."* The shared jsdom runner leaves that rule off — it is in none
+ *     of axe's result lists there, and forced on it lands in **incomplete** — so it is never a
+ *     violation, and a page could ship unreadable text and the gate would stay green.
+ *   * `tools/check_contrast.py` checks the token pairs **declared** in
+ *     `theme/contrast-pairs.json`, each in both themes. That is a different claim from
  *     *"this rendered page passes"*: it cannot see a colour set inline, a composite built by
  *     stacking translucent layers, text over a gradient, an inherited colour, or a pair nobody
  *     thought to declare.
@@ -24,9 +26,10 @@ import axe from 'axe-core';
  * same one the jsdom sweep uses, so the two do not disagree about what an accessible page is; this
  * one simply gets to run the rules that need layout.
  *
- * # The two states, and why not four
+ * # The two states, and why not the sibling's three
  *
- * `pages.browser.spec.tsx` measures four states because invisibility is a *transient* defect —
+ * `pages.browser.spec.tsx` sweeps three states — `pending`, `settled`, `unreachable`; it mounts
+ * `populated` too, without the style sweeps — because invisibility is a *transient* defect:
  * `A-01` lived only while a read was in flight. Contrast is not transient: it is a property of
  * colours and composites, and a skeleton's shimmer is not text anybody reads. So this sweep visits
  * the two states a person actually reads:
@@ -50,7 +53,7 @@ import { AppProvider } from '../app/store';
 import { Shell } from '../components/Shell';
 import { CommandPalette } from '../components/CommandPalette';
 import { ToastProvider } from '../components/toast';
-import { PAGES, arrange as arrangeInvoke, type State } from './pages.fixtures';
+import { PAGES, arrange as arrangeInvoke, rowsOnScreen, type State } from './pages.fixtures';
 import { settleAnimations } from '../test/computedStyle';
 import { belowNeed, measuredContrast } from '../test/contrast';
 
@@ -106,13 +109,19 @@ afterEach(() => {
   document.documentElement.setAttribute('data-theme', 'dark');
 });
 
-async function mount(node: React.ReactElement, { reads = true } = {}) {
+async function mount(
+  node: React.ReactElement,
+  { reads = true, rows }: { reads?: boolean; rows?: string } = {},
+) {
   const view = render(<AppProvider><ToastProvider>{node}</ToastProvider></AppProvider>);
   // `reads: false` for a surface that talks to no backend. The command palette is one: it is a
   // keyboard router over static route metadata, so waiting for an IPC call that never comes
   // would time out and read exactly like a page defect.
   if (reads) await waitFor(() => expect(invokeMock).toHaveBeenCalled());
   await act(async () => { await Promise.resolve(); });
+  // `rows` names a page mounted `populated`: its rows must be on the screen before axe reads it,
+  // or the sweep measures the page without them. The first invoke and one microtask are not that.
+  if (rows) await rowsOnScreen(invokeMock, view.container, rows);
   // Settle the entrance animations BEFORE axe looks. Not a softening — the opposite. Nearly every
   // element in this app arrives through `.reveal`, which starts at `opacity: 0`, and axe computes
   // contrast against the BLENDED colour it can see. Measuring mid-entrance produced ratios of
@@ -133,8 +142,9 @@ const hex = (c: readonly number[]) =>
  * Separate the violations axe really measured from the ones it could not read.
  *
  * `axe-core` parses `rgb()`/`rgba()` and not `color(srgb …)`, which is Chromium's computed value for
- * every `color-mix()`. This app uses `color-mix()` for 21 background rules in `ui.css` and for the
- * selected notification band, so axe reported those as violations with a ratio of **NaN** and a
+ * every `color-mix()`. This app uses `color-mix()` for the four `.inline-alert--*` backgrounds in
+ * `ui.css` and for the selected notification band (`.nsig-band.is-sel`), so axe reported those as
+ * violations with a ratio of **NaN** and a
  * background of `#0NaN0NaN0NaN`. Both easy answers are wrong — treating NaN as a pass hides real
  * failures on badges and *selected* rows, which is exactly where `H-03` lived, and treating it as a
  * failure invents findings in working code. So they are measured here, by `src/test/contrast.ts`,
@@ -191,7 +201,7 @@ describe('accessibility in a real browser, with the stylesheet attached', () => 
         it(`${name} · ${state} · ${theme} has no WCAG A/AA violation`, async () => {
           useTheme(theme);
           arrangeInvoke(invokeMock, state);
-          const { container } = await mount(page());
+          const { container } = await mount(page(), { rows: state === 'populated' ? name : undefined });
           const results = await axe.run(container, AXE_OPTIONS);
           const { real, unreadable } = split(results);
           expect(real, `\n${name} (${state}, ${theme}) — WCAG A/AA violations in a real `
@@ -226,18 +236,16 @@ describe('accessibility in a real browser, with the stylesheet attached', () => 
   });
 
   it('color-contrast really runs here — the rule this file exists for is not silently skipped', async () => {
-    // The jsdom sweep reports `color-contrast` as INCOMPLETE and never as a violation, and a
-    // reader has no way to tell that apart from "it passed". So this asserts the rule actually
-    // EXECUTED: axe must place it in `passes` or `violations`, never in `inapplicable`, and the
-    // incomplete list must not be where it ends up either.
+    // The jsdom sweep never reports `color-contrast` as a violation — its runner leaves the rule
+    // off — and a reader has no way to tell that apart from "it passed". So this asserts the rule
+    // actually EXECUTED: axe must place it in `passes` or `violations`, and not in `inapplicable`.
     arrangeInvoke(invokeMock, 'populated');
     const { container } = await mount(PAGES[0][1]());
     const results = await axe.run(container, AXE_OPTIONS);
     const ran = [...results.passes, ...results.violations].some((r) => r.id === 'color-contrast');
     const inapplicable = results.inapplicable.some((r) => r.id === 'color-contrast');
     expect(ran, 'color-contrast must have executed against real CSS').toBe(true);
-    expect(inapplicable, 'color-contrast must not be inapplicable here — under jsdom it always is')
-      .toBe(false);
+    expect(inapplicable, 'color-contrast must not be inapplicable here').toBe(false);
     // `incomplete` is NOT asserted against. axe puts a node there when it cannot resolve a
     // background, and this app has such nodes by construction (`color-mix()`); the first draft of
     // this test failed for that reason and would have been "fixed" by deleting the check. Those

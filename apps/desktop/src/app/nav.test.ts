@@ -7,8 +7,9 @@ import { ru } from '../i18n/ru';
 import type { Lang } from '../domain/enums';
 
 /**
- * Nav integrity. Guards the audit finding where eight real, backed views showed the
- * generic "Prototype workspace" subtitle, plus the trilingual + uniqueness invariants.
+ * Nav integrity: the trilingual + uniqueness invariants. The audit finding where eight real,
+ * backed views showed a generic placeholder subtitle cannot recur: that dictionary key is
+ * deleted, `subtitleKey` is a `DictKey`, and `tsc` refuses a key no dictionary has.
  *
  * A nav entry may take its copy from either source: the shared `i18n/*.ts` dictionaries,
  * or a trilingual `labelCopy`/`subtitleCopy` authored next to the page that owns it (the
@@ -69,11 +70,6 @@ describe('nav', () => {
     expect(en[bridge!.labelKey]).toBeUndefined();
     expect(navLabel(bridge!, 'en', (k) => translate('en', k))).toBe('Governed bridge');
     expect(navLabel(bridge!, 'ru', (k) => translate('ru', k))).not.toBe(navLabel(bridge!, 'en', (k) => translate('en', k)));
-  });
-
-  it('no backed view falls back to the generic "Prototype workspace" subtitle', () => {
-    const offenders = ALL_ITEMS.filter((i) => !i.subtitleCopy && i.subtitleKey === 'generic.subtitle').map((i) => i.id);
-    expect(offenders).toEqual([]);
   });
 
   it('route ids are unique across all nav groups', () => {

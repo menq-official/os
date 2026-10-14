@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { en } from './en';
 import { hy } from './hy';
@@ -42,8 +42,12 @@ describe('i18n parity (en / hy / ru)', () => {
         const path = resolve(dir, name);
         return statSync(path).isDirectory() ? walk(path) : [path];
       });
+    // A test is not a reader. `*.test.*`, `*.spec.*` and the `src/test/` support directory are
+    // left out, or a key a test merely mentions counts as used — this file's own literals did.
+    const testSupport = resolve(src, 'test') + sep;
     const rest = walk(src)
       .filter((f) => /\.tsx?$/.test(f) && !dictionaries.has(f))
+      .filter((f) => !/\.(test|spec)\.tsx?$/.test(f) && !f.startsWith(testSupport))
       .map((f) => readFileSync(f, 'utf8'))
       .join('\n');
     const unused = Object.keys(en).filter((k) => !["'", '"', '`'].some((q) => rest.includes(q + k + q)));

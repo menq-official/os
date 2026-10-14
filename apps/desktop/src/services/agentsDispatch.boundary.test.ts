@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildAssignment, attemptDispatch, validateAssignment, isContractId, isRepoPath, isWorkPath,
+  buildAssignment, attemptDispatch, validateAssignment, isContractId, isRepoPath, isUuidV4, isWorkPath,
   CAPABILITY_TIERS, CONTRACT_SCHEMA_VERSION, DISPATCH_REQUEST_PROTOCOL, MODES, RISKS,
   type AssignmentInput,
 } from './agentsDispatch';
@@ -136,7 +136,7 @@ const oneOf = (...allowed: readonly string[]) => (v: unknown) => isStr(v) && all
  */
 const SHAPE_CONSTRAINED: Record<string, (v: unknown) => boolean> = {
   'protocol': oneOf(DISPATCH_REQUEST_PROTOCOL),
-  'client_request_id': matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+  'client_request_id': (v) => isStr(v) && isUuidV4(v),
   'agent_definition': oneOf(...CAPABILITY_TIERS),
   'capability_tier': oneOf(...CAPABILITY_TIERS),
   'pack_role_reference': (v) => isStr(v) && isContractId(v),
@@ -239,10 +239,11 @@ function credentialCapable(shapes: Record<string, (v: unknown) => boolean>): Set
   return out;
 }
 
-const undeclared = (frame: unknown) => leafPaths(frame).filter(({ path, value }) => {
-  const shape = SHAPE_CONSTRAINED[path];
-  return shape ? !shape(value) : !DECLARED_FREE_TEXT.has(path);
-});
+const undeclared = (frame: unknown, freeText: ReadonlySet<string> = DECLARED_FREE_TEXT) =>
+  leafPaths(frame).filter(({ path, value }) => {
+    const shape = SHAPE_CONSTRAINED[path];
+    return shape ? !shape(value) : !freeText.has(path);
+  });
 
 async function wire(input: AssignmentInput): Promise<unknown> {
   let sent: unknown = null;
@@ -287,16 +288,10 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
                         'keyboard', 'keyword', 'keynote']) {
       expect(FORBIDDEN.test(word), `${word} must NOT be matched`).toBe(false);
     }
-  });
-
-  it('route 2 mutant: the pattern this replaced misses every compound form', () => {
-    // Delete the widening and this is what comes back. Kept executable so a future simplification
-    // that "tidies" the pattern back to a bare word boundary cannot land quietly.
-    const SUPERSEDED = /lease|(?<![a-z])key(?![a-z])|secret|token|nonce|signature|private/i;
-    for (const word of ['pubkey', 'apikey', 'keystore', 'sessionkey']) {
-      expect(SUPERSEDED.test(word), `${word} was missed by the superseded pattern`).toBe(false);
-      expect(FORBIDDEN.test(word), `${word} is caught by the current one`).toBe(true);
-    }
+    // The pattern this replaced, as a record and not as an assertion — a test of a literal typed
+    // here can never fail: /lease|(?<![a-z])key(?![a-z])|secret|token|nonce|signature|private/i.
+    // It matched none of pubkey / apikey / keystore / sessionkey; the first loop above is what
+    // goes red if `FORBIDDEN` is tidied back to it.
   });
 
   it('route 3 is CLOSED: a character-code array is decoded and caught', async () => {
@@ -308,19 +303,9 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
       'and therefore has something to say about it').toBeGreaterThan(0);
   });
 
-  it('route 3 mutant: the string-only sweep this replaced sees nothing', () => {
-    const bytes = Array.from('lease-7f2a91').map((c) => c.charCodeAt(0));
-    const superseded = (v: unknown, out: string[] = []): string[] => {
-      if (typeof v === 'string') out.push(v);
-      else if (Array.isArray(v)) v.forEach((x) => superseded(x, out));
-      else if (v && typeof v === 'object') {
-        for (const [k, x] of Object.entries(v)) { out.push(k); superseded(x, out); }
-      }
-      return out;
-    };
-    expect(superseded({ smuggled: bytes }).filter((s) => FORBIDDEN.test(s))).toEqual([]);
-    expect(flatten({ smuggled: bytes }).filter((s) => FORBIDDEN.test(s)).length).toBeGreaterThan(0);
-  });
+  // The sweep this replaced kept strings only, so a character-code array went past it unread. A
+  // copy of that walker used to be asserted on here; the test above is the one a string-only
+  // `flatten` turns red.
 
   it('route 3: a non-code numeric array is left alone — the decode is not a wildcard', () => {
     // Only printable bytes decode. A list of ordinary numbers must not acquire a spurious text
@@ -342,18 +327,9 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
     }
   });
 
-  it('`I-03` mutant: the all-or-nothing decode this replaced sees nothing', () => {
-    const superseded = (list: readonly unknown[]): string | null => {
-      if (list.length === 0) return null;
-      const codes: number[] = [];
-      for (const v of list) {
-        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0x20 || v > 0x7e) return null;
-        codes.push(v);
-      }
-      return String.fromCharCode(...codes);
-    };
+  it('`I-03`: the decode keeps the run before a trailing out-of-range byte, and is no wildcard', () => {
+    // The decode this replaced returned null for the whole array on one out-of-range element.
     const trailing = [...Array.from('lease-7f2a91').map((c) => c.charCodeAt(0)), 0x0a];
-    expect(superseded(trailing), 'the superseded decode gave up on the whole array').toBeNull();
     expect(decodeCharCodeRuns(trailing)).toContain('lease-7f2a91');
     // And the property that keeps the replacement from being a wildcard is preserved.
     expect(decodeCharCodeRuns([1, 2, 3, 999])).toEqual([]);
@@ -378,19 +354,6 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
     const declared = [...Object.keys(SHAPE_CONSTRAINED), ...DECLARED_FREE_TEXT];
     expect(declared.filter((p) => !reached.has(p)),
       'a declared entry that no fixture populates is not being tested').toEqual([]);
-  });
-
-  it('`I-02` mutant: deleting a declared entry is no longer green', async () => {
-    // Precisely the audit's attack. `contract_draft.rollback.commands` was one of the three that
-    // could be deleted with all ten tests still passing; with FULL populating it, its absence from
-    // the register is a failure the suite reports.
-    const shrunk = new Set(DECLARED_FREE_TEXT);
-    shrunk.delete('contract_draft.rollback.commands');
-    const missed = leafPaths(await wire(FULL)).filter(({ path, value }) => {
-      const shape = SHAPE_CONSTRAINED[path];
-      return shape ? !shape(value) : !shrunk.has(path);
-    }).map((l) => l.path);
-    expect(missed).toEqual(['contract_draft.rollback.commands']);
   });
 
   it('the probes are really credential-shaped', () => {
@@ -431,16 +394,6 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
     expect(flatten(sent).filter((s) => FORBIDDEN.test(s)), 'and the sweep is silent').toEqual([]);
   });
 
-  it('`I-01` mutant: tightening a validator moves the computed set, and the declaration notices', () => {
-    // The check earns its place only if the two sides can disagree. Bind `task_id` to a shape a
-    // credential cannot fit and the computed set loses it — which is a failure until someone
-    // updates the declaration deliberately.
-    const tightened = { ...SHAPE_CONSTRAINED, 'contract_draft.task_id': matches(/^task-\d+$/) };
-    const computed = credentialCapable(tightened);
-    expect(computed.has('contract_draft.task_id')).toBe(false);
-    expect(computed.size).toBe(CREDENTIAL_CAPABLE.size - 1);
-  });
-
   it('the register is not vacuous: an undeclared field fails, a misshapen id fails', async () => {
     const sent = await wire(BASE) as Record<string, unknown>;
     // A field nobody declared.
@@ -460,5 +413,29 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
       'agent_definition', 'capability_tier', 'client_request_id',
       'contract_draft', 'pack_role_reference', 'protocol',
     ].sort());
+  });
+});
+
+// These two exercise THIS FILE's register and helper, not `agentsDispatch`: they show the checks
+// above can give their other answer. They sat among the tests about the frame, under names that
+// read as claims about the product.
+describe('self-tests of this file\'s own register and helper', () => {
+  it('the register is what admits `rollback.commands`: without its entry, FULL\'s frame reports it', async () => {
+    // The ninth audit's attack on `I-02`: this entry could be deleted with every test passing,
+    // because no fixture populated it. The product's part — that FULL really sends the leaf — is
+    // `the register has no unreachable entries` above.
+    const shrunk = new Set(DECLARED_FREE_TEXT);
+    shrunk.delete('contract_draft.rollback.commands');
+    expect(undeclared(await wire(FULL), shrunk).map((l) => l.path))
+      .toEqual(['contract_draft.rollback.commands']);
+  });
+
+  it('`credentialCapable` follows the validators it is handed: a tightened one leaves the set', () => {
+    // The `I-01` equality earns its place only if the two sides can disagree. Bind `task_id` to a
+    // shape a credential cannot fit and the computed set loses it.
+    const tightened = { ...SHAPE_CONSTRAINED, 'contract_draft.task_id': matches(/^task-\d+$/) };
+    const computed = credentialCapable(tightened);
+    expect(computed.has('contract_draft.task_id')).toBe(false);
+    expect(computed.size).toBe(CREDENTIAL_CAPABLE.size - 1);
   });
 });

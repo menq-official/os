@@ -276,13 +276,17 @@
       ]
     },
     "frontend_tests": {
-      "value": 1357,
+      "value": 1356,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-14",
-        "head": "1eca307",
+        "head": "fcc5122",
         "environments": {
+          "Debian 13 (trixie) native @ fcc5122 + seven more groups of the cockpit read; the page sweeps wait for a row and three tests of test-local code are gone": {
+            "ran": 1356,
+            "skipped": 0
+          },
           "Debian 13 (trixie) native @ 1eca307 + five more groups of the cockpit read; the delete and live-indicator guards read every depth": {
             "ran": 1357,
             "skipped": 0

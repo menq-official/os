@@ -149,7 +149,6 @@ export const hy: Record<DictKey, string> = {
   'activity.subtitle': 'Ժամանակագրական իրադարձությունների գրառում',
   'notifications.subtitle': 'Միայն գործնական ազդանշաններ',
   'settings.subtitle': 'Լեզու, տեսք և նախապատվություններ',
-  'generic.subtitle': 'Նախատիպային աշխատատարածք',
   'generic.title': 'Դեռ միացված չէ backend-ին',
   'generic.hint': 'Այս աշխատատարածքը դեռ backend չունի — իրական տվյալ կցուցադրվի, երբ backend-ը իրականացվի։',
 

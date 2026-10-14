@@ -58,7 +58,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { AppProvider } from '../app/store';
 import { ToastProvider } from '../components/toast';
 import {
-  PAGES, POPULATED, arrange as arrangeInvoke, type State,
+  OBJECT_SHAPED, PAGES, POPULATED, TIMESTAMPS, arrange as arrangeInvoke, fixtureValuesFor,
+  rowsOnScreen, type State,
 } from './pages.fixtures';
 
 /** `arrange` moved to `pages.fixtures.tsx` so the axe sweep mounts the same pages with the same
@@ -144,9 +145,9 @@ describe('computed style — every class a page applies is styled by something',
    * said *"nothing checks that a class the app applies is styled by anything"*; the fix built the
    * check and aimed it at the finding rather than at the class of finding.
    *
-   * `styledClassTokens()` is computed AFTER mount, deliberately: 28 of these pages inject their
-   * CSS as a `<style>` block when they render, so reading the stylesheet list before mounting
-   * would report every one of their classes as unstyled.
+   * `styledClassTokens()` is computed AFTER mount, deliberately: all of these pages but `chat`
+   * inject their CSS as a `<style>` block when they render, so reading the stylesheet list before
+   * mounting would report every one of their classes as unstyled.
    */
   for (const [name, page] of PAGES) {
     for (const state of STATES) {
@@ -221,28 +222,11 @@ describe('populated — every page renders real rows without crashing', () => {
       // Polling is strictly stronger than sampling here. A late invoke is included, a late render
       // is awaited, and a page that NEVER shows one of its own fixture values still fails -- same
       // message, same list. Nothing is relaxed and no page is exempted.
-      let wanted: string[] = [];
-      await waitFor(() => {
-        wanted = [];
-        for (const cmd of new Set(invokeMock.mock.calls.map((c) => String(c[0])))) {
-          const rows = POPULATED[cmd];
-          if (!Array.isArray(rows) || rows.length === 0) continue;
-          for (const value of Object.values(rows[0] as Record<string, unknown>)) {
-            // Long enough to be this fixture's own words rather than a status token every page
-            // shows.
-            if (typeof value === 'string' && value.length >= 8 && !value.includes('T0')) {
-              wanted.push(value);
-            }
-          }
-        }
-        // No row-shaped fixture reaches this page; nothing to prove. Unchanged, and decided
-        // before this fix -- see the note below on what this test does NOT prove.
-        if (wanted.length === 0) return;
-        const shown = container.textContent ?? '';
-        expect(wanted.some((v) => shown.includes(v)),
-          `${name} asked for rows and none of their values is on the screen. Looked for any of: `
-          + `${wanted.slice(0, 6).join(' | ')}`).toBe(true);
-      });
+      //
+      // The poll is `rowsOnScreen` in `pages.fixtures.tsx` now, because the two axe sweeps settle
+      // their `populated` state with it too. A page no row-shaped fixture reaches has nothing to
+      // prove and passes -- unchanged; see the note below on what this test does NOT prove.
+      await rowsOnScreen(invokeMock, container, name);
       // WHAT THIS DOES NOT PROVE, written down rather than left to be assumed.
       //
       // `some`, not `every`: a page whose fixtures are ALL wrong fails here, a page where one of
@@ -261,12 +245,29 @@ describe('populated — every page renders real rows without crashing', () => {
     });
   }
 
-  it('no fixture in the table is dead — every key is a command some page actually asks for', async () => {
+  it('a timestamp is never one of the values a page is asked to show', () => {
+    // The filter was `!value.includes('T0')`, written when every fixture timestamp was an ISO
+    // string at nine o'clock. They are epoch-milliseconds text now, which that let through, as it
+    // always had the half-past-ten ISO one — so a page printing a raw `1787130000000` and none of
+    // its rows' words satisfied the test above.
+    const all = fixtureValuesFor(Object.keys(POPULATED));
+    expect(all.length).toBeGreaterThan(20);
+    expect(all.filter((v) => TIMESTAMPS.has(v))).toEqual([]);
+    // And the set is the real one: every row of the first fixture carries two of its members.
+    expect(TIMESTAMPS.size).toBe(4);
+    const project = (POPULATED.list_projects as Array<Record<string, unknown>>)[0];
+    expect(Object.values(project).filter((v) => TIMESTAMPS.has(v as string))).toHaveLength(2);
+  });
+
+  it('no fixture in either table is dead — every key is a command some page actually asks for', async () => {
     // Measured from behaviour, not from a second list: mount all 23 pages, collect the command names
     // they really invoke, and require every fixture key to appear. A renamed or deleted command
     // leaves its fixture behind, and this is what notices — the alternative is a table that grows
     // entries for commands nothing calls, which is the shape `check_reachability` exists to refuse
     // one layer down.
+    //
+    // BOTH tables. This walked `POPULATED` only, and `OBJECT_SHAPED` kept a `read_file` answer for
+    // a command no mounted page invokes — the same dead entry this test was written to refuse.
     const asked = new Set<string>();
     for (const [, page] of PAGES) {
       arrange('populated');
@@ -274,7 +275,8 @@ describe('populated — every page renders real rows without crashing', () => {
       for (const call of invokeMock.mock.calls) asked.add(String(call[0]));
       view.unmount();
     }
-    const dead = Object.keys(POPULATED).filter((cmd) => !asked.has(cmd));
+    const dead = [...Object.keys(POPULATED), ...Object.keys(OBJECT_SHAPED)]
+      .filter((cmd) => !asked.has(cmd));
     expect(dead, 'these fixtures are keyed to commands no page invokes').toEqual([]);
   });
 });

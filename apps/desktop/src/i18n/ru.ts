@@ -149,7 +149,6 @@ export const ru: Record<DictKey, string> = {
   'activity.subtitle': 'Хронологическая запись событий',
   'notifications.subtitle': 'Только полезные оповещения',
   'settings.subtitle': 'Язык, тема и предпочтения',
-  'generic.subtitle': 'Прототип рабочего пространства',
   'generic.title': 'Пока не подключено к backend',
   'generic.hint': 'У этого рабочего пространства пока нет backend — реальные данные появятся, когда он будет реализован.',
 

@@ -147,7 +147,6 @@ export const en = {
   'activity.subtitle': 'Chronological event record',
   'notifications.subtitle': 'Actionable alerts only',
   'settings.subtitle': 'Language, theme, and preferences',
-  'generic.subtitle': 'Prototype workspace',
   'generic.title': 'Not yet connected to the backend',
   'generic.hint': 'This workspace has no backend surface yet — it will show real data once its backend is implemented.',
 
