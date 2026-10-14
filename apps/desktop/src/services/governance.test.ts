@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseGovernanceRead, isMirrored, isBlockedOrUnreachable,
+  parseGovernanceRead,
   hasRecords, recordCount, isUnauthenticatedMirror,
   engineEmptyReason, engineSourceKind, engineDoesNotKnowTask,
   type GovernanceSurface,
@@ -20,21 +20,20 @@ describe('parseGovernanceRead — fail-closed governance mirror parse', () => {
     const r = parseGovernanceRead(SURFACE, { state: 'ok', surface: 'verdicts', records: [{ id: 'r-1' }] });
     expect(r.state).toBe('ok');
     expect(r.records).toHaveLength(1);
-    expect(isMirrored(r)).toBe(true);
-    expect(isBlockedOrUnreachable(r)).toBe(false);
   });
 
   it('passes through a blocked reply with its reason', () => {
     const r = parseGovernanceRead(SURFACE, { state: 'blocked', surface: 'verdicts', reason: 'engine refused' });
     expect(r.state).toBe('blocked');
     expect(r.reason).toBe('engine refused');
-    expect(isBlockedOrUnreachable(r)).toBe(true);
+    expect(r.records).toBeUndefined();
   });
 
   it('passes through an unreachable reply', () => {
     const r = parseGovernanceRead(SURFACE, { state: 'unreachable', surface: 'verdicts', reason: 'broker_unavailable' });
     expect(r.state).toBe('unreachable');
-    expect(isMirrored(r)).toBe(false);
+    expect(r.reason).toBe('broker_unavailable');
+    expect(r.records).toBeUndefined();
   });
 
   it('degrades an ok reply WITHOUT a records array to blocked (never fabricated ok)', () => {
@@ -51,7 +50,9 @@ describe('parseGovernanceRead — fail-closed governance mirror parse', () => {
   it('fails closed to unreachable for an unknown state (never upgrades to ok)', () => {
     const r = parseGovernanceRead(SURFACE, { state: 'verified', records: [{ id: 'x' }] });
     expect(r.state).toBe('unreachable');
-    expect(isMirrored(r)).toBe(false);
+    // The records the reply offered do not come through with it.
+    expect(r.records).toBeUndefined();
+    expect(hasRecords(r)).toBe(false);
   });
 });
 
@@ -119,7 +120,18 @@ describe("the engine's own account of an empty surface", () => {
     );
     expect(engineDoesNotKnowTask(r)).toBe(true);
     expect(engineSourceKind(r)).toBe('persisted-verifier-receipts');
-    expect(r.engine?.recordCount).toBe(0);
+  });
+
+  it("keeps only what a page reads: the engine's own count is not carried", () => {
+    // The number a page displays is `recordCount(read)`, the length of the list that arrived.
+    // The engine's count was parsed into the account and read by nothing, so an account made of
+    // it alone was an account with nothing in it to attribute.
+    const r = parseGovernanceRead(SURFACE, {
+      state: 'ok', surface: 'verdicts', records: [{ id: 'r-1' }], engine: { recordCount: 7 },
+    });
+    expect(r.engine).toBeUndefined();
+    expect(recordCount(r)).toBe(1);
+    expect(JSON.stringify(parseGovernanceRead(SURFACE, EMPTY).engine)).not.toContain('recordCount');
   });
 
   it('never explains emptiness over a set of records', () => {

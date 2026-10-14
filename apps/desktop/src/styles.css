@@ -2,6 +2,8 @@
 @import "./theme/global.css";
 /* BroPS AI-OS design foundation (ported from the brops-aios mockup): fonts,
    dark+light token sets, ambient layer, surface/HUD system, and every view's
-   instrument CSS. Loaded last so it is the authoritative visual layer. */
+   instrument CSS. Loaded after the tokens and the global layer, so it wins over
+   both; aios-shell.css is loaded after it and adds the shell's own rules on top
+   (it restyles `.side`, which aios.css also defines). */
 @import "./theme/aios.css";
 @import "./components/aios-shell.css";

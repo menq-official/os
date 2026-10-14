@@ -3,8 +3,10 @@
  *
  * `axe-core`'s colour parser understands `rgb()` and `rgba()`. It does **not** understand
  * `color(srgb r g b)`, which is what Chromium's *computed* value is for any `color-mix()`. This app
- * uses `color-mix()` for 21 background rules in `ui.css` and for the selected notification band, so
- * axe reported those elements as violations with a ratio of **NaN** and a background of
+ * uses `color-mix()` for the four `InlineAlert` tint backgrounds in `ui.css` (counted with
+ * `grep -n 'background[^;]*color-mix' src/components/ui.css`; the file's other `color-mix()` lines
+ * are shadows, strokes, a fill and a filter) and for the selected notification band, so axe
+ * reported those elements as violations with a ratio of **NaN** and a background of
  * `#0NaN0NaN0NaN`.
  *
  * That is a tooling limit, not a defect, and both of the easy answers are wrong:
@@ -14,8 +16,9 @@
  *   * treating `NaN` as a failure invents findings in working code, which is how a gate gets
  *     switched off.
  *
- * So the ratio is computed instead: parse whatever Chromium reports, composite the element's
- * background over its ancestors until something opaque is reached, and apply the WCAG 2.x formula.
+ * So the ratio is computed instead: parse whatever Chromium reports, composite the element's text
+ * and its background over every ancestor's background, each faded by that ancestor's `opacity`,
+ * and apply the WCAG 2.x formula.
  * The same formula `tools/check_contrast.py` uses on the committed token pairs — that one checks
  * declared colours, this one checks what was actually painted.
  */
@@ -77,25 +80,6 @@ export function ratio(fg: Rgba, bg: Rgba): number {
 }
 
 /**
- * The colour actually behind `el`: its own background composited over each ancestor's, stopping at
- * the first fully opaque result. Falls back to white, the assumption a browser itself makes when
- * nothing in the tree paints.
- */
-export function effectiveBackground(el: Element): Rgba {
-  let acc: Rgba = [0, 0, 0, 0];
-  let node: Element | null = el;
-  while (node) {
-    const own = parseColor(getComputedStyle(node).backgroundColor);
-    if (own && own[3] > 0) {
-      acc = composite(acc, own);
-      if (acc[3] >= 0.999) return acc;
-    }
-    node = node.parentElement;
-  }
-  return composite(acc, [255, 255, 255, 1]);
-}
-
-/**
  * The AA threshold for this element's text: 3.0 for large text (≥ 24px, or ≥ 18.66px bold),
  * 4.5 otherwise. Same rule `contrast-pairs.json` encodes as `size: large`.
  */
@@ -107,29 +91,43 @@ export function threshold(el: Element): number {
   return large ? 3 : 4.5;
 }
 
-/** The measured ratio for an element's own text against what is really behind it. */
+/**
+ * The measured ratio for an element's own text against what is really behind it: `bg` is the
+ * element's background composited over each ancestor's, `fg` the text over that. Both end on
+ * white when nothing in the tree paints, the assumption a browser itself makes.
+ *
+ * Only `background-color` is read. A background image or gradient, a filter and a blend mode
+ * are not, on the element or on any ancestor.
+ */
 export function measuredContrast(el: Element): { ratio: number; fg: Rgba; bg: Rgba; need: number } {
-  const style = getComputedStyle(el);
-  const fgRaw = parseColor(style.color) ?? [0, 0, 0, 1];
-  const bg = effectiveBackground(el);
-  // Text alpha composites over the background exactly as any other layer does; `opacity` on an
-  // ancestor is NOT in `color`, which is why an opacity-dimmed label can pass a token check and
-  // fail on screen. `opacity` is folded in below.
-  const inherited = ancestorOpacity(el);
-  const fg = composite([fgRaw[0], fgRaw[1], fgRaw[2], fgRaw[3] * inherited], bg);
-  return { ratio: ratio(fg, bg), fg, bg, need: threshold(el) };
-}
-
-/** The product of every `opacity` from `el` up to the document — the multiplier a token gate cannot see. */
-function ancestorOpacity(el: Element): number {
-  let total = 1;
+  const fgRaw = parseColor(getComputedStyle(el).color) ?? [0, 0, 0, 1];
+  // Two pixels are carried up the tree: one where a glyph is, one beside it. `opacity` is NOT in
+  // `color`, which is why an opacity-dimmed label can pass a token check and fail on screen — and
+  // it applies to an element as a GROUP, so it fades that element's own background together with
+  // everything painted inside it. Multiplying the text alone, over a background left at full
+  // strength, reported a ratio nothing on the screen had whenever the dimmed element (or a dimmed
+  // ancestor) painted a background of its own.
+  let text: Rgba = fgRaw;
+  let behind: Rgba = [0, 0, 0, 0];
   let node: Element | null = el;
   while (node) {
-    const o = parseFloat(getComputedStyle(node).opacity);
-    if (!Number.isNaN(o)) total *= o;
+    const style = getComputedStyle(node);
+    const own = parseColor(style.backgroundColor);
+    if (own && own[3] > 0) {
+      text = composite(text, own);
+      behind = composite(behind, own);
+    }
+    const o = parseFloat(style.opacity);
+    if (!Number.isNaN(o)) {
+      text = [text[0], text[1], text[2], text[3] * o];
+      behind = [behind[0], behind[1], behind[2], behind[3] * o];
+    }
     node = node.parentElement;
   }
-  return total;
+  // White behind an unpainted tree.
+  const fg = composite(text, [255, 255, 255, 1]);
+  const bg = composite(behind, [255, 255, 255, 1]);
+  return { ratio: ratio(fg, bg), fg, bg, need: threshold(el) };
 }
 
 /**

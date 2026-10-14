@@ -7,8 +7,11 @@
 // and nothing it returns can reach a "Verified" affordance except a real broker `committed` frame.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  attemptGovernedTurn, classifyTransportFailure, isBrokerDecision, isVerified,
+  attemptGovernedTurn, classifyTransportFailure, isVerified,
   COMMIT_NOT_ACCEPTED_DETAIL, DEMONSTRATION_CUSTODY,
   NON_DECISIONS, RESULT_PROTOCOL, TRUSTED_VERIFIED,
   type BrokerTransport, type GovernedTurnAttempt,
@@ -47,9 +50,11 @@ function unavailable(a: GovernedTurnAttempt) {
 }
 
 describe('classifyTransportFailure — the proxy prefixes survive into the renderer', () => {
-  // The exact reason strings `src-tauri/src/governed_turn.rs` produces, prefix + prose. The Rust side
-  // has its own test that these three prefixes stay mutually distinguishable; this is the other half of
-  // that contract, on the consuming side.
+  // Reasons in the SHAPE `src-tauri/src/governed_turn.rs` produces: a prefix, then prose. They are
+  // typed by hand and cut short — the Rust sentences go on after `arch=…).` and after `({e:?}).` —
+  // so they hold the classifier to a prefix and to nothing the proxy writes. What the proxy writes
+  // is read out of the Rust source in the next block. The Rust side has its own test that the three
+  // prefixes stay mutually distinguishable.
   it.each([
     ['broker_unsupported_platform: no governed-broker IPC transport is implemented for this host (os=windows, arch=x86_64).', 'broker_unsupported_platform'],
     ['broker_unavailable: a broker IPC transport is implemented for this host but the connection to `/run/brops/broker.sock` could not be established (connect: NotFound).', 'broker_unavailable'],
@@ -81,11 +86,54 @@ describe('classifyTransportFailure — the proxy prefixes survive into the rende
   });
 });
 
+describe('the prefixes are the ones the proxy writes', () => {
+  // Each prefix is spelled twice, in `governed_turn.rs` and in `governedTurn.ts`, and the cases
+  // above use this side's spelling on both ends: rename one in Rust and a real proxy rejection
+  // becomes `unclassified_transport_failure` with every test green. So the Rust source is read.
+  const rust = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../src-tauri/src/governed_turn.rs'), 'utf8');
+
+  /** The value of `pub const <name>: &str = "…";`, which must be declared exactly once. */
+  const constant = (name: string): string => {
+    const declared = [...rust.matchAll(new RegExp(`pub const ${name}: &str = "([^"]*)";`, 'g'))];
+    expect(declared.map((m) => m[1]), `governed_turn.rs: ${name}`).toHaveLength(1);
+    return declared[0][1];
+  };
+
+  /** The `format!` literal that opens with `{<name>}: `, its line continuations joined, with the
+   *  constant filled in. The other `{…}` placeholders stay as written: they are runtime values. */
+  const reasonFor = (name: string): string => {
+    const literals = [...rust.matchAll(new RegExp(`"(\\{${name}\\}: (?:[^"\\\\]|\\\\[\\s\\S])*)"`, 'g'))];
+    expect(literals, `governed_turn.rs: no format string opens with {${name}}: `).toHaveLength(1);
+    return literals[0][1].replace(/\\\n\s*/g, '').replace(`{${name}}`, constant(name));
+  };
+
+  it.each([
+    ['BROKER_UNSUPPORTED', 'broker_unsupported_platform'],
+    ['BROKER_UNAVAILABLE', 'broker_unavailable'],
+    ['BROKER_TRANSPORT_FAILED', 'broker_transport_failed'],
+  ] as const)('%s is the prefix this side classifies as %s', (name, kind) => {
+    expect(constant(name)).toBe(kind);
+    expect(NON_DECISIONS).toContain(constant(name));
+    // The whole sentence the proxy formats, not a shortened copy of it.
+    const reason = reasonFor(name);
+    expect(reason.startsWith(`${kind}: `)).toBe(true);
+    expect(reason.length).toBeGreaterThan(kind.length + 40);
+    expect(classifyTransportFailure(new Error(reason))).toEqual({ kind, detail: reason });
+  });
+
+  it('the two bare reasons are the strings the proxy returns for a frame it cannot serialise or parse', () => {
+    for (const bare of ['malformed_request', 'malformed_broker_reply'] as const) {
+      expect(rust, `governed_turn.rs no longer returns "${bare}"`).toContain(`.map_err(|_| "${bare}".to_string())`);
+      expect(classifyTransportFailure(new Error(bare)).kind).toBe(bare);
+    }
+  });
+});
+
 describe('attemptGovernedTurn — a non-decision is never a verdict', () => {
   it('returns the broker decision when the broker committed', async () => {
     const a = await attemptGovernedTurn('conv-1', undefined, resolving(committedFrame()), genId);
     expect(a.status).toBe('committed');
-    expect(isBrokerDecision(a)).toBe(true);
     expect(isVerified(a)).toBe(true);
   });
 
@@ -94,7 +142,6 @@ describe('attemptGovernedTurn — a non-decision is never a verdict', () => {
     expect(a.status).toBe('blocked');
     if (a.status === 'blocked') expect(a.reason).toBe('upstream_blocked');
     // A refusal IS a broker decision, and it is not verified.
-    expect(isBrokerDecision(a)).toBe(true);
     expect(isVerified(a)).toBe(false);
   });
 
@@ -103,7 +150,8 @@ describe('attemptGovernedTurn — a non-decision is never a verdict', () => {
     const u = unavailable(a);
     expect(u.kind).toBe('broker_unavailable');
     // The whole point: this must not be readable as a refusal.
-    expect(isBrokerDecision(a)).toBe(false);
+    expect(a.status).not.toBe('blocked');
+    expect(a).not.toHaveProperty('reason');
     expect(isVerified(a)).toBe(false);
   });
 
@@ -137,7 +185,6 @@ describe('attemptGovernedTurn — a non-decision is never a verdict', () => {
     const a = await attemptGovernedTurn('conv-1', undefined, resolving(demo), genId);
     // Not `unavailable`: every non-decision means no broker verdict exists, and here one does.
     expect(a.status).toBe('commit_not_accepted');
-    expect(isBrokerDecision(a)).toBe(true);
     // Not accepted: no Verified, whatever else is true of it.
     expect(isVerified(a)).toBe(false);
     if (a.status !== 'commit_not_accepted') throw new Error('unreachable');

@@ -8,6 +8,8 @@
  * three places."* Ninth audit `I-03` was exactly that drift. The two `services` suites import
  * from here now; the `features` copy is still its own (it also sweeps with a different
  * vocabulary, `SECRET_SHAPED`), and should import `flatten` / `decodeCharCodeRuns` from here.
+ * `SECRET_SHAPED` also carries its own copy of the `key` clause, and it is the case-blind one:
+ * the camelCase compounds `FORBIDDEN` matches since 2026-10-14 are still missed there.
  *
  * Not a test file: nothing here asserts. The suites that import it keep the cases that pin each
  * behaviour, including the positive controls that show the sweep is not vacuous.
@@ -89,6 +91,18 @@ export function decodeCharCodeRuns(list: readonly unknown[]): string[] {
  * `turkey` and `keyboard` alone — a lookaround that admits every compound would fire on ordinary
  * prose, and a sweep that cries wolf gets deleted. The prefix and suffix groups are both optional,
  * so the bare-word behaviour this replaced is preserved exactly.
+ *
+ * A camelCase compound is matched whatever its first word is: `authKey`, `hmacKey`, `clientKey`.
+ * It was not while the pattern carried the `i` flag — `(?<![a-z])` then refused ANY letter before
+ * `key`, so only the listed prefixes got through. A capital `K` after a lower-case letter is a
+ * word boundary, and seeing one needs a pattern that can tell the cases apart; so the flag is gone
+ * and every word is spelled in both cases by `anyCase`. `MONKEY` and `Keyboard` are still left
+ * alone: an all-caps word has no such boundary.
  */
-export const FORBIDDEN =
-  /lease|secret|token|nonce|signature|private|(?<![a-z])(?:pub|api|access|secret|private|public|session|signing|host|ssh|gpg|master|root|enc|dec)?[-_ ]?keys?(?:tore|chain|file|pair|ring|id)?(?![a-z])/i;
+const WORDS = 'lease|secret|token|nonce|signature|private';
+const KEY_PREFIX = 'pub|api|access|secret|private|public|session|signing|host|ssh|gpg|master|root|enc|dec';
+const KEY_SUFFIX = 'tore|chain|file|pair|ring|id';
+const anyCase = (words: string) => words.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`);
+const KEY_CLAUSE =
+  `(?:(?<![a-zA-Z])|(?<=[a-z])(?=K))(?:${anyCase(KEY_PREFIX)})?[-_ ]?${anyCase('keys')}?(?:${anyCase(KEY_SUFFIX)})?(?![a-zA-Z])`;
+export const FORBIDDEN = new RegExp(`${anyCase(WORDS)}|${KEY_CLAUSE}`);

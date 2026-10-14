@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  parseColor, composite, luminance, ratio, effectiveBackground, threshold, measuredContrast,
+  parseColor, composite, luminance, ratio, threshold, measuredContrast,
 } from './contrast';
 
 /**
@@ -74,13 +74,13 @@ describe('the WCAG arithmetic', () => {
   });
 });
 
-describe('effectiveBackground', () => {
+describe('measuredContrast — the background behind the text', () => {
   it('walks up to the first opaque ancestor', () => {
     const outer = el('background:#000000;padding:4px', 'div');
     const inner = document.createElement('div');
     inner.setAttribute('style', 'background:transparent');
     outer.appendChild(inner);
-    expect(effectiveBackground(inner).slice(0, 3)).toEqual([0, 0, 0]);
+    expect(measuredContrast(inner).bg).toEqual([0, 0, 0, 1]);
   });
 
   it('composites a translucent background over what is behind it', () => {
@@ -88,7 +88,7 @@ describe('effectiveBackground', () => {
     const inner = document.createElement('div');
     inner.setAttribute('style', 'background:rgba(255,255,255,0.5)');
     outer.appendChild(inner);
-    const bg = effectiveBackground(inner);
+    const { bg } = measuredContrast(inner);
     expect(bg[0]).toBeCloseTo(127.5, 0);
     expect(bg[3]).toBeCloseTo(1, 5);
   });
@@ -109,9 +109,10 @@ describe('measuredContrast', () => {
     expect(measuredContrast(el('color:#000000;background:#ffffff')).ratio).toBeCloseTo(21, 3);
   });
 
-  it('folds in ancestor `opacity` — the multiplier a token gate cannot see', () => {
+  it('folds in the element\'s OWN `opacity` — the multiplier a token gate cannot see', () => {
     // This is the defect mechanism the sweep actually found: `.pill.off { opacity: .62 }` took
     // muted text from 6.53:1 to a measured 3.07:1 while every declared token pair stayed green.
+    // The opacity here is on the measured span itself; the ancestor case is the next one.
     const box = el('background:#05070c;padding:4px', 'div');
     const full = document.createElement('span');
     full.setAttribute('style', 'color:#8993a8;font-size:10px');
@@ -128,11 +129,74 @@ describe('measuredContrast', () => {
     expect(withOpacity).toBeLessThan(undimmed);
   });
 
+  it('folds in `opacity` set on an ANCESTOR, which the measured element does not carry', () => {
+    // The span's own computed `opacity` is 1. Only a walk up the tree finds the .62, and the
+    // case above never needed that walk: it could be deleted with that test still green.
+    const box = el('background:#05070c;padding:4px', 'div');
+    const wrap = document.createElement('div');
+    wrap.setAttribute('style', 'opacity:.62');
+    const label = document.createElement('span');
+    label.setAttribute('style', 'color:#8993a8;font-size:10px');
+    label.textContent = 'muted';
+    const inner = document.createElement('div');
+    inner.append(label);
+    wrap.append(inner);
+    const full = document.createElement('span');
+    full.setAttribute('style', 'color:#8993a8;font-size:10px');
+    full.textContent = 'muted';
+    box.append(wrap, full);
+
+    expect(getComputedStyle(label).opacity).toBe('1');
+    const undimmed = measuredContrast(full).ratio;
+    const dimmed = measuredContrast(label).ratio;
+    expect(undimmed).toBeGreaterThan(4.5);
+    expect(dimmed).toBeLessThan(4.5);
+    // Two levels multiply: .5 of .62 is dimmer than .62 alone.
+    inner.setAttribute('style', 'opacity:.5');
+    expect(measuredContrast(label).ratio).toBeLessThan(dimmed);
+  });
+
+  it('dims an opacity-bearing element\'s own BACKGROUND with its text, not the text alone', () => {
+    // `opacity` applies to the element as a group. A white-on-black chip at .5 over a white page
+    // paints white text on mid-grey: 3.98:1. Dimming only the text, against the chip's background
+    // at full strength, reported grey on black instead — 5.28:1, a pass at 4.5 for text that fails.
+    const page = el('background:#ffffff;padding:4px', 'div');
+    const chip = document.createElement('span');
+    chip.setAttribute('style', 'color:#ffffff;background:#000000;font-size:12px;opacity:.5');
+    chip.textContent = 'dimmed chip';
+    page.append(chip);
+
+    const m = measuredContrast(chip);
+    expect(m.bg.slice(0, 3).map(Math.round)).toEqual([128, 128, 128]);
+    expect(m.fg.slice(0, 3).map(Math.round)).toEqual([255, 255, 255]);
+    expect(m.ratio).toBeCloseTo(ratio([255, 255, 255, 1], [127.5, 127.5, 127.5, 1]), 3);
+    expect(m.ratio).toBeLessThan(4.5);
+
+    // The other direction, so the fix is not a one-way adjustment: black on white at .5 over a
+    // black page is black text on mid-grey, 5.28:1, where text-only dimming reported 3.98:1.
+    const dark = el('background:#000000;padding:4px', 'div');
+    const light = document.createElement('span');
+    light.setAttribute('style', 'color:#000000;background:#ffffff;font-size:12px;opacity:.5');
+    light.textContent = 'dimmed chip';
+    dark.append(light);
+    expect(measuredContrast(light).ratio).toBeCloseTo(ratio([0, 0, 0, 1], [127.5, 127.5, 127.5, 1]), 3);
+
+    // And when the opacity is on an ANCESTOR that paints the background, the same holds.
+    const outer = document.createElement('div');
+    outer.setAttribute('style', 'background:#000000;opacity:.5');
+    const text = document.createElement('span');
+    text.setAttribute('style', 'color:#ffffff;font-size:12px');
+    text.textContent = 'inside a dimmed panel';
+    outer.append(text);
+    page.append(outer);
+    expect(measuredContrast(text).ratio).toBeCloseTo(m.ratio, 3);
+  });
+
   it('does not invent a background when nothing paints one', () => {
     // A browser shows white behind an unpainted tree; assuming black would turn every light-theme
     // page into a wall of false findings.
     const orphan = document.createElement('p');
     orphan.setAttribute('style', 'color:#000000');
-    expect(effectiveBackground(orphan)).toEqual([255, 255, 255, 1]);
+    expect(measuredContrast(orphan).bg).toEqual([255, 255, 255, 1]);
   });
 });

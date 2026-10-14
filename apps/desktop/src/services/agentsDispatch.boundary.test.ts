@@ -294,6 +294,26 @@ describe('the no-lease sweep proves the FRAME, not the absence of a credential',
     // goes red if `FORBIDDEN` is tidied back to it.
   });
 
+  it('route 2, the camelCase half: a `key` joined to its word by a capital letter is matched', () => {
+    // The spelling a wire frame is most likely to use. Under the `i` flag `(?<![a-z])` refused ANY
+    // letter before `key`, so only the listed prefixes got through: `apiKey` matched and each of
+    // these did not.
+    for (const word of ['authKey', 'hmacKey', 'encryptionKey', 'clientKey', 'deployKeys', 'wrappedKeyId']) {
+      expect(FORBIDDEN.test(word), `${word} must be matched`).toBe(true);
+    }
+    // As a field NAME in a frame, which is where it would be.
+    expect(flatten({ assignment: { authKey: 'x' } }).filter((s) => FORBIDDEN.test(s))).toEqual(['authKey']);
+    // Everything the case-blind pattern matched still is, in any case.
+    for (const word of ['KEY', 'Keys', 'apiKey', 'session key', 'KeyChain', 'keyId', 'my-key', 'x.key',
+                        'LEASE-7', 'Secret', 'TOKEN', 'Nonce', 'Signature', 'PRIVATE']) {
+      expect(FORBIDDEN.test(word), `${word} must be matched`).toBe(true);
+    }
+    // A capital K is a word boundary only after a LOWER-case letter: an all-caps word has none.
+    for (const word of ['Monkey', 'MONKEY', 'TURKEY', 'Keyboard', 'KEYBOARD', 'jockeys']) {
+      expect(FORBIDDEN.test(word), `${word} must NOT be matched`).toBe(false);
+    }
+  });
+
   it('route 3 is CLOSED: a character-code array is decoded and caught', async () => {
     const bytes = Array.from('lease-7f2a91').map((c) => c.charCodeAt(0));
     const sent = await wire({ ...BASE, doneCriteria: ['done'], verificationCommands: [] });

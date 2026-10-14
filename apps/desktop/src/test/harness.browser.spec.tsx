@@ -9,9 +9,10 @@ import {
  * alarm — it is SILENT AGREEMENT.
  *
  * If `styles.css` fails to resolve, every element computes to the browser's initial values:
- * `opacity: 1`, `animation-name: none`, nothing hidden, nothing invisible. `pages.browser.spec`
- * then passes all 69 of its assertions against a page with no design on it at all, and reports
- * green forever. That is precisely the shape T-024's own text warns about — *"a hand-written
+ * `opacity: 1`, `animation-name: none`, nothing hidden, nothing invisible. `pages.browser.spec`'s
+ * "paints everything it renders" then passes for all 69 of its page/state pairs (23 pages, three
+ * states; the spec holds several checks per pair, so 69 is not its test count) against a page
+ * with no design on it at all, and reports green forever. That is precisely the shape T-024's own text warns about — *"a hand-written
  * markup fixture that drifts from the component is worse than no check, because it goes green
  * while the page is broken"* — and it applies to the stylesheet just as much as to the markup.
  *
@@ -64,20 +65,31 @@ describe('the harness itself is measuring something', () => {
     expect(getComputedStyle(el).animationName).toBe('spin');
 
     await emulateMedia([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+    try {
+      // aios.css's reduced-motion block collapses duration (`.01ms !important`) rather than removing
+      // the name; either is a real cascade change, and both are invisible to a matchMedia stub.
+      //
+      // Compared NUMERICALLY. The first version of this assertion compared the string against
+      // `'0.00001s'` and failed: Chromium serialises that duration as `1e-05s`. A string match on a
+      // computed value is a check on the browser's serialiser, not on the cascade.
+      const reduced = getComputedStyle(el);
+      expect(
+        parseFloat(reduced.animationDuration) < 0.001 || reduced.animationName === 'none',
+        `reduced motion did not reach the cascade (duration ${reduced.animationDuration}, `
+        + `name ${reduced.animationName})`,
+      ).toBe(true);
+    } finally {
+      // In `finally`: the emulation outlives the test, and a failing assertion must not leave it on.
+      await emulateMedia([]);
+    }
+  });
 
-    // aios.css's reduced-motion block collapses duration (`.01ms !important`) rather than removing
-    // the name; either is a real cascade change, and both are invisible to a matchMedia stub.
-    //
-    // Compared NUMERICALLY. The first version of this assertion compared the string against
-    // `'0.00001s'` and failed: Chromium serialises that duration as `1e-05s`. A string match on a
-    // computed value is a check on the browser's serialiser, not on the cascade.
-    const reduced = getComputedStyle(el);
-    expect(
-      parseFloat(reduced.animationDuration) < 0.001 || reduced.animationName === 'none',
-      `reduced motion did not reach the cascade (duration ${reduced.animationDuration}, `
-      + `name ${reduced.animationName})`,
-    ).toBe(true);
-    await emulateMedia([]);
+  it('no test above left a media feature emulated', () => {
+    // The emulation is set on the PAGE, not on a test, so one left on is in force for the tests
+    // that run after it. The reset above stood after the assertion, where a failing assertion
+    // skipped it — and then 'the route wrapper runs its entrance' below failed as well, its
+    // animation computed to `none`, with nothing wrong in what it measures.
+    expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(false);
   });
 });
 

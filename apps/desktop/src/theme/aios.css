@@ -628,7 +628,6 @@ body.ignited .shimmer{opacity:1}
 .pipe.now .dot{background:var(--cyan);box-shadow:0 0 11px rgb(var(--cyan-rgb)/.9);animation:pulse 1.4s ease-in-out infinite}
 .pipe .lbl{font-size:var(--t-small)}
 .pipe .st{margin-left:auto;font-family:var(--f-mono);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted)}
-@keyframes flow{to{transform:translateX(-50%)}}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    COMMAND DOCK — floating glass command bar

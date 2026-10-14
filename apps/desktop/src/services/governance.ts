@@ -1,12 +1,15 @@
 // Phase-2 (Governance Sidecar) — renderer-side READ-ONLY governance mirror.
 //
-// "Mirror, never decide." This module is the untrusted read half: it invokes the
-// desktop's READ-ONLY governance IPC commands (which ask the engine sidecar) and
-// parses their typed reply. It NEVER decides, approves, reweighs, or fabricates a
-// verdict; the only thing it can render is what the engine mirrored — or, far more
-// often in Phase-2, an honest `blocked`/`unreachable` state, because the engine read
-// endpoints do not answer yet. A thrown transport error is caught and mapped to
-// `unreachable` so a page always receives a typed state and never an unhandled reject.
+// "Mirror, never decide." This module is the untrusted read half's PARSER: the types,
+// the predicates pages ask of a read, and `parseGovernanceRead`. It invokes nothing and
+// catches nothing — `governanceRead` in `services/desktop.ts` invokes the desktop's
+// READ-ONLY governance IPC commands (which ask the engine sidecar), hands the reply to
+// the parser here, and maps a rejected invoke to `unreachable`, so a page always
+// receives a typed state and never an unhandled reject. Nothing here decides, approves,
+// reweighs, or fabricates a verdict. The engine answers these reads
+// (`bro_control_room_api.governance_read`); `blocked` (the engine was reached and
+// refused) and `unreachable` (no engine was reached) are states of that service, and
+// the only records a page can render are the ones an `ok` reply carried.
 
 /** The four engine governance surfaces the desktop can READ (never write). */
 export type GovernanceSurface =
@@ -43,9 +46,6 @@ export interface EngineAccount {
   /** The engine's own sentence for WHY this surface is empty. Present only when the
    *  mirrored record set really is empty, so it can never appear beside records. */
   emptyReason?: string;
-  /** The engine's own count of the records it read. The number a page DISPLAYS is
-   *  always `recordCount(read)` — the length of the list that arrived. */
-  recordCount?: number;
   /** Only for a read filtered to one task: whether the engine's orchestration runtime
    *  has ever heard of that id. `false` means "the engine does not know this task",
    *  which is a different fact from "this task recorded nothing". */
@@ -83,16 +83,6 @@ export interface GovernanceRead {
    * not "I looked and found nothing", and the two must not share a field.
    */
   engine?: EngineAccount;
-}
-
-/** A page is showing engine truth only when the mirror is `ok`. */
-export function isMirrored(r: GovernanceRead): boolean {
-  return r.state === 'ok';
-}
-
-/** `true` for any honest non-fabricated blocked state (engine refused OR unreachable). */
-export function isBlockedOrUnreachable(r: GovernanceRead): boolean {
-  return r.state === 'blocked' || r.state === 'unreachable';
 }
 
 /** How many records the mirror actually carries (0 for any non-`ok` state). */
@@ -153,9 +143,6 @@ function parseEngineAccount(raw: unknown): EngineAccount | undefined {
   if (!isRecord(raw)) return undefined;
   const account: EngineAccount = {};
   if (typeof raw.emptyReason === 'string' && raw.emptyReason) account.emptyReason = raw.emptyReason;
-  if (typeof raw.recordCount === 'number' && Number.isFinite(raw.recordCount)) {
-    account.recordCount = raw.recordCount;
-  }
   if (typeof raw.knownTask === 'boolean') account.knownTask = raw.knownTask;
   if (typeof raw.sourceKind === 'string' && raw.sourceKind) account.sourceKind = raw.sourceKind;
   return Object.keys(account).length > 0 ? account : undefined;

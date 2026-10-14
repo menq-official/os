@@ -318,15 +318,6 @@ export interface GovernedTurnCommitNotAccepted {
  */
 export type GovernedTurnAttempt = GovernedTurnResult | GovernedTurnUnavailable | GovernedTurnCommitNotAccepted;
 
-/**
- * `true` only when the broker itself decided this turn: committed, blocked, or committed under a
- * label this app declines. The last is a decision by the BROKER all the same — what this app
- * accepts is a separate question, and [`isVerified`] is the only answer to it.
- */
-export function isBrokerDecision(a: GovernedTurnAttempt): a is GovernedTurnResult | GovernedTurnCommitNotAccepted {
-  return a.status === 'committed' || a.status === 'blocked' || a.status === 'commit_not_accepted';
-}
-
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }

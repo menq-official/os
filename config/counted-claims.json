@@ -276,13 +276,17 @@
       ]
     },
     "frontend_tests": {
-      "value": 1361,
+      "value": 1367,
       "command": "cd apps/desktop && npm ci && npm test",
       "derive": null,
       "measured": {
         "date": "2026-10-14",
-        "head": "fcc5122",
+        "head": "dde0a4c",
         "environments": {
+          "Debian 13 (trixie) native @ dde0a4c + eight more groups of the cockpit read; the contrast measurer dims a background with its text": {
+            "ran": 1367,
+            "skipped": 0
+          },
           "Debian 13 (trixie) native @ fcc5122 + eight more groups of the cockpit read; the renderer's mirrors are held to their source files": {
             "ran": 1361,
             "skipped": 0

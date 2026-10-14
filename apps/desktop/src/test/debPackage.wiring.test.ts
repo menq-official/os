@@ -197,12 +197,18 @@ describe('@keyframes — one namespace per document', () => {
   it('defines none that nothing animates with', () => {
     // 55 of aios.css's 132 were referenced by nothing — the mockup's, kept after the pages that
     // used them took in-component styles of their own.
+    //
+    // A user is an `animation` / `animation-name` VALUE that names it, in a stylesheet, an
+    // in-component <style> or an inline style object. This counted the word anywhere, twice, and
+    // so passed `@keyframes flow`: nothing animated with it (only `au-flow` and `v-cmd-flow`),
+    // but `.flow` is a class, `flow` a grid area and `const flow` a variable.
     const everything = [...CSS.values(), ...SCRIPTS.values()].join('\n');
+    const animated = [...everything.matchAll(/(?<![\w-])animation(?:-name|Name)?\s*:\s*([^;{}]*)/g)].map((m) => m[1]);
+    expect(animated.length, 'no animation declaration was found; this check holds nothing').toBeGreaterThan(0);
     const unused: string[] = [];
     for (const [file, text] of CSS) {
       for (const m of text.matchAll(KEYFRAMES)) {
-        // one occurrence is the definition itself
-        if ((everything.match(token(m[1])) ?? []).length < 2) unused.push(`${m[1]} (${file})`);
+        if (!animated.some((value) => token(m[1]).test(value))) unused.push(`${m[1]} (${file})`);
       }
     }
     expect(unused).toEqual([]);
@@ -315,7 +321,8 @@ describe('colours copied by hand match the token they copy', () => {
       expect(v, `${h} is not a 6-digit hex`).not.toBeNull();
       return [0, 2, 4].map((i) => parseInt(v![1].slice(i, i + 2), 16)).concat(1) as Rgba;
     };
-    // tokens.css: the bare `:root` value is the dark one, and `:root:not([data-theme="dark"])` restates it.
+    // tokens.css: the bare `:root` value (#04121b) is the dark one, and `:root:not([data-theme="dark"])`
+    // replaces it with another (#ffffff) for the light theme.
     const text = (block: string) => {
       const m = new RegExp(`${block} \\{[^}]*--brops-accent-text:\\s*(#[0-9a-f]{6})`, 'i').exec(tokens);
       expect(m, `tokens.css: no --brops-accent-text under ${block}`).not.toBeNull();
