@@ -3,9 +3,12 @@
 //!
 //! Given a governed turn whose isolated-signer envelope already verified (§7, `governed_verification`) and
 //! a root-verified, anti-rollback-checked key manifest (§3b-2, `key_manifest`), this resolves whether the
-//! signing key is a PRODUCTION-class, in-window, non-revoked, protocol-allowed key. Only then is the turn
-//! `Production` trusted_verified. Absence of a trusted manifest, or any resolution failure, is
-//! `NoTrustedManifest` — the fail-closed default that keeps "Verified" honest.
+//! signing key is a PRODUCTION-class, in-window, non-revoked, protocol-allowed key. That alone is not
+//! `Production`: the verdict then splits on the custody provenance of the root anchor that verified the
+//! manifest. An anchor that supports a production claim gives `Production` trusted_verified; any other
+//! gives `DemonstrationCustody` — the chain bound, the custody claim is not production. Absence of a
+//! trusted manifest or of its verified-root token, or any resolution failure, is `NoTrustedManifest` —
+//! the fail-closed default that keeps "Verified" honest.
 
 use crate::key_manifest::{
     resolve_production_key, KeyManifest, ManifestError, RootProvenance, VerifiedManifestRoot,
@@ -47,9 +50,14 @@ pub enum TrustState {
 }
 
 impl TrustState {
-    /// True ONLY for [`TrustState::Production`]. The single gate the UI consults to show production
-    /// "Verified". [`TrustState::DemonstrationCustody`] is deliberately false here: the chain ran, but
-    /// the root that vouched for the keys is one this build could have minted itself.
+    /// True ONLY for [`TrustState::Production`]. [`TrustState::DemonstrationCustody`] is deliberately
+    /// false here: the chain ran, but the root that vouched for the keys is one this build could have
+    /// minted itself.
+    ///
+    /// Its callers are the proof drivers (`live_turn`, `ladder_turn`, `win_live_turn`) and the
+    /// in-process kit (`win-live/src/proof.rs`), which report it as `production_verified`; the kit's
+    /// value is what the trust self-test panel receives. It is not the gate on a committed
+    /// message's badge: that is the string from [`TrustState::committed_label`].
     pub fn is_production_verified(&self) -> bool {
         matches!(self, TrustState::Production { .. })
     }
@@ -84,15 +92,6 @@ impl TrustState {
         }
     }
 
-    /// The root anchor that verified the manifest, when one did.
-    pub fn root_key_id(&self) -> Option<&str> {
-        match self {
-            TrustState::Production { root_key_id, .. }
-            | TrustState::DemonstrationCustody { root_key_id, .. } => Some(root_key_id),
-            TrustState::NoTrustedManifest(_) => None,
-        }
-    }
-
     /// The custody provenance of the anchor that verified the manifest, when one did.
     ///
     /// KNOWN LIMIT, stated rather than hidden: the `Production` variant does not CARRY its anchor's
@@ -101,7 +100,8 @@ impl TrustState {
     /// flips that line, an install-minted root also reaches `Production` and this arm would misname
     /// it — so the variant has to grow the field in the same change that flips the line. (It did not
     /// grow it here because the shape is destructured in the Windows kit, which this slice leaves
-    /// alone.) Nothing outside this file's tests calls this method today.
+    /// alone.) No non-test code calls this method today: its callers are this file's tests and one
+    /// in `broker/src/manifest_resolver.rs`.
     pub fn root_provenance(&self) -> Option<RootProvenance> {
         match self {
             TrustState::Production { .. } => Some(RootProvenance::External),
@@ -111,19 +111,6 @@ impl TrustState {
     }
 }
 
-/// Resolve the production trust state.
-///
-/// `manifest` is the provisioned key manifest; `verified_root` is the [`VerifiedManifestRoot`] that
-/// `key_manifest::verify_manifest_anchored` issued for THAT manifest. Both are required: a manifest with
-/// no accompanying token is `NoTrustedManifest`, because "some root signature verified somewhere" is not
-/// an input this function can act on — it has to know WHICH anchor, and the token is the only thing that
-/// can say so without the caller simply asserting it. The caller must still have run
-/// `check_and_advance` (anti-rollback) itself; that is orthogonal to custody and not represented here.
-///
-/// `signer_key_id`/`protocol` come from the already-verified envelope (§7), never from the renderer.
-/// `envelope_verifying_key_hex` is the raw lowercase hex of the 32-byte Ed25519 public key the §7
-/// `verify_and_accept` actually verified the envelope under; the resolved manifest key's
-/// `public_key_hex` MUST equal it before any trusted verdict is rendered.
 /// Lowercase hex of the 32-byte Ed25519 public key the chain actually verified under. Callers pass
 /// the bytes they handed to `governed_verification::verify_and_accept` as
 /// `PinnedKeys::isolated_signer_public_key`.
@@ -144,6 +131,24 @@ pub fn verifying_key_hex(public_key: &[u8; 32]) -> String {
     out
 }
 
+/// Resolve the production trust state.
+///
+/// `manifest` is the provisioned key manifest; `verified_root` is the [`VerifiedManifestRoot`] that
+/// `key_manifest::verify_manifest_anchored` issued for THAT manifest. Both are required: a manifest with
+/// no accompanying token is `NoTrustedManifest`, because "some root signature verified somewhere" is not
+/// an input this function can act on — it has to know WHICH anchor, and the token is the only thing that
+/// can say so without the caller simply asserting it.
+///
+/// Anti-rollback is NOT checked here: it is the caller's, before this call, and is orthogonal to
+/// custody. `key_manifest::check_and_advance` alone is only the comparison, and a caller that drops
+/// the floor it returns has run no control; `key_manifest::check_and_persist`, against a floor read
+/// from durable storage, is the form that module's docs say to prefer (the broker's
+/// `manifest_resolver` uses it).
+///
+/// `signer_key_id`/`protocol` come from the already-verified envelope (§7), never from the renderer.
+/// `envelope_verifying_key_hex` is the raw lowercase hex of the 32-byte Ed25519 public key the §7
+/// `verify_and_accept` actually verified the envelope under; the resolved manifest key's
+/// `public_key_hex` MUST equal it before any trusted verdict is rendered.
 pub fn resolve_trust_state(
     manifest: Option<&KeyManifest>,
     verified_root: Option<&VerifiedManifestRoot>,

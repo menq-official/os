@@ -202,8 +202,10 @@ pub enum Wave3aTrustState {
 /// **Fields are private and there is no public constructor.** Only an in-crate
 /// validated signed-manifest resolver (Wave 3b) may mint one, so a caller can never
 /// pair an arbitrary `public_key`/`trust_class` with a chosen `key_id` and thereby
-/// (e.g.) render a production receipt as development-untrusted. Until that resolver
-/// exists, only this crate's tests build fixtures via the private fields.
+/// (e.g.) render a production receipt as development-untrusted. That resolver's mint is
+/// `ResolvedManifestKey::manifest_resolved`, `pub(crate)`; the `#[cfg(test)]` `for_test`
+/// below is the fixture builder for this crate's other test modules, and this module's own
+/// tests build fixtures via the private fields.
 #[derive(Clone, Copy)]
 pub struct ResolvedManifestKey<'a> {
     key_id: &'a str,
@@ -585,9 +587,6 @@ impl BoundReceipt {
         }
     }
 
-    /// The signed `trust_class` of the key that verified this receipt.
-    pub fn trust_class(&self) -> TrustClass { self.trust_class }
-
     /// The canonical envelope bytes, exactly as decoded and verified. Persist these
     /// unchanged (never a re-serialization) so the record stays re-verifiable (§4).
     pub fn canonical_bytes(&self) -> &[u8] { &self.canonical_bytes }
@@ -596,9 +595,6 @@ impl BoundReceipt {
 
     pub fn key_id(&self) -> &str { field(&self.fields, "key_id") }
     pub fn receipt_id(&self) -> &str { field(&self.fields, "receipt_id") }
-    pub fn decision(&self) -> &str { field(&self.fields, "decision") }
-    pub fn output_sha256(&self) -> &str { field(&self.fields, "output_sha256") }
-    pub fn request_nonce(&self) -> &str { field(&self.fields, "request_nonce") }
     pub fn requested_at(&self) -> &str { field(&self.fields, "requested_at") }
     pub fn completed_at(&self) -> &str { field(&self.fields, "completed_at") }
 }
@@ -881,7 +877,7 @@ mod tests {
             .unwrap()
             .bind(&expected(), OUTPUT)
             .unwrap();
-        assert_eq!(bound.decision(), "completed");
+        assert_eq!(field(&bound.fields, "decision"), "completed");
         assert_eq!(bound.resolve_3a(), Wave3aTrustState::DevelopmentUntrusted);
         // The stored bytes are exactly what was signed.
         assert_eq!(bound.canonical_bytes(), jcs_bytes(&valid_fields()).as_slice());
@@ -1435,6 +1431,12 @@ mod tests {
         // quotes, at the boundary 2^53 - 1. A float round-trip is the failure this pins —
         // 9007199254740991 becoming 9.007199254740991e15 hashes differently on the two sides while
         // both still "serialise the same number".
+        //
+        // What this arm reaches: `serde_json::to_vec` over a map built HERE. It pins the library's
+        // `i64` formatting and the literal shared with the Python half; it calls no function of
+        // this crate that writes a `_ms` field (the one that does is
+        // `governed_verification::ReceiptEnvelope::payload_jcs`, through `Number::from`),
+        // so a production path that went through `f64` would not turn it red.
         let mut ms: BTreeMap<&str, i64> = BTreeMap::new();
         ms.insert("challenge_accepted_at_ms", 1_700_000_000_000);
         ms.insert("completed_at", (1i64 << 53) - 1);
@@ -1486,15 +1488,7 @@ mod tests {
         // property does not exist yet. A source-reading test fails the moment one is added, which is
         // the only moment that matters.
         let src = include_str!("receipt.rs");
-        let start = src
-            .find("\nimpl Parsed {\n")
-            .expect("NM-SCOPE-06: the `impl Parsed` block moved or was renamed")
-            + 1;
-        let body = &src[start..];
-        let end = body
-            .find("\n}\n")
-            .expect("NM-SCOPE-06: could not find the end of the `impl Parsed` block");
-        let block = &body[..end];
+        let block = nm_scope_06_inherent_block(src);
 
         // EVERY `fn` in the block, whatever its visibility. This used to keep only lines starting
         // `pub fn `, so `pub(crate) fn fields(&self)` — which hands the unsigned fields to every
@@ -1517,22 +1511,109 @@ mod tests {
             "NM-SCOPE-06: `impl Parsed` must define ONLY key_id and verify before verification; \
              found {exposed:?}. An accessor here hands a caller an unsigned field as if it were a fact."
         );
-        // ...and there is exactly ONE such block to slice. A second inherent `impl Parsed`, or a
-        // generic one, would carry its accessors past a test that reads only the first.
-        let inherent_blocks = src
-            .lines()
-            .filter(|l| {
-                let l = l.trim_start();
-                (l.starts_with("impl Parsed") || l.starts_with("impl<")) && l.contains(" Parsed")
-                    && !l.contains(" for ")
-            })
-            .count();
+        // ...and that block is the only `impl` on `Parsed` besides the redacted `Debug`. A second
+        // inherent block, a generic one, or a TRAIT impl would carry an accessor past a test that
+        // reads only the first: `impl Leak for Parsed { fn fields(&self) .. }` hands out the unsigned
+        // fields just as well, and this count used to skip every line containing ` for `.
         assert_eq!(
-            inherent_blocks, 1,
-            "NM-SCOPE-06: there must be exactly one inherent `impl Parsed` block"
+            nm_scope_06_impls_on_parsed(src),
+            vec!["impl fmt::Debug for Parsed", "impl Parsed"],
+            "NM-SCOPE-06: `Parsed` must carry exactly its redacted Debug and one inherent impl"
         );
         // The block really was sliced -- otherwise an empty slice would satisfy an empty expectation.
         assert!(block.contains("fn verify("), "NM-SCOPE-06: the sliced block is not the impl");
+    }
+
+    /// The body of the one inherent `impl Parsed` block in `src`. Line endings are normalised
+    /// first: `.gitattributes` does not pin `*.rs` to LF, and on a CRLF checkout `include_str!`
+    /// hands back `\r\n`, where the `\n`-anchored searches below found nothing and the test
+    /// panicked instead of reading the block.
+    fn nm_scope_06_inherent_block(src: &str) -> String {
+        let src = src.replace("\r\n", "\n");
+        let start = src
+            .find("\nimpl Parsed {\n")
+            .expect("NM-SCOPE-06: the `impl Parsed` block moved or was renamed")
+            + 1;
+        let body = &src[start..];
+        let end = body
+            .find("\n}\n")
+            .expect("NM-SCOPE-06: could not find the end of the `impl Parsed` block");
+        body[..end].to_string()
+    }
+
+    /// The header of every `impl` in `src` whose implementing type is `Parsed` — inherent, generic
+    /// or a trait's — in source order, without the opening brace.
+    fn nm_scope_06_impls_on_parsed(src: &str) -> Vec<String> {
+        src.lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("impl ") || l.starts_with("impl<"))
+            .map(|l| l.split('{').next().unwrap_or(l).trim())
+            .filter(|header| {
+                // Past `impl` and its generic parameters, if any.
+                let mut rest = &header["impl".len()..];
+                if rest.starts_with('<') {
+                    let mut depth = 0usize;
+                    let mut close = rest.len();
+                    for (i, c) in rest.char_indices() {
+                        match c {
+                            '<' => depth += 1,
+                            '>' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    close = i + 1;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    rest = &rest[close..];
+                }
+                // The implementing type: after ` for ` in a trait impl, else what is left.
+                let target = rest.split_once(" for ").map_or(rest, |(_, t)| t).trim();
+                let name = target.split(['<', ' ']).next().unwrap_or("");
+                name.rsplit("::").next() == Some("Parsed")
+            })
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn nm_scope_06_reads_its_block_on_a_crlf_checkout() {
+        let lf = include_str!("receipt.rs").replace("\r\n", "\n");
+        let crlf = lf.replace('\n', "\r\n");
+        assert!(crlf.contains("\r\nimpl Parsed {\r\n"), "the fixture is not CRLF");
+        let block = nm_scope_06_inherent_block(&crlf);
+        assert!(block.contains("fn verify("), "the CRLF block is not the impl: {block}");
+        assert_eq!(block, nm_scope_06_inherent_block(&lf), "CRLF and LF must read the same block");
+    }
+
+    #[test]
+    fn nm_scope_06_counts_every_impl_whose_type_is_parsed() {
+        let src = concat!(
+            "impl fmt::Debug for Parsed {\n}\n",
+            "impl Parsed {\n}\n",
+            "impl Leak for Parsed {\n    fn fields(&self) {}\n}\n",
+            "    impl<'a> Peek<'a> for Parsed {\n}\n",
+            "impl<T: Into<String>> Parsed {\n}\n",
+            "impl crate::Leak for crate::receipt::Parsed where Self: Sized {\n}\n",
+            // Not `Parsed`: another type, a type that merely starts with the name, and a trait
+            // that only MENTIONS it.
+            "impl fmt::Debug for Verified {\n}\n",
+            "impl ParsedThing {\n}\n",
+            "impl From<Parsed> for Verified {\n}\n",
+        );
+        assert_eq!(
+            nm_scope_06_impls_on_parsed(src),
+            vec![
+                "impl fmt::Debug for Parsed",
+                "impl Parsed",
+                "impl Leak for Parsed",
+                "impl<'a> Peek<'a> for Parsed",
+                "impl<T: Into<String>> Parsed",
+                "impl crate::Leak for crate::receipt::Parsed where Self: Sized",
+            ]
+        );
     }
 
 }
