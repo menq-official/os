@@ -2,13 +2,13 @@
 - **Scope:** Direct Chat (Gev + Bro), Group Chat rooms, the message lifecycle as UI steps, Bro's five room modes as visible behaviors, per-flow states, and the chat safety law. Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [GROUP_CHAT.md](GROUP_CHAT.md), [USER_FLOWS.md](USER_FLOWS.md), [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md), [INFORMATION_ARCHITECTURE.md](INFORMATION_ARCHITECTURE.md), [NAVIGATION.md](NAVIGATION.md), [WORKSPACES.md](WORKSPACES.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02 and 2026-10-08.)*
 
 # BroPS Chat Flows
 
 Status: Draft canonical
 
-This document specifies what the user actually sees and does. It is concrete and step-by-step. Every status name, lifecycle, and approval level used here is the one defined in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md) and MUST NOT drift. Agent statuses are `Offline, Idle, Observing, Thinking, Waiting approval, Working, Blocked, Review, Failed, Completed`. Bro operating modes are `Answer, Plan, Execute, Review, Coordinate, Recovery`. Approval levels are `A0, A1, A2, A3`. The message lifecycle is `Draft → Sent → Routed → Acknowledged → Working → Result posted → Evidence attached → Accepted | Reopened`.
+This document specifies what the user actually sees and does. It is concrete and step-by-step. Every status name, operating mode, command lifecycle and approval level used here is the one defined in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md) and MUST NOT drift; the message lifecycle is the one defined under "Message lifecycle" in [GROUP_CHAT.md](GROUP_CHAT.md). *(Until 2026-10-14 this sentence credited every lifecycle to AI_RUNTIME.md, which does not define the message lifecycle: the words `Routed` and `Acknowledged` are not in that file.)* Agent statuses are `Offline, Idle, Observing, Thinking, Waiting approval, Working, Blocked, Review, Failed, Completed`. Bro operating modes are `Answer, Plan, Execute, Review, Coordinate, Recovery`. Approval levels are `A0, A1, A2, A3`. The message lifecycle is `Draft → Sent → Routed → Acknowledged → Working → Result posted → Evidence attached → Accepted | Reopened`.
 
 ---
 
@@ -51,7 +51,7 @@ Bro always names the mode it is operating in so Gev is never guessing.
   - A2/A3 steps pause at `Waiting approval` and render an inline approval gate (see §5.4). Execution resumes only on explicit approval.
 - **Review / Coordinate / Recovery** appear as labeled cards when Bro is verifying output, fanning work to specialists, or recovering from a failure. Each is explicitly named.
 
-Completion is reported only when execution evidence and verification both exist. Bro attaches evidence (commit SHA, file checksum, test output, screenshot, or state readback) to the result before claiming done.
+Completion is reported only when execution evidence and verification both exist. Bro attaches evidence — of the kinds listed under "Evidence" in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md) — to the result before claiming done. *(Until 2026-10-14 this sentence restated that list without its API response identifier.)*
 
 ### 1.5 Create a work object from a message
 
@@ -83,7 +83,7 @@ Group Chat is a first-class operating workspace where humans and agents reason, 
 ### 2.2 Invite humans and agents
 
 1. Gev opens the **Members** panel in the right pane and clicks **Add**.
-2. Gev invites humans (future collaborators, project- or room-scoped) and agents from the initial specialist set (Lens, Lezu, Forge, Tensor, Reviz, Mason, Pixel, Grid, Probe, Ops, Vault, Flow, Archi, Sigma, Steward, Pocket, Shield, Sentry, Hawk, Relay, Compass, Strat, Closer).
+2. Gev invites humans (future collaborators, project- or room-scoped) and agents from the initial specialist set — the names under "Initial specialist set" in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md), which is the one place they are listed. *(Until 2026-10-14 the twenty-three names were copied here.)*
 3. For each agent Gev sets a **response control**: respond only when mentioned, respond when domain is relevant, observe silently, propose without executing, or execute only within pre-approved scope.
 4. Each member row shows role and permissions. Agents show a live status chip. Inviting a member emits an activity event; nothing about membership is hidden.
 
@@ -93,6 +93,7 @@ Group Chat is a first-class operating workspace where humans and agents reason, 
 2. Gev can mention a specific agent (`@Forge`) or address the room generally.
 3. On send, Bro acts as **Router**: if no specific agent was named, Bro assigns the question to the best-fit agent(s) and posts a short routing note ("Routed to @Forge — engineering scope"). The message reaches `Routed`.
 4. The addressed agent moves `Offline/Idle → Observing → Thinking`, then posts an acknowledgement, reaching `Acknowledged`.
+   > **Not reconciled (2026-10-14):** this step starts a mentioned `Offline` agent working, and §5.6 says a mention to an `Offline` agent queues and shows "will deliver when online." Both cannot hold, and which one is the design has not been decided. Neither is built: `src/features/GroupChat.tsx` and `src/features/Chat.tsx` have no offline branch.
 5. Bro prevents duplication: if two agents would answer the same point, Bro coordinates so only one owns it and notes the deduplication.
 
 ### 2.4 Agent live status
@@ -146,7 +147,7 @@ The lifecycle is `Draft → Sent → Routed → Acknowledged → Working → Res
 4. **Acknowledged** — the target agent posts a short "On it" acknowledgement and its status chip reads `Thinking` or `Working`. A read receipt appears for human members.
 5. **Working** — an inline progress row shows the current step, elapsed time, and a stop control; the agent chip reads `Working`. Long steps stream partial updates, never a frozen spinner alone.
 6. **Result posted** — the agent posts its result message. The result is clearly labeled as one of: completed, partially completed, blocked, failed, or not started. Vague progress claims are not allowed.
-7. **Evidence attached** — an evidence block is attached to the result (commit SHA, file checksum, API response id, test output, screenshot, or state readback). A result claiming "done" without evidence is blocked from reaching Accepted.
+7. **Evidence attached** — an evidence block is attached to the result, of the kinds listed under "Evidence" in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md). A result claiming "done" without evidence is blocked from reaching Accepted.
 8. **Accepted** — Gev clicks **Accept**; the message gets an "Accepted" badge, linked work objects update, and an event is recorded. **Reopened** — Gev clicks **Reopen** with a reason; the message returns to `Working`, the agent status reflects it, and the reason is logged.
 
 ---
@@ -183,6 +184,7 @@ Every flow renders its real state honestly. No flow hides execution state, appro
 ### 5.4 Awaiting approval
 
 - Agent chip `Waiting approval`. An inline **Approval gate** card shows: action, target, scope, expected effect, risk class, rollback path, approval level (A1–A3), and expiry. Buttons: **Approve**, **Reject**, **Request changes**. Execution stays paused. A2 needs explicit approval; A3 needs dual confirmation. Approval binds to that exact action only and expires on material change.
+  > **Not reconciled (2026-10-14):** this card and §2.5 step 4 give the range as A1–A3, while §1.4 runs A1 steps automatically and gates only A2/A3, §6 says the same, and [DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md) §2.2 gives A1 a post-hoc notice, not a gate. Whether an A1 action ever shows Approve / Reject has not been decided. The code does not settle it: an approval row's `level` is unconstrained text (`level TEXT NOT NULL`, migration `0001`), the only caller of `repo::approvals::create` outside tests is the run-step gate in `src-tauri/src/commands.rs` and it passes `A2`, escalation sets `A3`, and the first-run seed inserts a pending `A1` row (`repo::seed` in `src-tauri/core/src/repo.rs`).
 
 ### 5.5 Failed
 
@@ -204,7 +206,7 @@ A chat message never silently grants authority. Sending, mentioning, or agreeing
 
 Կարգավիճակ․ Draft canonical
 
-Այս փաստաթուղթը սահմանում է, թե իրականում ինչ է տեսնում և անում օգտատերը։ Այն կոնկրետ է և քայլ առ քայլ։ Բոլոր status-երը, lifecycle-ները և approval level-ները նույնն են, ինչ [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ում, և ՉՊԵՏՔ Է շեղվեն։ Ագենտի status-երն են՝ `Offline, Idle, Observing, Thinking, Waiting approval, Working, Blocked, Review, Failed, Completed`։ Bro-ի ռեժիմներն են՝ `Answer, Plan, Execute, Review, Coordinate, Recovery`։ Approval level-երն են՝ `A0, A1, A2, A3`։ Հաղորդագրության lifecycle-ն է՝ `Draft → Sent → Routed → Acknowledged → Working → Result posted → Evidence attached → Accepted | Reopened`։
+Այս փաստաթուղթը սահմանում է, թե իրականում ինչ է տեսնում և անում օգտատերը։ Այն կոնկրետ է և քայլ առ քայլ։ Բոլոր status-երը, ռեժիմները, command lifecycle-ը և approval level-ները նույնն են, ինչ [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ում, և ՉՊԵՏՔ Է շեղվեն. հաղորդագրության lifecycle-ը [GROUP_CHAT.md](GROUP_CHAT.md)-ի «Message lifecycle» բաժնում սահմանվածն ա։ *(Մինչև 2026-10-14 այս նախադասությունը բոլոր lifecycle-ները վերագրում էր AI_RUNTIME.md-ին, որը հաղորդագրության lifecycle-ը չի սահմանում՝ `Routed` ու `Acknowledged` բառերը այդ ֆայլում չկան։)* Ագենտի status-երն են՝ `Offline, Idle, Observing, Thinking, Waiting approval, Working, Blocked, Review, Failed, Completed`։ Bro-ի ռեժիմներն են՝ `Answer, Plan, Execute, Review, Coordinate, Recovery`։ Approval level-երն են՝ `A0, A1, A2, A3`։ Հաղորդագրության lifecycle-ն է՝ `Draft → Sent → Routed → Acknowledged → Working → Result posted → Evidence attached → Accepted | Reopened`։
 
 ---
 
@@ -247,7 +249,7 @@ Bro-ն միշտ անվանում է իր ռեժիմը, որպեսզի Gev-ը ե�
   - A2/A3 քայլերը կանգ են առնում `Waiting approval`-ում և ցույց տալիս inline approval gate (տես §5.4)։ Կատարումը վերսկսվում է միայն բացահայտ approval-ից հետո։
 - **Review / Coordinate / Recovery** հայտնվում են որպես անվանված card-եր, երբ Bro-ն ստուգում է արդյունքը, աշխատանք է բաժանում specialist-ներին կամ վերականգնվում ձախողումից։ Յուրաքանչյուրը բացահայտ անվանված է։
 
-Ավարտը հայտարարվում է միայն կատարման ապացույցի և ստուգման առկայության դեպքում։ Bro-ն արդյունքին կցում է evidence (commit SHA, ֆայլի checksum, թեստի արդյունք, screenshot կամ վիճակի վերահաստատում)՝ նախքան «done» ասելը։
+Ավարտը հայտարարվում է միայն կատարման ապացույցի և ստուգման առկայության դեպքում։ Bro-ն արդյունքին կցում է evidence՝ [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի «Evidence» բաժնում թվարկված տեսակներից, նախքան «done» ասելը։ *(Մինչև 2026-10-14 այս նախադասությունը վերաշարադրում էր այդ ցանկը առանց API response ID-ի։)*
 
 ### 1.5 Հաղորդագրությունից work object ստեղծել
 
@@ -279,7 +281,7 @@ Group Chat-ը առաջնակարգ աշխատանքային տարածք է, ո�
 ### 2.2 Հրավիրել մարդկանց և ագենտներ
 
 1. Gev-ը աջ վահանակում բացում է **Members** և սեղմում **Add**։
-2. Gev-ը հրավիրում է մարդկանց (ապագա collaborator-ներ, project/room-scoped) և ագենտներ սկզբնական մասնագետների հավաքածուից (Lens, Lezu, Forge, Tensor, Reviz, Mason, Pixel, Grid, Probe, Ops, Vault, Flow, Archi, Sigma, Steward, Pocket, Shield, Sentry, Hawk, Relay, Compass, Strat, Closer)։
+2. Gev-ը հրավիրում է մարդկանց (ապագա collaborator-ներ, project/room-scoped) և ագենտներ սկզբնական մասնագետների հավաքածուից՝ [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի «Initial specialist set» բաժնի անունները, որոնք թվարկված են միայն այնտեղ։ *(Մինչև 2026-10-14 քսաներեք անունը պատճենված էր այստեղ։)*
 3. Յուրաքանչյուր ագենտի համար Gev-ը սահմանում է **response control**․ պատասխանել միայն mention-ի դեպքում, պատասխանել երբ domain-ը relevant է, դիտել լուռ, առաջարկել առանց կատարելու կամ կատարել միայն նախապես հաստատված scope-ում։
 4. Յուրաքանչյուր անդամի տողը ցույց է տալիս role-ը և permission-ները։ Ագենտները ցույց են տալիս live status chip։ Անդամ հրավիրելը ստեղծում է activity event. անդամության մեջ ոչինչ թաքցված չէ։
 
@@ -289,6 +291,7 @@ Group Chat-ը առաջնակարգ աշխատանքային տարածք է, ո�
 2. Gev-ը կարող է mention անել կոնկրետ ագենտ (`@Forge`) կամ դիմել սենյակին ընդհանուր։
 3. Ուղարկելիս Bro-ն հանդես է գալիս որպես **Router**․ եթե կոնկրետ ագենտ նշված չէ, Bro-ն հարցը հանձնարարում է լավագույն ագենտ(ներ)ին և տեղադրում կարճ routing note ("Routed to @Forge — engineering scope")։ Հաղորդագրությունը հասնում է `Routed`։
 4. Դիմված ագենտը անցնում է `Offline/Idle → Observing → Thinking`, ապա տեղադրում acknowledgement՝ հասնելով `Acknowledged`-ի։
+   > **Չհամաձայնեցված (2026-10-14)․** այս քայլը mention արված `Offline` ագենտին գործի ա դնում, իսկ §5.6-ն ասում ա, որ `Offline` ագենտին ուղղված mention-ը հերթ ա կանգնում ու ցույց տալիս "will deliver when online"։ Երկուսը միասին չեն կարող ճիշտ լինել, ու որն ա design-ը՝ որոշված չի։ Ոչ մեկը կառուցված չի՝ `src/features/GroupChat.tsx`-ն ու `src/features/Chat.tsx`-ը offline ճյուղ չունեն։
 5. Bro-ն կանխում է կրկնությունը․ եթե երկու ագենտ նույն կետին կպատասխանեին, Bro-ն համակարգում է, որ միայն մեկը տիրանա և նշում է deduplication-ը։
 
 ### 2.4 Ագենտի live status
@@ -342,7 +345,7 @@ Lifecycle-ն է՝ `Draft → Sent → Routed → Acknowledged → Working → Re
 4. **Acknowledged** — target ագենտը տեղադրում է կարճ "On it" acknowledgement, և իր status chip-ը `Thinking` կամ `Working` է։ Մարդ անդամների համար հայտնվում է read receipt։
 5. **Working** — inline progress տողը ցույց է տալիս ընթացիկ քայլը, անցած ժամանակը և stop կոճակ. ագենտ chip-ը `Working` է։ Երկար քայլերը stream են անում մասնակի update-ներ, երբեք միայն սառած spinner։
 6. **Result posted** — ագենտը տեղադրում է իր արդյունքի հաղորդագրությունը։ Արդյունքը հստակ պիտակավորված է որպես մեկը՝ completed, partially completed, blocked, failed կամ not started։ Անորոշ progress պնդումներ չեն թույլատրվում։
-7. **Evidence attached** — արդյունքին կցվում է evidence block (commit SHA, ֆայլի checksum, API response id, թեստի արդյունք, screenshot կամ վիճակի վերահաստատում)։ «Done» պնդող, բայց առանց evidence արդյունքը արգելափակվում է Accepted հասնելուց։
+7. **Evidence attached** — արդյունքին կցվում է evidence block՝ [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի «Evidence» բաժնում թվարկված տեսակներից։ «Done» պնդող, բայց առանց evidence արդյունքը արգելափակվում է Accepted հասնելուց։
 8. **Accepted** — Gev-ը սեղմում է **Accept**. հաղորդագրությունը ստանում է "Accepted" badge, կապակցված work object-երը թարմանում են, և event գրանցվում է։ **Reopened** — Gev-ը սեղմում է **Reopen**՝ պատճառով. հաղորդագրությունը վերադառնում է `Working`, ագենտի status-ը դա արտացոլում է, և պատճառը գրանցվում է։
 
 ---
@@ -379,6 +382,7 @@ Lifecycle-ն է՝ `Draft → Sent → Routed → Acknowledged → Working → Re
 ### 5.4 Approval-ի սպասում
 
 - Ագենտ chip `Waiting approval`։ Inline **Approval gate** card-ը ցույց է տալիս՝ գործողություն, target, scope, ակնկալվող ազդեցություն, ռիսկի class, rollback path, approval level (A1–A3) և expiry։ Կոճակներ՝ **Approve**, **Reject**, **Request changes**։ Կատարումը մնում է դադարեցված։ A2-ը պահանջում է բացահայտ approval. A3-ը՝ dual confirmation։ Approval-ը կապվում է միայն այդ ճշգրիտ գործողությանը և expire է լինում material change-ի դեպքում։
+  > **Չհամաձայնեցված (2026-10-14)․** այս card-ն ու §2.5-ի 4-րդ քայլը միջակայքը տալիս են A1–A3, մինչդեռ §1.4-ը A1 քայլերը ավտոմատ ա կատարում ու gate ա դնում միայն A2/A3-ի վրա, §6-ը նույնն ա ասում, ու [DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md) §2.2-ը A1-ին տալիս ա post-hoc notice, ոչ gate։ A1 գործողությունը երբևէ Approve / Reject ցույց տալի՞ս ա՝ որոշված չի։ Կոդը չի լուծում՝ approval-ի տողի `level`-ը անսահմանափակ տեքստ ա (`level TEXT NOT NULL`, migration `0001`), `repo::approvals::create`-ի միակ կանչողը թեստերից դուրս run-step gate-ն ա `src-tauri/src/commands.rs`-ում ու փոխանցում ա `A2`, escalation-ը դնում ա `A3`, իսկ first-run seed-ը մտցնում ա pending `A1` տող (`repo::seed`)։
 
 ### 5.5 Failed
 

@@ -1,6 +1,6 @@
 # BroPS — MenQ Studio Design Standard Adoption
 
-Status: canonical design dependency for `brops-v1-foundation-implementation`
+Status: canonical design dependency for the BroPS desktop application, the tree under `apps/desktop/`. *(Until 2026-10-14 this line named `brops-v1-foundation-implementation`. No branch of this repository has that name — `git branch -a --list '*foundation*'` prints nothing — and `IMPLEMENTATION_EXECUTION_HANDOFF.md` says the same in its own status line.)*
 
 ## 1. Governing rule
 
@@ -160,6 +160,8 @@ Core shared primitives should include:
 
 ## 7. Required design implementation artifacts
 
+*(2026-10-14: "the implementation branch" below is the branch named in the old status line, which is not in this repository. Read it as the implementation — the tree under `apps/desktop/`. The list is a requirement, not a record of what that tree contains.)*
+
 The implementation branch MUST contain:
 
 - imported or mirrored MenQ token source with provenance
@@ -220,4 +222,4 @@ Design compliance is GREEN only when:
 - accessibility checks pass
 - visual regression evidence exists for critical screens
 
-This file is mandatory reading together with `DESIGN_SYSTEM.md` (which absorbed `LOCALIZATION_AND_THEMES.md`; that file no longer exists), `DETAILED_UX_UI_SPEC.md`, and `IMPLEMENTATION_EXECUTION_HANDOFF.md`.
+This file is mandatory reading together with `DESIGN_SYSTEM.md` (which absorbed `LOCALIZATION_AND_THEMES.md`; that file no longer exists) and `DETAILED_UX_UI_SPEC.md`. *(Until 2026-10-14 this sentence also made `IMPLEMENTATION_EXECUTION_HANDOFF.md` mandatory. That file's own status line calls it a historical scaffold contract and says "nothing below is a present-tense instruction"; it is a record of what was asked for, not something to act on.)*

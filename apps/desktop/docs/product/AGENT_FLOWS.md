@@ -2,7 +2,7 @@
 - **Scope:** Agent gallery and profile, create/configure, assign to task or room, the delegation contract, the live-status lifecycle, pause/resume, escalation, and team grouping (Product / Architecture / Engineering / Security / Operations / Review). Grounded in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md). Trilingual product surface (HY/EN/RU).
 - **Owner:** Gev.
 - **Related:** [WORKSPACES.md](WORKSPACES.md), [USER_FLOWS.md](USER_FLOWS.md), [STATES.md](STATES.md), [WORKSPACE_FLOWS.md](WORKSPACE_FLOWS.md), [CHAT_FLOWS.md](CHAT_FLOWS.md), [PROJECT_TASK_FLOWS.md](PROJECT_TASK_FLOWS.md), [DECISION_APPROVAL_FLOWS.md](DECISION_APPROVAL_FLOWS.md), [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md).
-- **Last updated:** 2026-07-19.
+- **Last updated:** 2026-10-14. *(This line said 2026-07-19 while the file was changed on 2026-10-02.)*
 
 # BroPS Agent Flows
 
@@ -26,14 +26,14 @@ Bro is the single top-level conductor and stays accountable for integration and 
 
 - **Entry point:** Sidebar → Core → **Agents**; also from an agent mention in chat, the Agent drawer on any object, and "Assign agent" on a task or room.
 - **Primary action:** Find the right specialist and open its profile, or create/configure one.
-- **What Gev sees:** A gallery of the specialist set (Lens, Lezu, Forge, Tensor, Reviz, Mason, Pixel, Grid, Probe, Ops, Vault, Flow, Archi, Sigma, Steward, Pocket, Shield, Sentry, Hawk, Relay, Compass, Strat, Closer). Each card shows name and domain, live status chip (from the core statuses), current work if any, health, and cost. Cards can be grouped by **team** (see §7) or filtered by domain, status, availability, and permission scope.
+- **What Gev sees:** A gallery of the specialist set — the twenty-three names under "Initial specialist set" in [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md), which is the one place they are listed. *(Until 2026-10-14 the list was copied here; the note under it there says which of them the first-run seed creates.)* Each card shows name and domain, live status chip (from the core statuses), current work if any, health, and cost. Cards can be grouped by **team** (see §7) or filtered by domain, status, availability, and permission scope.
 - **States:** `loading` (skeleton cards, names kept visible), `empty` (first-run: no agents configured yet — invite to add the first; no-results vs. filtered-empty distinguished), `populated` (each card shows live status + owner of current work inline), `error` (registry load failed; retry), `offline` (cached roster labeled stale; live status shown as last-known + offline marker, configuration disabled), `permission-denied` (restricted agents visible-but-disabled with reason), `success` (create/configure reflected in the gallery). See [STATES.md](STATES.md).
 
 ---
 
 ## 2. Agent profile / Ագենտի պրոֆիլ
 
-Opening a card opens the profile — the full, honest picture of one specialist. It renders the required agent profile from [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md) plus three fields that list does not carry — Provider / model, Budget and Run history:
+Opening a card opens the profile — the full, honest picture of one specialist. It renders the required agent profile from [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md), less one field and plus four that list does not carry — Provider / model, Permissions, Budget and Run history. That list's `Approval requirements` appears below inside Permissions, as the approval boundary. Its `Output contract` has no bullet below. *(Until 2026-10-14 this sentence said "plus three fields" and did not say that Output contract is missing. Whether the profile shows the output contract is not decided by this note; §3 below still requires it when the contract is defined.)*
 
 - **Identity & domain** — name, domain, mission.
 - **Capabilities** — what it can do.
@@ -145,14 +145,14 @@ Bro-ն միակ top-level conductor-ն է և մնում է պատասխանատ�
 
 - **Մուտքի կետ․** Sidebar → Core → **Agents**; նաև chat-ի agent mention-ից, ցանկացած object-ի Agent drawer-ից և task/room-ի «Assign agent»-ից։
 - **Հիմնական գործողություն․** Գտնել ճիշտ specialist-ին և բացել իր պրոֆիլը, կամ ստեղծել/կարգավորել մեկը։
-- **Ինչ է տեսնում Gev-ը․** Specialist set-ի պատկերասրահ (Lens, Lezu, Forge, Tensor, Reviz, Mason, Pixel, Grid, Probe, Ops, Vault, Flow, Archi, Sigma, Steward, Pocket, Shield, Sentry, Hawk, Relay, Compass, Strat, Closer)։ Ամեն card ցույց է տալիս անուն և domain, live status chip (հիմնական status-երից), ընթացիկ աշխատանք եթե կա, health և cost։ Card-երը կարող են խմբավորվել ըստ **team**-ի (տես §7) կամ filter լինել ըստ domain, status, availability և permission scope-ի։
+- **Ինչ է տեսնում Gev-ը․** Specialist set-ի պատկերասրահ՝ [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի «Initial specialist set» բաժնի քսաներեք անունը, որոնք թվարկված են միայն այնտեղ։ *(Մինչև 2026-10-14 ցանկը պատճենված էր այստեղ. այնտեղի ցանկի տակի նշումն ասում ա, թե դրանցից որոնք ա ստեղծում first-run seed-ը։)* Ամեն card ցույց է տալիս անուն և domain, live status chip (հիմնական status-երից), ընթացիկ աշխատանք եթե կա, health և cost։ Card-երը կարող են խմբավորվել ըստ **team**-ի (տես §7) կամ filter լինել ըստ domain, status, availability և permission scope-ի։
 - **Վիճակներ․** `loading` (skeleton card-եր, անունները տեսանելի), `empty` (first-run՝ դեռ ագենտ չկա — հրավեր ավելացնել առաջինը; no-results vs. filtered-empty տարբերվող), `populated` (ամեն card ցույց է տալիս live status + ընթացիկ աշխատանքի owner inline), `error` (registry load ձախողվեց; retry), `offline` (cached roster՝ stale; status-ը որպես last-known + offline marker, configuration անջատված), `permission-denied` (restricted ագենտները՝ տեսանելի-բայց-անջատված պատճառով), `success` (create/configure արտացոլված)։ Տես [STATES.md](STATES.md)։
 
 ---
 
 ## 2. Ագենտի պրոֆիլ
 
-Card բացելը բացում է պրոֆիլը՝ մեկ specialist-ի ամբողջական, ազնիվ պատկերը։ Այն ցուցադրում է [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի պարտադիր պրոֆիլը՝ գումարած երեք դաշտ, որ այդ ցանկում չկան (Provider / model, Budget, Run history)․
+Card բացելը բացում է պրոֆիլը՝ մեկ specialist-ի ամբողջական, ազնիվ պատկերը։ Այն ցուցադրում է [../architecture/AI_RUNTIME.md](../architecture/AI_RUNTIME.md)-ի պարտադիր պրոֆիլը՝ առանց մեկ դաշտի ու գումարած չորս դաշտ, որ այդ ցանկում չկան (Provider / model, Permissions, Budget, Run history)։ Այդ ցանկի `Approval requirements`-ը ներքևում Permissions-ի ներսում ա՝ որպես approval boundary։ Նրա `Output contract`-ը ներքևում կետ չունի։ *(Մինչև 2026-10-14 այս նախադասությունն ասում էր «գումարած երեք դաշտ» ու չէր ասում, որ Output contract-ը բացակայում ա։ Պրոֆիլը output contract-ը ցույց տալի՞ս ա, թե ոչ՝ այս նշումը չի որոշում. ներքևի §3-ը այն դեռ պահանջում ա contract-ը սահմանելիս։)*
 
 - **Identity & domain** — անուն, domain, mission։
 - **Capabilities** — ինչ կարող է անել։

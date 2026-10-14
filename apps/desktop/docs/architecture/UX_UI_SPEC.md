@@ -35,4 +35,4 @@ Analytics: KPIs, costs, latency, success/error rates, agent and workspace breakd
 Settings: profile, languages, themes, providers, storage, security, backup and accessibility.
 
 ## Motion and accessibility
-Transitions 160-240ms; data visualization 600-900ms; KPI count-up ~800ms. Respect reduced motion. WCAG-oriented contrast, visible focus, full keyboard navigation and screen-reader labels are required.
+Motion timings are the three in the Motion section of [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) and are not restated here. (Until 2026-10-14 this line restated them as "Transitions 160-240ms; data visualization 600-900ms; KPI count-up ~800ms", which gave the 600–900ms band a different name from the one DESIGN_SYSTEM.md gives it, "Data entry animation". In the code the first band is two tokens, `--menq-motion-fast: 160ms` and `--menq-motion-med: 240ms` in `src/theme/tokens.css`; that file has no token for the longer band, and the one custom property inside it is `--enter: 640ms` in `src/theme/aios.css`.) Respect reduced motion. WCAG-oriented contrast, visible focus, full keyboard navigation and screen-reader labels are required.

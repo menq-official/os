@@ -5,16 +5,16 @@
 > `config/canon-budget.json` holds it to 8500 bytes; over that, the wall accepts only an edit that
 > shrinks it.
 
-**Active branch:** `ck-m114` — `main` @ `d5917f4`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
+**Active branch:** `ck-m115` — `main` @ `24ea048`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #484 · branch `ck-m114`** (base `main`, tip `d5917f4`, task T-145).
+> **⏭️ CURRENT ACTIVE: PR #485 · branch `ck-m115`** (base `main`, tip `24ea048`, task T-145).
 >
-> cockpit read, audit reports and cockpit documents
+> cockpit read, specification documents group
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
 
-**OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 863 closed.
+**OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 883 closed.
 
 **Next: T-020's FW-1 correction MERGED as `#219` (`2a50081`) and is NOT approved.** B1-B7 and C1, C2,
 C4, C6, C7 are done and measured — the full account and the B/C list live only in `#219`'s body;
