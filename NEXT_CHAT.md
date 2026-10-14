@@ -5,16 +5,16 @@
 > `config/canon-budget.json` holds it to 8500 bytes; over that, the wall accepts only an edit that
 > shrinks it.
 
-**Active branch:** `ck-m79` — `main` @ `5049568`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
+**Active branch:** `ck-m81` — `main` @ `cb53347`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #467 · branch `ck-m79`** (base `main`, tip `5049568`, task T-145).
+> **⏭️ CURRENT ACTIVE: PR #468 · branch `ck-m81`** (base `main`, tip `cb53347`, task T-145).
 >
-> cockpit read, delegation models and source guards group
+> cockpit read, receipt store group
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-e3fc507.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
 
-**OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 621 closed.
+**OWNER 2g, 2h:** five of six commands granted; self-test on Linux. **T-169:** design REJECTED. **Repeated facts:** change the source, run `tools/sync_facts.py --write` (the kit's file) ([how](tools/SYNC_FACTS.md)); `T-171`: OS follows MenQ Standard 2.1.0 (`menq-standard/`). **T-145:** 628 closed.
 
 **Next: T-020's FW-1 correction MERGED as `#219` (`2a50081`) and is NOT approved.** B1-B7 and C1, C2,
 C4, C6, C7 are done and measured — the full account and the B/C list live only in `#219`'s body;
@@ -51,7 +51,7 @@ Run these. The numbers below have been wrong in every audit round so far.
 
 ```bash
 cd engine && BRO_ENV=ci python3 -m unittest discover -s tests    # 2741 OK; skips are per-env
-cd apps/desktop/src-tauri && cargo test --workspace              # 1653 passed
+cd apps/desktop/src-tauri && cargo test --workspace              # 1655 passed
 cd apps/desktop && npm ci && npm run typecheck && npm test # 1357 tests / 88 files, + test:a11y
 python3 tools/check_canon_budget.py       # the read set fits one context
 python3 tools/check_contrast.py           # 98 text pairs clear WCAG AA in both themes

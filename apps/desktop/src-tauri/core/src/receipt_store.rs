@@ -17,6 +17,14 @@
 //! - A `blocked` attempt never becomes a `messages` row (enforced again in the schema).
 //! - Wave 3a never yields `trusted_verified`: a production-class key resolves to
 //!   `Blocked` here, so [`ReceiptOutcome`] has no "Verified" variant.
+//!
+//! ## What reaches the accept branch today: tests only
+//! An accept (a `messages` row, `development_untrusted`, `development_untrusted_held`) needs a
+//! key of `TrustClass::Development`. The one non-test mint, `ResolvedManifestKey::
+//! manifest_resolved`, is called once, by `crate::manifest_authority`, with
+//! `TrustClass::Production` — which the bullet above blocks — and the shipped call sites (both
+//! in `run_governed_turn`, `src/commands.rs`) pass [`NoTrustedManifest`]. A Development key is
+//! built only by the `#[cfg(test)]` `for_test`, so no shipping path ends in an accept.
 
 use crate::domain::{CoreError, CoreResult};
 use crate::receipt::{
@@ -454,8 +462,9 @@ fn record(
                                     // BrokerContext.author; when the governed path goes live (see
                                     // win-live/WIRING_LIVE_TRUST.md) this Wave-3a accept must likewise take
                                     // the author from the turn's broker/desktop state (§4.6), NOT the
-                                    // renderer. Threading it is blocked only by the 4 copy-pasted governed
-                                    // blocks in commands.rs — do it as part of the wiring, with a test.
+                                    // renderer. `GovernedTurn` carries no author today; commands.rs has one
+                                    // governed pipeline (`run_governed_turn`), not four copies, so that is
+                                    // the one place to thread it from — as part of the wiring, with a test.
                                     author: "agent".to_string(),
                                     body,
                                 },
@@ -698,8 +707,16 @@ fn receipt_id_seen(conn: &Connection, receipt_id: &str) -> CoreResult<bool> {
     Ok(seen)
 }
 
-/// Freshness / skew on BOTH timestamps (Architect fix 4). `requested`/`completed` are
-/// the receipt's ms-integer strings (already validated numeric during decode).
+/// Freshness / skew (Architect fix 4). `requested`/`completed` are the receipt's ms-integer
+/// strings. Its one caller passes a `BoundReceipt`'s, so three arms here repeat an earlier
+/// refusal and cannot fire from it — defence in depth, not a second gate: the two "not a
+/// numeric timestamp" arms (`parse_strict` refused that) and "requested_at is after
+/// completed_at" (`bind` refused that as `TimeOrder`).
+///
+/// The future limit is tested on both timestamps. The stale limit decides on `requested_at`
+/// alone: past the order check and the `requested < stale_limit` return, `completed >=
+/// requested >= stale_limit`, so the last arm ("completed_at is older than the freshness
+/// window") is unreachable whatever the caller passes.
 fn check_freshness(
     requested: &str,
     completed: &str,
@@ -1089,7 +1106,7 @@ mod tests {
             messages_before,
             "held accept must not post a message"
         );
-        // Evidence attempt is development_untrusted with a NULL message_id.
+        // Evidence attempt is development_untrusted_held with a NULL message_id.
         let (outcome, linked): (String, Option<String>) = conn
             .query_row(
                 "SELECT outcome, message_id FROM receipt_verification_attempts WHERE id = ?1",
@@ -1352,9 +1369,20 @@ mod tests {
         // A perfectly valid receipt under a PRODUCTION key still blocks in 3a.
         let out = vrec(&conn, &fx, &env, &sig, now, TrustClass::Production).unwrap();
 
-        assert!(matches!(out, ReceiptOutcome::Blocked { .. }), "3a never renders production 'Verified': {out:?}");
+        // Blocked for the trust class, not for anything else about the receipt.
+        match out {
+            ReceiptOutcome::Blocked { ref error, .. } => assert_eq!(
+                error, "production trust_class is not renderable in Wave 3a",
+                "blocked for the wrong reason"
+            ),
+            other => panic!("3a never renders production 'Verified': {other:?}"),
+        }
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM messages"), 0);
         // But the nonce is still consumed (one shot) and evidence is recorded.
+        let consumed: Option<String> = conn
+            .query_row("SELECT consumed_at FROM receipt_challenges WHERE nonce = 'nonce-A'", [], |r| r.get(0))
+            .unwrap();
+        assert!(consumed.is_some(), "the nonce must be consumed on a production-class block");
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM receipt_verification_attempts WHERE outcome = 'blocked'"), 1);
     }
 
@@ -1386,6 +1414,43 @@ mod tests {
         let (e2, s2) = fut.wire_of(&fut.fields("receipt-future"));
         let out2 = vrec(&conn, &fut, &e2, &s2, now2, TrustClass::Development).unwrap();
         assert!(matches!(out2, ReceiptOutcome::Blocked { .. }), "future must block: {out2:?}");
+    }
+
+    /// R3-1253: the test above moves BOTH stamps ahead, so the `requested_at` limb answers and
+    /// the `completed_at` one was exercised by nothing — deleting it left the suite green while
+    /// a receipt completed arbitrarily far ahead was accepted. Here `requested_at` is inside the
+    /// window and only `completed_at` is past the skew limit.
+    #[test]
+    fn a_receipt_completed_beyond_the_skew_window_is_blocked_for_that_reason() {
+        let conn = db();
+        let now = 1_000_000u64;
+        let skew = FreshnessWindow::DEFAULT.future_skew_ms;
+
+        let mut fx = Fx::new(now, "nonce-ahead");
+        fx.completed = (now + skew + 1).to_string();
+        seed_turn(&conn, &fx, now);
+        let (env, sig) = fx.wire_of(&fx.fields("receipt-ahead"));
+        let out = vrec(&conn, &fx, &env, &sig, now, TrustClass::Development).unwrap();
+        match out {
+            ReceiptOutcome::Blocked { ref error, .. } => assert_eq!(
+                error, "completed_at is in the future beyond the skew window",
+                "blocked for the wrong reason"
+            ),
+            other => panic!("a receipt completed past the skew limit must Block, got {other:?}"),
+        }
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM messages"), 0);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM receipt_ids_seen"), 0);
+
+        // The limit itself is inside the window: one millisecond less is accepted.
+        let mut edge = Fx::new(now, "nonce-edge");
+        edge.completed = (now + skew).to_string();
+        seed_turn(&conn, &edge, now);
+        let (env, sig) = edge.wire_of(&edge.fields("receipt-edge"));
+        let out = vrec(&conn, &edge, &env, &sig, now, TrustClass::Development).unwrap();
+        assert!(
+            matches!(out, ReceiptOutcome::DevelopmentUntrusted { .. }),
+            "completed_at exactly at the skew limit is in the window: {out:?}"
+        );
     }
 
     // ---- missing challenge -------------------------------------------------
@@ -1437,6 +1502,35 @@ mod tests {
             .query_row("SELECT consumed_at FROM receipt_challenges WHERE nonce = 'nonce-A'", [], |r| r.get(0))
             .unwrap();
         assert!(consumed.is_some());
+    }
+
+    /// R3-1252: the test above sends the signature `"sig"` and measures the envelope column
+    /// only, so the signature-wire cap was tested by nothing — without it an arbitrarily long
+    /// signature string went into the evidence row.
+    #[test]
+    fn an_oversized_signature_wire_is_stored_capped() {
+        let conn = db();
+        let now = 1_000_000u64;
+        let fx = Fx::new(now, "nonce-SIG");
+        seed_turn(&conn, &fx, now);
+        let (env, _sig) = fx.wire_of(&fx.fields("receipt-SIG"));
+
+        let long_sig = "A".repeat(MAX_WIRE_SIGNATURE_B64 + 5_000);
+        let out = vrec(&conn, &fx, &env, &long_sig, now, TrustClass::Development).unwrap();
+
+        let attempt_id = match out {
+            ReceiptOutcome::Blocked { attempt_id, .. } => attempt_id,
+            other => panic!("expected Blocked, got {other:?}"),
+        };
+        let stored: String = conn
+            .query_row(
+                "SELECT wire_signature_b64 FROM receipt_verification_attempts WHERE id = ?1",
+                [&attempt_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.len(), MAX_WIRE_SIGNATURE_B64, "signature wire evidence must be capped");
+        assert!(long_sig.starts_with(&stored), "and is the head of what arrived");
     }
 
     // ---- crash / real-error atomicity --------------------------------------
