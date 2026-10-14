@@ -92,7 +92,7 @@ docs/SECURITY_MODEL.md; every cited engine path exists
 ```
 
 **`config/required-checks.json`** — the branch protection `main` is expected to have.
-**35 contexts** (`python3 -c "import json;print(len(json.load(open('config/required-checks.json'))['contexts']))"` → `35`).
+**36 contexts** (`python3 -c "import json;print(len(json.load(open('config/required-checks.json'))['contexts']))"` → `36`).
 
 **`config/deferred-enforcement.json`** — deferrals with a sign-off ceiling
 (`max_days_without_sign_off`).

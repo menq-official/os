@@ -70,7 +70,7 @@ No `v*` tag is compared and `release.yml` has never run. An UNSIGNED `brops-desk
 published by hand, is a DRAFT since 2026-10-08. The tag policy is the Owner's (`T-063`).
 
 **Branch protection is in force again — the repository is public (read live 2026-10-08).**
-All 35 contexts in `config/required-checks.json` are required on `main`, with `strict` and
+All 36 contexts in `config/required-checks.json` are required on `main`, with `strict` and
 `enforce_admins`; `check_repo_state.py` is GREEN. Private from 2026-10-05 it had none (`T-168`):
 on this plan a private repository carries no protection, and going private deletes the rules.
 
