@@ -949,7 +949,12 @@ def load_trusted_keys(root: pathlib.Path = ROOT,
                     f"pinned digest {bound}; an operator signature alone does not "
                     "make a superseded registry current")
         else:
-            marker = payload.get("registry_version", payload.get("issued_at_epoch"))
+            # dict.get(key, default) falls back only when the key is ABSENT; a
+            # present-but-null registry_version must still fall through to
+            # issued_at_epoch (and a valid 0 must not be discarded by `or`).
+            marker = payload.get("registry_version")
+            if marker is None:
+                marker = payload.get("issued_at_epoch")
             if isinstance(marker, bool) or not isinstance(marker, int):
                 raise SignatureError(
                     "an anti-rollback floor is pinned but the registry carries no "
