@@ -111,8 +111,9 @@ pub const TCB_OWNER_SIDS: &[&str] = &[SID_LOCAL_SYSTEM, SID_ADMINISTRATORS];
 /// The logical artifacts a conforming Windows pin manifest MUST cover. An artifact that is not listed
 /// is never measured, so an under-specified manifest fails closed (the Linux coverage floor's rule).
 ///
-/// This is the set that actually serves a governed turn in THIS kit — the four processes plus the
-/// files that steer them. It is smaller than the Linux `TCB_REQUIRED_ARTIFACTS` because this kit has no
+/// This is the set that actually serves a governed turn in THIS kit — the five process images
+/// listed below plus the four files that steer them. It is smaller than the Linux
+/// `TCB_REQUIRED_ARTIFACTS` because this kit has no
 /// privileged setuid launcher and no separate evidence-recorder binary; naming roles that do not exist
 /// here would make the manifest describe a deployment that isn't this one.
 ///
@@ -127,7 +128,7 @@ pub const WIN_TCB_REQUIRED_ARTIFACTS: &[&str] = &[
     "trusted-verifier-broker.bin", // win_live_turn.exe (the driver/broker)
     "contained-executor.bin",      // win_executor.exe
     // ---- what steers them ----
-    "kit.config",                   // config.json — all four load it
+    "kit.config",                   // config.json — four of the five load it; win_executor does not
     "key-manifest.root-anchor",     // manifest.json
     "key-manifest.root-signature",  // manifest.sig
     "anti-rollback-floor",          // floor.json
@@ -416,7 +417,11 @@ pub fn verify_deployment_tcb(manifest_path: Option<&str>) -> Result<(), String> 
     }
 }
 
-/// Enforce the floor or terminate. The single call every Windows bin makes before it serves anything.
+/// Enforce the floor or terminate. The call the three SERVER bins make before they serve anything:
+/// `win_authority`, `win_supervisor` and `win_signer`. It is not every Windows bin's (this said it
+/// was): the driver `win_live_turn` calls [`verify_deployment_tcb`] itself and returns a blocked
+/// turn rather than exiting, `win_tcb_pin` calls it to check the manifest it has just written, and
+/// `win_executor` and `win_provision` call neither function.
 ///
 /// Exits with code 5 on refusal rather than returning, so there is no path where a caller "handles" a
 /// §2.5 failure by continuing.

@@ -21,8 +21,12 @@ use crate::crypto;
 /// The pinned PRODUCTION root key id.
 pub const ROOT_KEY_ID: &str = "brops-tcb-root-1"; // gitleaks:allow (public key-id)
 
-/// The TCB-pinned PRODUCTION root PUBLIC key hex — the ONLY root material compiled into the broker (audit
-/// condition 1). Nobody holds its private half (see the module doc). The driver pins THIS public key and refuses any manifest not signed by the corresponding private root.
+/// The TCB-pinned PRODUCTION root PUBLIC key hex — the only PRODUCTION root material compiled into this
+/// crate (audit condition 1). It is not the only root material here (this said it was): the demonstration
+/// root's public key is [`DEMO_ROOT_PUBLIC_KEY_HEX`] below, and that root's private seed is a literal in
+/// non-test code, in `proof::in_process_turn_produce`. Nobody holds the private half of THIS key (see the
+/// module doc). The driver pins THIS public key and refuses any manifest not signed by the corresponding
+/// private root.
 pub const ROOT_PUBLIC_KEY_HEX: &str =
     "3c83c2bc0e72c068824e2eebf663b6ed4cda337ff806c0b46e534aee19da0df5"; // gitleaks:allow (public key)
 

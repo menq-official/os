@@ -34,11 +34,16 @@ pub const ENVELOPE_ARTIFACT_TYPE: &str = "brops.governed-receipt-envelope.v1";
 pub use brops_core::governed_prepare::MAX_ID_LEN;
 pub use brops_core::supervisor_ledger::{LEASE_DURATION_MS, MIN_LAUNCH_REMAINING_MS};
 
-/// These three have no `brops-core` counterpart to be derived from — the challenge/pending TTLs and the
-/// completion clock-skew allowance live only in the Python principals (`challenge_authority.py`), which
-/// this crate cannot import. They are pinned against those Python constants by
+/// These three have no `brops-core` counterpart to be derived from — they live only in the Python
+/// principals, which this crate cannot import. The two TTLs are `challenge_authority.py`'s
+/// `PENDING_TTL_MS` and `MAX_CHALLENGE_TTL_MS`, and are pinned against them by
 /// `engine/tests/test_one_standard_pins.py`, which reads this file's source text; that is a weaker
 /// mechanism than the `pub use` above and is used only where the stronger one does not exist.
+///
+/// The completion clock-skew allowance is not in `challenge_authority.py` and that Python test does
+/// not name it (this comment said both). Its Python twin is the default of `SignerConfig`'s
+/// `max_future_skew_ms` parameter in `isolated_signer.py` — a default, not a module constant — and
+/// the pin is `skew_pin_tests` at the foot of this file, which reads that Python source text.
 pub const PENDING_TTL_MS: i64 = 30_000;
 pub const CHALLENGE_TTL_MS: i64 = 30_000;
 pub const COMPLETED_SKEW_MS: i64 = 60_000;
@@ -414,9 +419,13 @@ struct DerivedEvidence {
 ///
 /// That claim was not true when it was written: this function digested the `output-captured`
 /// payload with `serde_json::to_vec` while the Linux twin used JCS
-/// (`governed_supervisor_ledger.py:655`). Corrected 2026-08-14 (audit `A-05`) — both are JCS now.
-/// **Nothing enforces the claim**: no test feeds a Linux-written chain to this parser. Until one
-/// does, this sentence is a Builder's assertion, which is the shape the audit was pointing at.
+/// (`derive_evidence_from_chain` in `governed_supervisor_ledger.py`). Corrected 2026-08-14 (audit
+/// `A-05`) — both are JCS now.
+///
+/// What holds the claim down is `linux_written_chain_tests` at the foot of this file (this comment
+/// said no test fed a Linux-written chain to this parser; that module does). What it feeds is a
+/// Rust reconstruction of the Linux recorder's rule — built here with the recorder's encoder and
+/// held against `governed_recorder.rs`'s source text — not bytes a recorder run produced.
 fn derive_evidence(dir: &std::path::Path, attempt: &str) -> Option<DerivedEvidence> {
     // The attempt id reaches the filesystem. It is supervisor-minted, but the supervisor does not
     // get to assume its own inputs — a traversal here would let a caller point at any file.
@@ -425,9 +434,13 @@ fn derive_evidence(dir: &std::path::Path, attempt: &str) -> Option<DerivedEviden
     {
         return None;
     }
+    // KNOWN DEFECT (cockpit read R3-0203): the bound below is applied AFTER `std::fs::read` has
+    // loaded the whole file, so it does not bound that allocation — a chain file of any size is
+    // read into memory first and refused second. What it does bound is everything after this
+    // line: nothing over 1 MiB reaches the JSON parser.
     let raw = std::fs::read(dir.join(format!("{attempt}.evidence.json"))).ok()?;
     if raw.len() > 1 << 20 {
-        return None; // bounded: a hostile chain must not exhaust the supervisor
+        return None; // an over-size chain is refused, after the read (see above)
     }
     let chain: Value = serde_json::from_slice(&raw).ok()?;
     if chain.get("protocol").and_then(Value::as_str) != Some("brops.run-evidence-chain.v1") {
@@ -445,16 +458,25 @@ fn derive_evidence(dir: &std::path::Path, attempt: &str) -> Option<DerivedEviden
     // The event commits to its payload by digest; check that before believing the payload.
     //
     // JCS, not `serde_json::to_vec` (audit A-05, 2026-08-14). The Linux twin digests
-    // `canonical_bytes(payload)` -- JCS -- at `governed_supervisor_ledger.py:655`, while this line
-    // used plain serde serialization, so the two platforms computed the SAME document's digest by
-    // two different rules under a doc comment asserting they were byte-compatible. The canonical
-    // helper was available and in use thirty lines away, for the record and receipt documents
-    // (`:949`, `:971`).
+    // `canonical_bytes(payload)` -- JCS -- in `governed_supervisor_ledger.py`'s
+    // `derive_evidence_from_chain`, while this line used plain serde serialization, so the two
+    // platforms computed the SAME document's digest by two different rules under a doc comment
+    // asserting they were byte-compatible. The canonical helper was available and in use in this
+    // same file, for the record and receipt documents (`record_bytes` and `receipt_bytes` in
+    // `Supervisor::complete_run`).
     //
     // It failed in the safe direction -- for the payloads this chain carries the two encodings
     // agree, and a divergence refuses the turn rather than accepting a forgery -- which is exactly
     // why nothing caught it. `as_object()` yields None for a non-object payload, so a malformed
     // chain still refuses.
+    //
+    // No test in this tree can fail if this line (or the link digest below) goes back to
+    // `serde_json::to_vec` (cockpit read R3-1289). `crypto::jcs` is `serde_json::to_vec` over a
+    // `BTreeMap` of the object's entries, and a parsed `Map` is already a `BTreeMap` while
+    // serde_json's `preserve_order` feature is off -- which it is for this crate's build -- so the
+    // two calls emit the same bytes for every input. Both replacements were planted on 2026-10-14 and
+    // the crate's whole lib suite stayed green. The one thing a test here does notice is
+    // `preserve_order` being turned on: `the_parsers_rule_is_canonical_rather_than_textual`.
     if crypto::sha256_hex(&crypto::jcs(payload.as_object()?))
         != captured[0].get("payload_sha256").and_then(Value::as_str)?
     {
@@ -464,10 +486,12 @@ fn derive_evidence(dir: &std::path::Path, attempt: &str) -> Option<DerivedEviden
     // parser checked real properties of the chain -- protocol, one output-captured event, that
     // event's payload against its own digest, the counts -- and never that the events are actually
     // chained. `final_event_hash` was taken straight off the document, while being the
-    // discriminator `supervisor_ledger.rs:958-966` raises EvidenceFork on: the fork detector's
-    // identity was a field nothing bound to the events it summarises.
+    // discriminator `evidence_floor_cas_body` (`brops-core`, `supervisor_ledger.rs`) raises
+    // EvidenceFork on: the fork detector's identity was a field nothing bound to the events it
+    // summarises.
     //
-    // The rule is the recorder's own (`execution.rs:159-176`): event_hash = sha256(canonical(event))
+    // The rule is the recorder's own (`execution::build_run_evidence`):
+    // event_hash = sha256(canonical(event))
     // over the WHOLE event object -- which contains that event's own `previous_event_hash`, so
     // altering any earlier event changes every digest after it -- and `final_event_hash` is the
     // last of them. The first event claims no predecessor.
@@ -499,8 +523,10 @@ fn derive_evidence(dir: &std::path::Path, attempt: &str) -> Option<DerivedEviden
 
 /// The run-produced half of the §4.9 evidence, reported ONCE via `complete-run`.
 ///
-/// `record_handle` / `lease_handle` / `execution_receipt_handle` are NOT here: the supervisor
-/// derives and publishes those itself (F-02), so a caller cannot name them.
+/// `record_handle` / `lease_handle` / `execution_receipt_handle` are fields of this struct but
+/// are NOT in the wire's `produced` object (`COMPLETION_FIELDS`): the supervisor derives and
+/// publishes those itself (F-02), so a caller cannot name them. The four `evidence_*` fields are
+/// likewise filled from the chain the supervisor read, not from the wire.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Completion {
     output_handle: String,
@@ -1149,6 +1175,13 @@ impl Supervisor {
         }
 
         // ACCEPTED — only now do the artifacts become visible to the signer.
+        //
+        // KNOWN DEFECT (cockpit read R3-0204): `publish` takes ANY existing path as published and
+        // never reads it, and the write is a plain `std::fs::write` to the final name, not a
+        // temporary file renamed into place. A file already at the handle whose bytes do not hash
+        // to it is therefore left as it is and reported published; `store_read` then refuses that
+        // handle by digest. Shown by
+        // `a_wrong_blob_already_at_the_handle_is_reported_published_and_left_unreadable`.
         let publish = |bytes: &[u8], handle: &str| -> bool {
             let path = self.cfg.store_dir.join(handle);
             path.exists() || std::fs::write(&path, bytes).is_ok()
@@ -1490,7 +1523,8 @@ impl Signer {
             return self.refuse_sign("timestamp_invalid");
         }
 
-        // (4) RE-DERIVE all six *_sha256 from the content-addressed store + verify the 3 chain handles.
+        // (4) RE-DERIVE all six *_sha256 from the content-addressed store; the four chain documents
+        // (`CHAIN_AGREEMENT`) are resolved and re-verified at (4b) below.
         let store = &self.cfg.store_dir;
         let derive = |handle_field: &str, missing: &str| -> Result<String, Value> {
             let h = get_str(evidence, handle_field).unwrap_or_default();
@@ -1549,9 +1583,11 @@ impl Signer {
             &requested_at.to_string(),
         );
 
-        // (4b) IDX-121: RE-VERIFY the three protected-chain documents. This was three existence
-        // checks; the signer now READS each document and requires it to agree with the attested
-        // evidence on every field they share — the same second opinion the Python signer gained.
+        // (4b) IDX-121: RE-VERIFY the four protected-chain documents `CHAIN_AGREEMENT` lists —
+        // record, lease, execution receipt, and (since the round-2 remediation) the containment
+        // report. This was three existence checks; the signer now READS each document and requires
+        // it to agree with the attested evidence on every field the table names for it — the same
+        // second opinion the Python signer gained.
         let mut recomputed = Map::new();
         recomputed.insert("request_sha256".into(), json!(request_sha256));
         for (handle_field, _, _) in CHAIN_AGREEMENT {
@@ -1794,16 +1830,6 @@ mod terminal_artifact_tests {
         })
     }
 
-    // ---- rev-30 CORRECTION: `challenge_handle` addresses the signed DOCUMENT ------------------
-
-    /// The handle is `SHA256(JCS({payload, sig}))`, NOT `SHA256(JCS(payload))`.
-    ///
-    /// rev-30 said both. Its section 3 artifact matrix, section 4.10(a0) and Appendix B's handle
-    /// matrix define the `{payload, sig}` form; section 5's summary table described the
-    /// payload-only form this server used to compute. The Architect declared section 3 normative
-    /// (docs/OWNER_ACTION_REQUIRED.md 1c) and section 5's table was corrected. Without this test the
-    /// Rust half of the correction had no executable guard at all: every consumer of the handle is
-    /// opaque to the formula, so a revert here would break nothing that runs.
     #[test]
     fn a_foreign_install_id_in_create_pending_is_refused() {
         // Re-audit B-01. A-01 pinned this on the Python authority and left this twin taking the
@@ -1835,6 +1861,16 @@ mod terminal_artifact_tests {
         assert_eq!(honest["ok"], json!(true), "{honest}");
     }
 
+    // ---- rev-30 CORRECTION: `challenge_handle` addresses the signed DOCUMENT ------------------
+
+    /// The handle is `SHA256(JCS({payload, sig}))`, NOT `SHA256(JCS(payload))`.
+    ///
+    /// rev-30 said both. Its section 3 artifact matrix, section 4.10(a0) and Appendix B's handle
+    /// matrix define the `{payload, sig}` form; section 5's summary table described the
+    /// payload-only form this server used to compute. The Architect declared section 3 normative
+    /// (docs/OWNER_ACTION_REQUIRED.md 1c) and section 5's table was corrected. Without this test the
+    /// Rust half of the correction had no executable guard at all: every consumer of the handle is
+    /// opaque to the formula, so a revert here would break nothing that runs.
     #[test]
     fn challenge_handle_addresses_the_signed_document_not_the_payload_alone() {
         let now = 1_700_000_000_000i64;
@@ -1975,10 +2011,80 @@ mod terminal_artifact_tests {
         assert_eq!(reply["recorded"], json!("created"));
         assert!(store_holds(&kit.store, "brops.governed-turn-record.v1"));
         assert!(store_holds(&kit.store, "brops.execution-receipt.v1"));
+        // The third artifact. The lease payload carries no `protocol` tag, so `store_holds` cannot
+        // see it, and the two lines above stayed green with the lease's publish deleted (cockpit
+        // read R3-1288). Asked the way the isolated signer asks instead: every handle the
+        // completion names must resolve in the store by content address, and the lease's must
+        // resolve to the exact lease bytes the supervisor kept at acceptance.
+        {
+            let accepted = kit.supervisor.accepted.lock().unwrap();
+            let a = &accepted[&attempt];
+            let c = a.completion.as_ref().expect("an accepted completion is recorded");
+            for (name, handle) in [
+                ("record", &c.record_handle),
+                ("lease", &c.lease_handle),
+                ("execution receipt", &c.execution_receipt_handle),
+            ] {
+                assert!(
+                    store_read(&kit.store, handle).is_some(),
+                    "the completion names a {name} handle the store does not hold: {handle}"
+                );
+            }
+            assert_eq!(
+                store_read(&kit.store, &c.lease_handle).as_deref(),
+                Some(a.lease_payload_bytes.as_slice()),
+                "the published lease is not the lease the supervisor issued"
+            );
+        }
         // Idempotent retry: still accepted, still exactly one record.
         assert_eq!(complete(&kit, &attempt, &output_handle, now + 10)["recorded"], json!("idempotent"));
         let _ = std::fs::remove_dir_all(&kit.store);
         let _ = std::fs::remove_dir_all(&kit.evidence);
+    }
+
+    /// **This test pins a DEFECT, not a property** (cockpit read R3-0204). `complete_run`'s
+    /// `publish` takes any existing path as published and never reads it. So a file already at
+    /// one of the three handles whose bytes do not hash to that handle — what a write cut short
+    /// leaves behind, the write being a plain `std::fs::write` to the final name — is left as it
+    /// is, the completion is reported `created`, and the handle the supervisor goes on to attest
+    /// is one `store_read` (the signer's own read) refuses.
+    ///
+    /// When `publish` is corrected this test goes red, which is the point: the last two
+    /// assertions are then the ones to turn round.
+    #[test]
+    fn a_wrong_blob_already_at_the_handle_is_reported_published_and_left_unreadable() {
+        let now = 1_700_000_000_000i64;
+        let kit = kit();
+        let attempt = lease(&kit, now);
+        // The lease handle is known from acceptance on: it is the digest of the lease bytes.
+        let lease_bytes = kit.supervisor.accepted.lock().unwrap()[&attempt].lease_payload_bytes.clone();
+        let lease_handle = crypto::sha256_hex(&lease_bytes);
+        let truncated = &lease_bytes[..lease_bytes.len() / 2];
+        std::fs::write(kit.store.join(&lease_handle), truncated).unwrap();
+        assert!(store_read(&kit.store, &lease_handle).is_none(), "the seeded blob must be a wrong one");
+
+        drive_to_executing(&kit, &attempt, now);
+        let output_handle = "ee".repeat(32);
+        write_chain(&kit, &attempt, &output_handle);
+        let reply = complete(&kit, &attempt, &output_handle, now + 10);
+
+        // The completion is accepted and names the lease handle...
+        assert_eq!(reply["ok"], json!(true), "{reply}");
+        assert_eq!(reply["recorded"], json!("created"), "{reply}");
+        let named = kit.supervisor.accepted.lock().unwrap()[&attempt]
+            .completion
+            .as_ref()
+            .expect("recorded")
+            .lease_handle
+            .clone();
+        assert_eq!(named, lease_handle);
+        // ...while the store still holds the wrong bytes under it, and refuses to serve them.
+        assert_eq!(std::fs::read(kit.store.join(&lease_handle)).unwrap(), truncated);
+        assert!(
+            store_read(&kit.store, &lease_handle).is_none(),
+            "publish repaired the blob: R3-0204 is fixed, so turn this test round"
+        );
+        cleanup(&kit);
     }
 
     #[test]
@@ -2262,14 +2368,15 @@ mod signer_chain_tests {
     const NOW: i64 = 1_700_000_000_000;
     const REQUESTED_AT: i64 = 1_699_999_000_000;
 
-    /// A store + the 29-field evidence for one coherent run, with the three chain documents built
+    /// A store + the 29-field evidence for one coherent run, with the four chain documents built
     /// so that everything agrees. Each test then perturbs exactly ONE document.
     struct Fixture {
         signer: Signer,
         store: PathBuf,
         evidence: Map<String, Value>,
         attest_seed: [u8; 32],
-        /// `record` / `lease` / `receipt` as JSON, so a test can edit one and re-publish it.
+        /// The record, lease, execution receipt and containment report as JSON, keyed by their
+        /// handle field, so a test can edit one and re-publish it.
         docs: BTreeMap<&'static str, Value>,
     }
 
@@ -2691,6 +2798,35 @@ mod evidence_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The 1 MiB bound in `derive_evidence` had no test: with it deleted the whole suite stayed
+    /// green (cockpit read R3-0203). The over-size file here is an HONEST chain padded with
+    /// trailing spaces, which a JSON parser accepts — so nothing but the bound can refuse it, and
+    /// the same chain padded to exactly the bound is the control that it would otherwise derive.
+    ///
+    /// What this does NOT show is that the supervisor is spared the allocation. It is not: the
+    /// file is read whole before its length is looked at (the KNOWN DEFECT note at the site).
+    #[test]
+    fn a_chain_file_over_the_size_bound_is_refused() {
+        const BOUND: usize = 1 << 20;
+        let dir = tmp();
+        let honest = crate::execution::build_run_evidence("att-size", &"ab".repeat(32), 42, 3);
+        assert!(honest.len() < BOUND);
+
+        let mut at_the_bound = honest.clone();
+        at_the_bound.resize(BOUND, b' ');
+        std::fs::write(dir.join("att-edge.evidence.json"), &at_the_bound).unwrap();
+        assert!(
+            derive_evidence(&dir, "att-edge").is_some(),
+            "a chain of exactly the bound must derive, or the refusal below proves nothing"
+        );
+
+        let mut over = honest;
+        over.resize(BOUND + 1, b' ');
+        std::fs::write(dir.join("att-over.evidence.json"), &over).unwrap();
+        assert!(derive_evidence(&dir, "att-over").is_none(), "one byte over the bound must refuse");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn an_attempt_id_cannot_walk_out_of_the_evidence_directory() {
         let dir = tmp();
@@ -2708,8 +2844,9 @@ mod linux_written_chain_tests {
     //! The existing tests feed the Windows writer to the Windows parser."*
     //!
     //! The gap matters because the `A-05` fix created a risk while closing one. `derive_evidence`
-    //! now digests with `crypto::jcs`, while **both** writers — `execution.rs:161` here and
-    //! `proof/src/bin/governed_recorder.rs:945` on Linux — still emit `serde_json::to_vec`. So a
+    //! now digests with `crypto::jcs`, while **both** writers — `execution::build_run_evidence` here
+    //! and `recorder` in `proof/src/bin/governed_recorder.rs` on Linux — still emit
+    //! `serde_json::to_vec`. So a
     //! divergence that used to be harmless (two writers, two readers, each self-consistent) now
     //! **refuses a genuine turn**: the supervisor would read an honest recorder's chain, recompute a
     //! different digest, and fail closed on a run nothing was wrong with. That is a liveness defect
@@ -2965,7 +3102,8 @@ mod linux_written_chain_tests {
 
         // 2. A recorder that CHAINS correctly and lies about its own payload digest. Every link
         //    derives over the lying event, so the link check and `final_event_hash` are satisfied
-        //    and only the payload-digest check at `:448` can refuse this. The obvious version of
+        //    and only `derive_evidence`'s comparison of the `output-captured` payload's digest
+        //    with the event's own `payload_sha256` can refuse this. The obvious version of
         //    this negative — edit the payload after the fact — is masked by the link check, and
         //    mutant `M4` survived against it.
         let lying = linux_written_chain_with(&out, 322, 2, Some(&"ff".repeat(32)));
@@ -3003,5 +3141,45 @@ mod linux_written_chain_tests {
             }
         }
         emit(&serde_json::from_slice(bytes).expect("valid JSON"))
+    }
+}
+
+#[cfg(test)]
+mod skew_pin_tests {
+    //! `COMPLETED_SKEW_MS` against its Python twin (cockpit read R3-1100). The constant's comment
+    //! said `engine/tests/test_one_standard_pins.py` pinned it; that test names the two TTLs only,
+    //! and with this constant set to `61_000` this crate's lib suite stayed green. The Python value
+    //! is not a module constant but the default of one constructor parameter, so the pin reads it
+    //! out of the source text — the same weaker mechanism the Python test uses in the other
+    //! direction, and it fails when either side moves.
+    //!
+    //! It pins the DEFAULT. A Python deployment that passes its own `max_future_skew_ms` is not
+    //! seen from here.
+
+    use super::*;
+
+    /// The Python isolated signer, relative to this crate's manifest directory.
+    const PYTHON_SIGNER: &str = "../../../../engine/runtime/isolated_signer.py";
+
+    #[test]
+    fn the_completion_skew_allowance_is_the_python_signers_default() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(PYTHON_SIGNER);
+        let src = std::fs::read_to_string(&p)
+            .unwrap_or_else(|e| panic!("cannot read the Python signer at {}: {e}", p.display()));
+        let head = "max_future_skew_ms: int = ";
+        let mut parts = src.split(head);
+        let (_, after, more) = (parts.next(), parts.next(), parts.next());
+        assert!(more.is_none(), "`{head}` appears more than once in the Python signer");
+        let after = after.unwrap_or_else(|| panic!("the Python signer no longer declares `{head}`"));
+        let literal: String =
+            after.chars().take_while(|c| c.is_ascii_digit() || *c == '_').collect();
+        let python: i64 = literal
+            .replace('_', "")
+            .parse()
+            .unwrap_or_else(|e| panic!("the Python default `{literal}` is not an integer: {e}"));
+        assert_eq!(
+            COMPLETED_SKEW_MS, python,
+            "the Windows signer's completion skew allowance and the Python signer's default differ"
+        );
     }
 }
