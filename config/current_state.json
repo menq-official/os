@@ -115,12 +115,12 @@
   "current_workflow_pr": {
     "number": 1,
     "branch": "migration-settle",
-    "what": "The migration settle: records main 7e21618, the first head on menq-official/os.",
-    "note": "OS moved to menq-official/os; the first pull request on the new repository settles the state",
+    "what": "Migration settle at main 7e21618.",
+    "note": "Settle on menq-official/os",
     "base": "main"
   },
   "next_action_by_carrier": {
-    "current": "PR #1 (migration-settle), task unstated: The migration settle: records main 7e21618, the first head on menq-official/os. Next: Bro N-3 fix; then webpage moves (wave 1)",
+    "current": "PR #1 (migration-settle), task unstated: Migration settle at main 7e21618. Next: Bro N-3 fix",
     "_note": "The carrier is current_workflow_pr (#1 on migration-settle). This block is rewritten by tools/sync_active_pr.py whenever the carrier moves: it modelled PR #48 as the open carrier for three days after #48 merged, because nothing updated it. No merge-transition is modeled (there is no carrier_transition block), so the branches below are advisory prose, not gate inputs."
   },
   "main_ci": {

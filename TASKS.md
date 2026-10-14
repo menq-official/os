@@ -6,7 +6,7 @@
 <!-- BANNER -->
 > **⏭️ CURRENT ACTIVE: PR #1 · branch `migration-settle`** (base `main`, tip `7e21618`, task unstated).
 >
-> OS moved to menq-official/os; the first pull request on the new repository settles the state
+> Settle on menq-official/os
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->

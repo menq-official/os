@@ -37,35 +37,35 @@ class OriginOwnerTests(unittest.TestCase):
         for url in ("https://github.com/menq-official/os.git", "https://github.com/menq-official/os",
                     "git@github.com:menq-official/os.git", "ssh://git@github.com/menq-official/os.git",
                     "https://github.com/menq-official/os.git/\n"):
-            self.assertEqual(gh_account.origin_owner(url), "menqstudio", url)
+            self.assertEqual(gh_account.origin_owner(url), "menq-official", url)
 
     def test_an_origin_that_is_not_githubs_names_nobody(self):
         for url in ("", "https://gitlab.com/menq-official/os.git", "/srv/git/OS.git",
                     "https://github.com.evil.example/menq-official/os.git",
                     "https://evil.example/github.com/menq-official/os.git",
-                    "https://github.com/menqstudio", "https://github.com//OS.git",
+                    "https://github.com/menq-official", "https://github.com//OS.git",
                     "https://github.com/a b/OS.git"):
             self.assertIsNone(gh_account.origin_owner(url), url)
 
 
 class UseRepoAccountTests(unittest.TestCase):
     def test_the_owners_login_is_used_when_the_environment_has_no_token(self):
-        environ, run = {}, FakeRun(logins={"menqstudio": TOKEN, "someone-else": "gho_other"})
-        self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "gh login menqstudio")
+        environ, run = {}, FakeRun(logins={"menq-official": TOKEN, "someone-else": "gho_other"})
+        self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "gh login menq-official")
         self.assertEqual(environ, {"GH_TOKEN": TOKEN})
-        self.assertEqual(run.calls[1][-2:], ["--user", "menqstudio"])
+        self.assertEqual(run.calls[1][-2:], ["--user", "menq-official"])
 
     def test_a_token_already_in_the_environment_wins_and_nothing_is_asked(self):
         """CI sets one, and so does a person who means it. Neither is overridden."""
         for name in gh_account.TOKEN_VARIABLES:
-            environ, run = {name: "set-on-purpose"}, FakeRun(logins={"menqstudio": TOKEN})
+            environ, run = {name: "set-on-purpose"}, FakeRun(logins={"menq-official": TOKEN})
             self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "environment")
             self.assertEqual(environ, {name: "set-on-purpose"})
             self.assertEqual(run.calls, [])
 
     def test_an_empty_token_variable_is_not_a_token(self):
-        environ, run = {"GH_TOKEN": ""}, FakeRun(logins={"menqstudio": TOKEN})
-        self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "gh login menqstudio")
+        environ, run = {"GH_TOKEN": ""}, FakeRun(logins={"menq-official": TOKEN})
+        self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "gh login menq-official")
         self.assertEqual(environ["GH_TOKEN"], TOKEN)
 
     def test_no_login_for_the_owner_changes_nothing(self):
@@ -75,19 +75,19 @@ class UseRepoAccountTests(unittest.TestCase):
 
     def test_an_origin_that_cannot_be_read_or_is_not_githubs_changes_nothing(self):
         for origin in (None, "https://gitlab.com/menq-official/os.git"):
-            environ, run = {}, FakeRun(origin=origin, logins={"menqstudio": TOKEN})
+            environ, run = {}, FakeRun(origin=origin, logins={"menq-official": TOKEN})
             self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "active account")
             self.assertEqual(environ, {})
             self.assertEqual(len(run.calls), 1, "gh was asked about an owner nobody established")
 
     def test_an_answer_that_is_not_one_token_is_not_used(self):
         for answer in ("", "two\nlines"):
-            environ, run = {}, FakeRun(logins={"menqstudio": answer})
+            environ, run = {}, FakeRun(logins={"menq-official": answer})
             self.assertEqual(gh_account.use_repo_account(ROOT, environ, run), "active account")
             self.assertEqual(environ, {})
 
     def test_what_is_returned_never_carries_the_token(self):
-        environ, run = {}, FakeRun(logins={"menqstudio": TOKEN})
+        environ, run = {}, FakeRun(logins={"menq-official": TOKEN})
         self.assertNotIn(TOKEN, gh_account.use_repo_account(ROOT, environ, run))
 
 
