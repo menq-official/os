@@ -4,9 +4,9 @@
 > [`docs/archive/TASKS_ARCHIVE_2026-08.md`](docs/archive/TASKS_ARCHIVE_2026-08.md).
 
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #2 · branch `fix-n3-registry-null`** (base `main`, tip `7a499aa`, task unstated).
+> **⏭️ CURRENT ACTIVE: PR #3 · branch `settle-663d56b`** (base `main`, tip `663d56b`, task unstated).
 >
-> N-3 registry_version null fix
+> Settle at main 663d56b
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->

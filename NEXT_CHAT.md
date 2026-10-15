@@ -5,11 +5,11 @@
 > `config/canon-budget.json` holds it to 8500 bytes; over that, the wall accepts only an edit that
 > shrinks it.
 
-**Active branch:** `fix-n3-registry-null` — `main` @ `7a499aa`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
+**Active branch:** `settle-663d56b` — `main` @ `663d56b`. A handoff names the merge base or `main`; a branch commit is a dead object after a squash. · **task** `floor-writer`
 <!-- BANNER -->
-> **⏭️ CURRENT ACTIVE: PR #2 · branch `fix-n3-registry-null`** (base `main`, tip `7a499aa`, task unstated).
+> **⏭️ CURRENT ACTIVE: PR #3 · branch `settle-663d56b`** (base `main`, tip `663d56b`, task unstated).
 >
-> N-3 registry_version null fix
+> Settle at main 663d56b
 >
 > **Standing verdict: RED** -- the ELEVENTH round, `apps/desktop/AUDIT/2026-10-09-eleventh-audit-598400e.md`. Check any tick in prose against `apps/desktop/AUDIT/AUDIT_LEDGER.md` before believing it.
 <!-- /BANNER -->
