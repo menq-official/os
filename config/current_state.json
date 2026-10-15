@@ -115,21 +115,21 @@
   "current_workflow_pr": {
     "number": 3,
     "branch": "settle-663d56b",
-    "what": "Settle: main 663d56b replaced d85d270 (title fix).",
+    "what": "Settle at main 663d56b after the N-3 title fix.",
     "note": "Settle at main 663d56b",
     "base": "main"
   },
   "next_action_by_carrier": {
-    "current": "PR #3 (settle-663d56b), task unstated: Settle: main 663d56b replaced d85d270 (title fix). Next: CI optimization",
+    "current": "PR #3 (settle-663d56b), task unstated: Settle at main 663d56b after the N-3 title fix. Next: CI optimization",
     "_note": "The carrier is current_workflow_pr (#3 on settle-663d56b). This block is rewritten by tools/sync_active_pr.py whenever the carrier moves: it modelled PR #48 as the open carrier for three days after #48 merged, because nothing updated it. No merge-transition is modeled (there is no carrier_transition block), so the branches below are advisory prose, not gate inputs."
   },
   "main_ci": {
     "_note": "What main's OWN runs said, and when. Rule and reasons: tools/check_repo_state.py::main_ci_failures.",
     "ci": {
-      "head": "d85d270324dd49f7ccd2cd49289eacdac2667209",
-      "conclusion": "success",
-      "run_id": 38656958493,
-      "note": "Read by tools/sync_active_pr.py on 2026-10-15: success at d85d270, run 38656958493."
+      "head": "663d56b44935e075c5631899642f2a6464568516",
+      "conclusion": "failure",
+      "run_id": 38657728001,
+      "note": "Read by tools/sync_active_pr.py on 2026-10-15: failure at 663d56b, run 38657728001. Not green: Repo-state · live GitHub truth verifier."
     }
   },
   "_comment": "PARKED pull requests are listed in prs[] with number, branch, base, draft, merge_state, role and their EXACT live head, and no per-entry `why_listed`: they are all open behind the carrier and merge in the Owner's stated order, which is one fact and is said here once rather than five times. check_repo_state exact-head-verifies each of them."
